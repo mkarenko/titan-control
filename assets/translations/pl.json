@@ -1,0 +1,18 @@
+{
+	"general": {
+		"brightness": "Jasność",
+		"contrast": "Kontrast",
+		"volume": "Głośność",
+		"input": "Wejście",
+		"power": "Zasilanie",
+		"reset": "Resetuj",
+		"color_mode": "Tryb kolorów",
+		"sharpness": "Ostrość",
+		"language": "Język"
+	},
+	"status": {
+		"monitor_found": "Znaleziono monitor",
+		"monitor_not_found": "Nie wykryto monitora",
+		"error": "Błąd"
+	}
+}

@@ -1,6 +1,7 @@
 mod monitor;
 mod ui;
 use adw::prelude::*;
+use gtk4::glib;
 use libadwaita as adw;
 use monitor::{UiCmd, WorkerCmd};
 use std::sync::mpsc;
@@ -17,115 +18,264 @@ fn build_application(app: &adw::Application) {
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerCmd>();
     let (ui_tx, ui_rx) = async_channel::unbounded::<UiCmd>();
     let widgets = ui::build_ui(app);
+
+    let ui::MainWidgets {
+        window,
+        status_label,
+        info_model,
+        row_hz,
+        row_ctrl,
+        row_firm,
+        row_usage,
+        sb,
+        sc,
+        sv,
+        slbl,
+        sr,
+        sg,
+        sbl,
+        combo_temp,
+        combo_input,
+        combo_lang,
+        combo_mode,
+        sw_mute,
+        btn_off,
+        btn_reset_factory,
+        btn_reset_br_con,
+        btn_reset_color,
+        btn_custom,
+        custom_revealer,
+        ss,
+        sce,
+        scoe,
+        ssr,
+        sshb,
+        c_hdr,
+        c_gam,
+        hue_scales,
+        sat_scales,
+        btn_ps_off,
+        btn_ps_l1,
+        btn_ps_l2,
+        btn_pl_off,
+        btn_pl_l1,
+        btn_pl_l2,
+        btn_pl_l3,
+        ..
+    } = widgets;
+
     monitor::start_worker(worker_rx, ui_tx);
 
-    let sl = widgets.status_label.clone();
-    let im = widgets.info_model.clone();
-    let il = widgets.info_lang.clone();
-    let sb = widgets.sb.clone();
-    let sc = widgets.sc.clone();
-    let ss = widgets.ss.clone();
-    let sv = widgets.sv.clone();
-    let slbl = widgets.slbl.clone();
-    let sw_m = widgets.sw_mute.clone();
-    let sw_d = widgets.sw_dcr.clone();
-    let sw_s = widgets.sw_sensor.clone();
-    let cg = widgets.combo_gamma.clone();
-    let ca = widgets.combo_aspect.clone();
-    let ct = widgets.combo_temp.clone();
+    btn_custom.connect_toggled(glib::clone!(
+        #[strong]
+        custom_revealer,
+        move |btn| {
+            custom_revealer.set_reveal_child(btn.is_active());
+        }
+    ));
 
-    gtk4::glib::MainContext::default().spawn_local(async move {
-        while let Ok(msg) = ui_rx.recv().await {
-            match msg {
-                UiCmd::MonitorFound(v) => {
-                    sl.set_label("Połączono");
-                    im.set_subtitle(&v.info.name);
-                    il.set_subtitle(&v.info.language);
-                    sb.set_value(v.brightness as f64);
-                    sc.set_value(v.contrast as f64);
-                    ss.set_value(v.sharpness as f64);
-                    sv.set_value(v.volume as f64);
-                    slbl.set_value(v.low_blue_light as f64);
-                    sw_m.set_active(v.mute == 1);
-                    sw_d.set_active(v.dcr == 1);
-                    sw_s.set_active(v.light_sensor == 1);
-                    // Uproszczone przypisanie indeksów
-                    cg.set_selected(v.gamma as u32);
-                    ca.set_selected(v.aspect_ratio as u32);
-                    ct.set_selected(v.color_temp as u32);
+    combo_temp.connect_selected_notify(glib::clone!(
+        #[strong]
+        sr,
+        #[strong]
+        sg,
+        #[strong]
+        sbl,
+        move |c| {
+            let is_user = c.selected() >= 3;
+            sr.set_sensitive(is_user);
+            sg.set_sensitive(is_user);
+            sbl.set_sensitive(is_user);
+        }
+    ));
 
-                    // Odblokowanie wszystkich kontrolek
-                    for widget in &[
-                        sb.upcast_ref::<gtk4::Widget>(),
-                        sc.upcast_ref(),
-                        ss.upcast_ref(),
-                        sv.upcast_ref(),
-                        slbl.upcast_ref(),
-                        sw_m.upcast_ref(),
-                        sw_d.upcast_ref(),
-                        sw_s.upcast_ref(),
-                        cg.upcast_ref(),
-                        ca.upcast_ref(),
-                        ct.upcast_ref(),
-                    ] {
-                        widget.set_sensitive(true);
+    glib::MainContext::default().spawn_local(glib::clone!(
+        #[strong]
+        status_label,
+        #[strong]
+        info_model,
+        #[strong]
+        row_hz,
+        #[strong]
+        row_ctrl,
+        #[strong]
+        row_firm,
+        #[strong]
+        row_usage,
+        #[strong]
+        sb,
+        #[strong]
+        sc,
+        #[strong]
+        sv,
+        #[strong]
+        slbl,
+        #[strong]
+        sr,
+        #[strong]
+        sg,
+        #[strong]
+        sbl,
+        #[strong]
+        combo_temp,
+        #[strong]
+        combo_input,
+        #[strong]
+        combo_lang,
+        #[strong]
+        combo_mode,
+        #[strong]
+        sw_mute,
+        #[strong]
+        btn_off,
+        #[strong]
+        btn_reset_factory,
+        #[strong]
+        btn_reset_br_con,
+        #[strong]
+        btn_reset_color,
+        #[strong]
+        btn_ps_off,
+        #[strong]
+        btn_ps_l1,
+        #[strong]
+        btn_ps_l2,
+        #[strong]
+        btn_pl_off,
+        #[strong]
+        btn_pl_l1,
+        #[strong]
+        btn_pl_l2,
+        #[strong]
+        btn_pl_l3,
+        async move {
+            while let Ok(msg) = ui_rx.recv().await {
+                match msg {
+                    UiCmd::MonitorFound(v) => {
+                        status_label.set_label("Gotowy");
+                        info_model.set_subtitle(&v.name);
+                        row_hz.set_subtitle(&format!("{} Hz", v.hz));
+                        row_ctrl.set_subtitle(&v.ctrl);
+                        row_firm.set_subtitle(&v.firm);
+                        row_usage.set_subtitle(&format!(
+                            "{} h {} min",
+                            v.usage_mins / 60,
+                            v.usage_mins % 60
+                        ));
+                        sb.set_value(v.brightness as f64);
+                        sc.set_value(v.contrast as f64);
+                        sv.set_value(v.volume as f64);
+                        slbl.set_value(v.low_blue_light as f64);
+                        sr.set_value(v.r as f64);
+                        sg.set_value(v.g as f64);
+                        sbl.set_value(v.b as f64);
+                        sw_mute.set_active(v.mute == 1);
+                        combo_mode.set_selected(v.mode as u32);
+                        combo_temp.set_selected(monitor::vcp_to_combo_index(
+                            &monitor::COLOR_TEMP_VALUES[..],
+                            v.temp,
+                        ));
+
+                        let w_list = &[
+                            sb.upcast_ref::<gtk4::Widget>(),
+                            sc.upcast_ref(),
+                            sv.upcast_ref(),
+                            slbl.upcast_ref(),
+                            sr.upcast_ref(),
+                            sg.upcast_ref(),
+                            sbl.upcast_ref(),
+                            sw_mute.upcast_ref(),
+                            combo_temp.upcast_ref(),
+                            combo_input.upcast_ref(),
+                            combo_lang.upcast_ref(),
+                            combo_mode.upcast_ref(),
+                            btn_off.upcast_ref(),
+                            btn_reset_factory.upcast_ref(),
+                            btn_reset_br_con.upcast_ref(),
+                            btn_reset_color.upcast_ref(),
+                            btn_ps_off.upcast_ref(),
+                            btn_ps_l1.upcast_ref(),
+                            btn_ps_l2.upcast_ref(),
+                            btn_pl_off.upcast_ref(),
+                            btn_pl_l1.upcast_ref(),
+                            btn_pl_l2.upcast_ref(),
+                            btn_pl_l3.upcast_ref(),
+                        ];
+                        for w in w_list {
+                            w.set_sensitive(true);
+                        }
                     }
+                    UiCmd::Error(e) => status_label.set_label(&e),
                 }
-                UiCmd::Error(err) => sl.set_label(&err),
             }
         }
-    });
-
-    // Podpięcie sygnałów
-    let tx = worker_tx.clone();
-    widgets.sb.connect_value_changed(move |s| {
-        let _ = tx.send(WorkerCmd::SetBrightness(s.value() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.sc.connect_value_changed(move |s| {
-        let _ = tx.send(WorkerCmd::SetContrast(s.value() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.ss.connect_value_changed(move |s| {
-        let _ = tx.send(WorkerCmd::SetSharpness(s.value() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.sv.connect_value_changed(move |s| {
-        let _ = tx.send(WorkerCmd::SetVolume(s.value() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.slbl.connect_value_changed(move |s| {
-        let _ = tx.send(WorkerCmd::SetLowBlueLight(s.value() as u16));
-    });
+    ));
 
     let tx = worker_tx.clone();
-    widgets.sw_mute.connect_state_set(move |_, state| {
-        let _ = tx.send(WorkerCmd::SetMute(state));
-        gtk4::glib::Propagation::Proceed
-    });
-    let tx = worker_tx.clone();
-    widgets.sw_dcr.connect_state_set(move |_, state| {
-        let _ = tx.send(WorkerCmd::SetDcr(state));
-        gtk4::glib::Propagation::Proceed
-    });
-    let tx = worker_tx.clone();
-    widgets.sw_sensor.connect_state_set(move |_, state| {
-        let _ = tx.send(WorkerCmd::SetLightSensor(state));
-        gtk4::glib::Propagation::Proceed
-    });
+    sb.connect_value_changed(glib::clone!(
+        #[strong]
+        tx,
+        move |s| {
+            let _ = tx.send(WorkerCmd::SetBrightness(s.value() as u16));
+        }
+    ));
+    sc.connect_value_changed(glib::clone!(
+        #[strong]
+        tx,
+        move |s| {
+            let _ = tx.send(WorkerCmd::SetContrast(s.value() as u16));
+        }
+    ));
+    sv.connect_value_changed(glib::clone!(
+        #[strong]
+        tx,
+        move |s| {
+            let _ = tx.send(WorkerCmd::SetVolume(s.value() as u16));
+        }
+    ));
+    sw_mute.connect_state_set(glib::clone!(
+        #[strong]
+        tx,
+        move |_, s| {
+            let _ = tx.send(WorkerCmd::SetMute(s));
+            glib::Propagation::Proceed
+        }
+    ));
+    btn_ps_off.connect_toggled(glib::clone!(
+        #[strong]
+        tx,
+        move |b| if b.is_active() {
+            let _ = tx.send(WorkerCmd::SetPowerSaving(0));
+        }
+    ));
+    btn_ps_l1.connect_toggled(glib::clone!(
+        #[strong]
+        tx,
+        move |b| if b.is_active() {
+            let _ = tx.send(WorkerCmd::SetPowerSaving(1));
+        }
+    ));
+    btn_ps_l2.connect_toggled(glib::clone!(
+        #[strong]
+        tx,
+        move |b| if b.is_active() {
+            let _ = tx.send(WorkerCmd::SetPowerSaving(2));
+        }
+    ));
 
-    let tx = worker_tx.clone();
-    widgets.combo_gamma.connect_selected_notify(move |c| {
-        let _ = tx.send(WorkerCmd::SetGamma(c.selected() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.combo_aspect.connect_selected_notify(move |c| {
-        let _ = tx.send(WorkerCmd::SetAspectRatio(c.selected() as u16));
-    });
-    let tx = worker_tx.clone();
-    widgets.combo_temp.connect_selected_notify(move |c| {
-        let _ = tx.send(WorkerCmd::SetColorTemp(c.selected() as u16));
-    });
-
-    widgets.window.present();
+    btn_reset_factory.connect_clicked(glib::clone!(
+        #[strong]
+        worker_tx,
+        move |_| {
+            let _ = worker_tx.send(WorkerCmd::ResetFactory);
+        }
+    ));
+    btn_off.connect_clicked(glib::clone!(
+        #[strong]
+        worker_tx,
+        move |_| {
+            let _ = worker_tx.send(WorkerCmd::PowerOff);
+        }
+    ));
+    window.present();
 }

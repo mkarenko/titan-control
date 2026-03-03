@@ -57,7 +57,7 @@ pub fn build(
     Vec<ToggleButton>,
     Vec<ToggleButton>,
     Vec<ToggleButton>, // Magnifier
-    Switch, // Alignment
+    Switch,            // Alignment
     ExpanderRow,
     Vec<ToggleButton>,
     Vec<ToggleButton>,
@@ -76,9 +76,7 @@ pub fn build(
     Scale,
     Scale, // Scales
 ) {
-    let page = PreferencesPage::builder()
-        .icon_name("input-gaming-symbolic")
-        .build();
+    let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_gaming", lang);
 
     // --- SEKCJA: GAME AID ---
@@ -92,9 +90,7 @@ pub fn build(
     r_size.add_suffix(&box_size);
 
     // 2. Refresh Rate
-    let exp_hz = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_hz = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_hz, "fps_counter", lang);
     let (box_hz_pos, btn_hz_pos) =
         create_linked_buttons(&["Top Right", "Top Left", "Bottom Right", "Bottom Left"][..]);
@@ -104,9 +100,7 @@ pub fn build(
     exp_hz.add_row(&r_hz_pos);
 
     // 3. Crosshair
-    let exp_cross = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_cross = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_cross, "crosshair", lang);
     let (box_cr_shape, btn_cross_shape) =
         create_linked_buttons(&["1", "2", "3", "4", "5", "6"][..]);
@@ -159,9 +153,7 @@ pub fn build(
     exp_cross.add_row(&r_cr_color);
 
     // 4. Stopwatch
-    let exp_stop = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_stop = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_stop, "stopwatch", lang);
     let (box_st_time, btn_stop_time) = create_linked_buttons(&["15", "30", "45", "60"][..]);
     let r_st_time = ActionRow::new();
@@ -176,9 +168,7 @@ pub fn build(
     exp_stop.add_row(&r_st_pos);
 
     // 5. Game Time
-    let exp_gt = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_gt = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_gt, "game_time", lang);
     let (box_gt_time, btn_gt_time) = create_linked_buttons(&["15", "30", "45", "60"][..]);
     let r_gt_time = ActionRow::new();
@@ -193,9 +183,7 @@ pub fn build(
     exp_gt.add_row(&r_gt_pos);
 
     // 6. Magnifier
-    let exp_mag = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_mag = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_mag, "magnifier", lang);
     let sw_mag_nv = Switch::builder().valign(Align::Center).build();
     let r_mag_nv = ActionRow::new();
@@ -210,7 +198,13 @@ pub fn build(
     tr_row(u, &r_mag_size, "size", lang);
     r_mag_size.add_suffix(&box_mag_size);
     let (box_mag_pos, btn_mag_pos) = create_linked_buttons(
-        &["Top Right", "Top Left", "Central", "Bottom Right", "Bottom Left"][..],
+        &[
+            "Top Right",
+            "Top Left",
+            "Central",
+            "Bottom Right",
+            "Bottom Left",
+        ][..],
     );
     let r_mag_pos = ActionRow::new();
     tr_row(u, &r_mag_pos, "position", lang);
@@ -227,16 +221,20 @@ pub fn build(
     r_align.add_suffix(&sw_align);
 
     // 8. Hawkeye
-    let exp_hawk = ExpanderRow::builder()
-        .show_enable_switch(true)
-        .build();
+    let exp_hawk = ExpanderRow::builder().show_enable_switch(true).build();
     tr_expander(u, &exp_hawk, "hawkeye", lang);
     let (box_hawk_s, btn_hawk_size) = create_linked_buttons(&["Small", "Medium", "Large"][..]);
     let r_hawk_s = ActionRow::new();
     tr_row(u, &r_hawk_s, "size", lang);
     r_hawk_s.add_suffix(&box_hawk_s);
     let (box_hawk_p, btn_hawk_pos) = create_linked_buttons(
-        &["Top Right", "Top Left", "Central", "Bottom Right", "Bottom Left"][..],
+        &[
+            "Top Right",
+            "Top Left",
+            "Central",
+            "Bottom Right",
+            "Bottom Left",
+        ][..],
     );
     let r_hawk_p = ActionRow::new();
     tr_row(u, &r_hawk_p, "position", lang);

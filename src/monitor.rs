@@ -184,10 +184,7 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
                 contrast: ddc.get_vcp_feature(0x12).map(|v| v.value()).unwrap_or(0),
                 volume: ddc.get_vcp_feature(0x62).map(|v| v.value()).unwrap_or(0),
                 mute: ddc.get_vcp_feature(0x8D).map(|v| v.value()).unwrap_or(2),
-                low_blue_light: ddc
-                    .get_vcp_feature(0xE1)
-                    .map(|v| v.value())
-                    .unwrap_or(0),
+                low_blue_light: ddc.get_vcp_feature(0xE1).map(|v| v.value()).unwrap_or(0),
                 r: ddc.get_vcp_feature(0x16).map(|v| v.value()).unwrap_or(0),
                 g: ddc.get_vcp_feature(0x18).map(|v| v.value()).unwrap_or(0),
                 b: ddc.get_vcp_feature(0x1A).map(|v| v.value()).unwrap_or(0),
@@ -202,20 +199,12 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
                 usage_mins: mins,
                 sharpness: ddc.get_vcp_feature(0x87).map(|v| v.value()).unwrap_or(0),
                 cr_enhance: ddc.get_vcp_feature(0xE2).map(|v| v.value()).unwrap_or(0),
-                color_enhance: ddc
-                    .get_vcp_feature(0xE3)
-                    .map(|v| v.value())
-                    .unwrap_or(0),
+                color_enhance: ddc.get_vcp_feature(0xE3).map(|v| v.value()).unwrap_or(0),
                 super_res: ddc.get_vcp_feature(0xE4).map(|v| v.value()).unwrap_or(0),
                 shadow_bal: ddc.get_vcp_feature(0xE5).map(|v| v.value()).unwrap_or(0),
                 hdr: ddc.get_vcp_feature(0xE6).map(|v| v.value()).unwrap_or(0),
                 gamma: ddc.get_vcp_feature(0x72).map(|v| v.value()).unwrap_or(0),
-                firm: format!(
-                    "v {}.{}.{}",
-                    (fe >> 12) & 0xF,
-                    (fe >> 8) & 0xF,
-                    fe & 0xFF
-                ),
+                firm: format!("v {}.{}.{}", (fe >> 12) & 0xF, (fe >> 8) & 0xF, fe & 0xFF),
                 ctrl: format!(
                     "NB{}{}-{:02X}",
                     (f7 >> 8) as u8 as char,

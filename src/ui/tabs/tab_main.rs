@@ -38,23 +38,8 @@ pub fn build(
     Button,
     Button,
 ) {
-    let page = PreferencesPage::builder()
-        .icon_name("display-symbolic")
-        .build();
+    let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_main", lang);
-
-    let g_aud = PreferencesGroup::new();
-    tr_group(u, &g_aud, "audio_group", lang);
-    let r_v = ActionRow::new();
-    tr_row(u, &r_v, "volume", lang);
-    let sv = create_scale();
-    r_v.add_suffix(&sv);
-    let sw_m = Switch::builder().valign(Align::Center).build();
-    let r_m = ActionRow::new();
-    tr_row(u, &r_m, "mute", lang);
-    r_m.add_suffix(&sw_m);
-    g_aud.add(&r_v);
-    g_aud.add(&r_m);
 
     let g_dev = PreferencesGroup::new();
     tr_group(u, &g_dev, "device_group", lang);
@@ -73,6 +58,72 @@ pub fn build(
     g_dev.add(&rc);
     g_dev.add(&rf);
     g_dev.add(&ru);
+
+    let g_aud = PreferencesGroup::new();
+    tr_group(u, &g_aud, "audio_group", lang);
+    let r_v = ActionRow::new();
+    tr_row(u, &r_v, "volume", lang);
+    let sv = create_scale();
+    r_v.add_suffix(&sv);
+    let sw_m = Switch::builder().valign(Align::Center).build();
+    let r_m = ActionRow::new();
+    tr_row(u, &r_m, "mute", lang);
+    r_m.add_suffix(&sw_m);
+    g_aud.add(&r_v);
+    g_aud.add(&r_m);
+
+    let g_io = PreferencesGroup::new();
+    tr_group(u, &g_io, "io_group", lang);
+    let ci = ComboRow::builder()
+        .model(&StringList::new(
+            &["HDMI-1", "HDMI-2", "USB-C", "DisplayPort"][..],
+        ))
+        .build();
+    tr_row(u, &ci.clone().upcast::<ActionRow>(), "input_source", lang);
+    let c_range = ComboRow::builder()
+        .model(&StringList::new(&["Auto", "Limit", "Full"][..]))
+        .build();
+    tr_row(
+        u,
+        &c_range.clone().upcast::<ActionRow>(),
+        "output_range",
+        lang,
+    );
+    let sw_boot = Switch::builder().valign(Align::Center).build();
+    let r_boot = ActionRow::new();
+    tr_row(u, &r_boot, "quick_boot", lang);
+    r_boot.add_suffix(&sw_boot);
+    g_io.add(&ci);
+    g_io.add(&c_range);
+    g_io.add(&r_boot);
+
+    let g_osd = PreferencesGroup::new();
+    tr_group(u, &g_osd, "osd_group", lang);
+    let cl = ComboRow::builder()
+        .model(&StringList::new(&monitor::OSD_LANGUAGE_NAMES[..]))
+        .build();
+    tr_row(u, &cl.clone().upcast::<ActionRow>(), "osd_lang", lang);
+    let s_time = create_scale_with_max(60.0);
+    let r_time = ActionRow::new();
+    tr_row(u, &r_time, "osd_time", lang);
+    r_time.add_suffix(&s_time);
+    let s_hpos = create_scale();
+    let r_hpos = ActionRow::new();
+    tr_row(u, &r_hpos, "osd_h_pos", lang);
+    r_hpos.add_suffix(&s_hpos);
+    let s_vpos = create_scale();
+    let r_vpos = ActionRow::new();
+    tr_row(u, &r_vpos, "osd_v_pos", lang);
+    r_vpos.add_suffix(&s_vpos);
+    let s_trans = create_scale();
+    let r_trans = ActionRow::new();
+    tr_row(u, &r_trans, "osd_trans", lang);
+    r_trans.add_suffix(&s_trans);
+    g_osd.add(&cl);
+    g_osd.add(&r_time);
+    g_osd.add(&r_hpos);
+    g_osd.add(&r_vpos);
+    g_osd.add(&r_trans);
 
     let g_pwr = PreferencesGroup::new();
     tr_group(u, &g_pwr, "power_group", lang);
@@ -134,52 +185,6 @@ pub fn build(
     g_pwr.add(&r_ps);
     g_pwr.add(&r_pl);
 
-    let g_io = PreferencesGroup::new();
-    tr_group(u, &g_io, "io_group", lang);
-    let ci = ComboRow::builder()
-        .model(&StringList::new(&["HDMI-1", "HDMI-2", "USB-C", "DP-2"][..]))
-        .build();
-    tr_row(u, &ci.clone().upcast::<ActionRow>(), "input_source", lang);
-    let c_range = ComboRow::builder()
-        .model(&StringList::new(&["Auto", "Limit", "Full"][..]))
-        .build();
-    tr_row(u, &c_range.clone().upcast::<ActionRow>(), "output_range", lang);
-    let sw_boot = Switch::builder().valign(Align::Center).build();
-    let r_boot = ActionRow::new();
-    tr_row(u, &r_boot, "quick_boot", lang);
-    r_boot.add_suffix(&sw_boot);
-    g_io.add(&ci);
-    g_io.add(&c_range);
-    g_io.add(&r_boot);
-
-    let g_osd = PreferencesGroup::new();
-    tr_group(u, &g_osd, "osd_group", lang);
-    let cl = ComboRow::builder()
-        .model(&StringList::new(&monitor::OSD_LANGUAGE_NAMES[..]))
-        .build();
-    tr_row(u, &cl.clone().upcast::<ActionRow>(), "osd_lang", lang);
-    let s_time = create_scale_with_max(60.0);
-    let r_time = ActionRow::new();
-    tr_row(u, &r_time, "osd_time", lang);
-    r_time.add_suffix(&s_time);
-    let s_hpos = create_scale();
-    let r_hpos = ActionRow::new();
-    tr_row(u, &r_hpos, "osd_h_pos", lang);
-    r_hpos.add_suffix(&s_hpos);
-    let s_vpos = create_scale();
-    let r_vpos = ActionRow::new();
-    tr_row(u, &r_vpos, "osd_v_pos", lang);
-    r_vpos.add_suffix(&s_vpos);
-    let s_trans = create_scale();
-    let r_trans = ActionRow::new();
-    tr_row(u, &r_trans, "osd_trans", lang);
-    r_trans.add_suffix(&s_trans);
-    g_osd.add(&cl);
-    g_osd.add(&r_time);
-    g_osd.add(&r_hpos);
-    g_osd.add(&r_vpos);
-    g_osd.add(&r_trans);
-
     let g_res = PreferencesGroup::new();
     tr_group(u, &g_res, "reset_group", lang);
     let b1 = Button::new();
@@ -201,11 +206,11 @@ pub fn build(
     g_res.add(&row2);
     g_res.add(&row3);
 
-    page.add(&g_aud);
     page.add(&g_dev);
-    page.add(&g_pwr);
+    page.add(&g_aud);
     page.add(&g_io);
     page.add(&g_osd);
+    page.add(&g_pwr);
     page.add(&g_res);
 
     (

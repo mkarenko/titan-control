@@ -1,4 +1,4 @@
-use crate::i18n::{lang_index, AppLang, LangUpdaters};
+use crate::i18n::{AppLang, LangUpdaters, lang_index};
 use crate::ui::helpers::*;
 use adw::prelude::*;
 use adw::{ActionRow, ComboRow, PreferencesGroup, PreferencesPage};
@@ -6,9 +6,7 @@ use gtk4::{Align, Button, StringList, Switch};
 use libadwaita as adw;
 
 pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
-    let page = PreferencesPage::builder()
-        .icon_name("info-symbolic")
-        .build();
+    let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_info", lang);
 
     let g_app_settings = PreferencesGroup::new();
@@ -31,7 +29,6 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
 
     let c_theme = ComboRow::new();
     tr_row(u, &c_theme.clone().upcast::<ActionRow>(), "app_theme", lang);
-    // Theme options need live translation too
     {
         let model = StringList::new(&[
             &crate::i18n::tr(lang, "theme_system"),
@@ -65,9 +62,7 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
     tr_group(u, &g_about, "app_name", lang);
     tr_group_desc(u, &g_about, "app_desc", lang);
 
-    let gh_button = Button::builder()
-        .valign(Align::Center)
-        .build();
+    let gh_button = Button::builder().valign(Align::Center).build();
     tr_button(u, &gh_button, "open_btn", lang);
     gh_button.connect_clicked(|_| {
         let _ = std::process::Command::new("xdg-open")
@@ -79,9 +74,7 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
     tr_row_sub(u, &row_source, "source_code_sub", lang);
     row_source.add_suffix(&gh_button);
 
-    let gh_issue_button = Button::builder()
-        .valign(Align::Center)
-        .build();
+    let gh_issue_button = Button::builder().valign(Align::Center).build();
     tr_button(u, &gh_issue_button, "report_btn", lang);
     gh_issue_button.connect_clicked(|_| {
         let _ = std::process::Command::new("xdg-open")
@@ -108,9 +101,7 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
     tr_row_sub(u, &row_coffee, "support_author_sub", lang);
     row_coffee.add_suffix(&buy_me_a_coffee_button);
 
-    let row_version = ActionRow::builder()
-        .subtitle("0.1.0 (Alpha)")
-        .build();
+    let row_version = ActionRow::builder().subtitle("0.1.0 (Alpha)").build();
     tr_row(u, &row_version, "version", lang);
 
     g_app_settings.add(&c_lang);

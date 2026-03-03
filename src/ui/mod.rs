@@ -1,7 +1,7 @@
 pub mod helpers;
 pub mod tabs;
 
-use crate::i18n::{tr, AppLang, LangUpdaters};
+use crate::i18n::{AppLang, LangUpdaters, tr};
 use adw::prelude::*;
 use adw::{ActionRow, ComboRow, HeaderBar, ViewStack, ViewSwitcher};
 use gtk4::{Box as GtkBox, Button, Orientation, Revealer, Scale, Switch, ToggleButton};
@@ -101,12 +101,7 @@ pub struct MainWidgets {
     pub scale_gaming_halo_control: Scale,
 }
 
-pub fn build_ui(
-    app: &adw::Application,
-    lang: &AppLang,
-    updaters: &LangUpdaters,
-) -> MainWidgets {
-    // CSS for smaller linked toggle buttons
+pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters) -> MainWidgets {
     let css = gtk4::CssProvider::new();
     css.load_from_data(concat!(
         ".linked > button.toggle {",
@@ -246,10 +241,18 @@ pub fn build_ui(
 
     let (p_inf, c_lang) = tabs::tab_info::build(lang, updaters);
 
-    stack.add_titled(&p_main, Some("main"), &tr(lang, "tab_main"));
-    stack.add_titled(&p_pre, Some("profiles"), &tr(lang, "tab_profiles"));
-    stack.add_titled(&p_gam, Some("gaming"), &tr(lang, "tab_gaming"));
-    stack.add_titled(&p_inf, Some("info"), &tr(lang, "tab_info"));
+    stack
+        .add_titled(&p_main, Some("main"), &tr(lang, "tab_main"))
+        .set_icon_name(Some("computer-symbolic"));
+    stack
+        .add_titled(&p_pre, Some("profiles"), &tr(lang, "tab_profiles"))
+        .set_icon_name(Some("applications-graphics-symbolic"));
+    stack
+        .add_titled(&p_gam, Some("gaming"), &tr(lang, "tab_gaming"))
+        .set_icon_name(Some("input-gaming-symbolic"));
+    stack
+        .add_titled(&p_inf, Some("info"), &tr(lang, "tab_info"))
+        .set_icon_name(Some("help-about-symbolic"));
 
     // Register stack tab titles for live update
     {

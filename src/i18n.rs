@@ -62,7 +62,7 @@ pub fn tr(lang: &AppLang, key: &str) -> String {
 fn tr_en(key: &str) -> String {
     match key {
         // Tabs
-        "tab_main" => "Main",
+        "tab_main" => "Display",
         "tab_profiles" => "Profiles",
         "tab_gaming" => "Gaming",
         "tab_info" => "Info",

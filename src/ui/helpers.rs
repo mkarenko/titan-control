@@ -18,8 +18,6 @@ pub fn create_scale_with_max(max: f64) -> Scale {
         .build()
 }
 
-// --- Translation helpers: set initial text + register live update callback ---
-
 pub fn tr_page(u: &LangUpdaters, w: &PreferencesPage, key: &'static str, lang: &AppLang) {
     w.set_title(&tr(lang, key));
     let w = w.clone();

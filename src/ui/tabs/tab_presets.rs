@@ -1,9 +1,11 @@
-use crate::i18n::{tr, AppLang, LangUpdaters};
+use crate::i18n::{AppLang, LangUpdaters, tr};
 use crate::monitor;
 use crate::ui::helpers::*;
 use adw::prelude::*;
 use adw::{ActionRow, ComboRow, PreferencesGroup, PreferencesPage};
-use gtk4::{Align, Box as GtkBox, Grid, Label, Orientation, Revealer, Scale, StringList, ToggleButton};
+use gtk4::{
+    Align, Box as GtkBox, Grid, Label, Orientation, Revealer, Scale, StringList, ToggleButton,
+};
 use libadwaita as adw;
 
 pub fn build(
@@ -34,9 +36,7 @@ pub fn build(
     Vec<Scale>,
     Vec<Scale>,
 ) {
-    let page = PreferencesPage::builder()
-        .icon_name("emblem-favorite-symbolic")
-        .build();
+    let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_profiles", lang);
 
     let g_mode = PreferencesGroup::new();
@@ -44,7 +44,12 @@ pub fn build(
     let combo_mode = ComboRow::builder()
         .model(&StringList::new(&monitor::PICTURE_MODE_NAMES[..]))
         .build();
-    tr_row(u, &combo_mode.clone().upcast::<ActionRow>(), "active_mode", lang);
+    tr_row(
+        u,
+        &combo_mode.clone().upcast::<ActionRow>(),
+        "active_mode",
+        lang,
+    );
     g_mode.add(&combo_mode);
 
     let btn_box = GtkBox::builder()
@@ -115,7 +120,12 @@ pub fn build(
             &["Warm", "Cold", "Natural", "User1", "User2", "User3"][..],
         ))
         .build();
-    tr_row(u, &combo_temp.clone().upcast::<ActionRow>(), "color_temp_profile", lang);
+    tr_row(
+        u,
+        &combo_temp.clone().upcast::<ActionRow>(),
+        "color_temp_profile",
+        lang,
+    );
     let r_r = ActionRow::new();
     let sr = create_scale();
     tr_row(u, &r_r, "red", lang);

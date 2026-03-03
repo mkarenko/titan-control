@@ -1,3 +1,4 @@
+use crate::i18n::{tr, AppLang};
 use adw::prelude::*;
 use gtk4::glib;
 use image::GenericImageView;
@@ -14,6 +15,7 @@ enum TrayAction {
 
 struct TitanTray {
     tx: async_channel::Sender<TrayAction>,
+    lang: AppLang,
 }
 
 impl ksni::Tray for TitanTray {
@@ -48,7 +50,7 @@ impl ksni::Tray for TitanTray {
         use ksni::menu::*;
         vec![
             StandardItem {
-                label: "Pokaż".into(),
+                label: tr(&self.lang, "tray_show"),
                 activate: Box::new(|this: &mut Self| {
                     let _ = this.tx.send_blocking(TrayAction::Show);
                 }),
@@ -57,7 +59,7 @@ impl ksni::Tray for TitanTray {
             .into(),
             ksni::MenuItem::Separator,
             StandardItem {
-                label: "Wyjdź".into(),
+                label: tr(&self.lang, "tray_quit"),
                 icon_name: "application-exit".into(),
                 activate: Box::new(|this: &mut Self| {
                     let _ = this.tx.send_blocking(TrayAction::Quit);
@@ -113,10 +115,11 @@ pub fn setup_tray(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
     hold_guard: gtk4::gio::ApplicationHoldGuard,
+    lang: AppLang,
 ) {
     let (tx, rx) = async_channel::unbounded::<TrayAction>();
 
-    let tray = TitanTray { tx };
+    let tray = TitanTray { tx, lang };
     let handle = tray.spawn().expect("Nie można utworzyć ikony tray");
 
     let window_clone = window.clone();

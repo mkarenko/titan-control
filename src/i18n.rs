@@ -1,231 +1,340 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub type LangUpdaters = Rc<RefCell<Vec<Box<dyn Fn(&AppLang)>>>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AppLang {
-    PL,
     EN,
+    PL,
     DE,
     ES,
     FR,
     UA,
 }
 
+pub fn detect_system_lang() -> AppLang {
+    let lang = std::env::var("LANG").unwrap_or_default();
+    if lang.starts_with("pl") {
+        AppLang::PL
+    } else if lang.starts_with("de") {
+        AppLang::DE
+    } else if lang.starts_with("es") {
+        AppLang::ES
+    } else if lang.starts_with("fr") {
+        AppLang::FR
+    } else if lang.starts_with("uk") {
+        AppLang::UA
+    } else {
+        AppLang::EN
+    }
+}
+
+pub fn lang_index(lang: &AppLang) -> u32 {
+    match lang {
+        AppLang::EN => 0,
+        AppLang::PL => 1,
+        AppLang::DE => 2,
+        AppLang::ES => 3,
+        AppLang::FR => 4,
+        AppLang::UA => 5,
+    }
+}
+
+pub fn lang_from_index(idx: u32) -> AppLang {
+    match idx {
+        1 => AppLang::PL,
+        2 => AppLang::DE,
+        3 => AppLang::ES,
+        4 => AppLang::FR,
+        5 => AppLang::UA,
+        _ => AppLang::EN,
+    }
+}
+
 pub fn tr(lang: &AppLang, key: &str) -> String {
     match lang {
-        AppLang::PL => match key {
-            // Zakładki (Tabs)
-            "tab_main" => "Monitor".into(),
-            "tab_profiles" => "Profile".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-
-            // Sekcja: Dźwięk (Audio)
-            "audio_group" => "Dźwięk".into(),
-            "volume" => "Głośność".into(),
-            "mute" => "Wyciszenie".into(),
-
-            // Sekcja: Urządzenie (Device Info)
-            "device_group" => "Urządzenie".into(),
-            "model" => "Model".into(),
-            "refresh_rate" => "Odświeżanie".into(),
-            "controller" => "Kontroler".into(),
-            "firmware" => "Firmware".into(),
-            "usage_time" => "Czas pracy".into(),
-
-            // Sekcja: Zasilanie (Power)
-            "power_group" => "Zasilanie".into(),
-            "power_off" => "Wyłącz ekran".into(),
-            "power_saving" => "Oszczędzanie energii".into(),
-            "power_led" => "Dioda LED zasilania".into(),
-
-            // Sekcja: Wejścia i Sygnał (I/O)
-            "io_group" => "Wejścia i Sygnał".into(),
-            "input_source" => "Źródło sygnału".into(),
-            "output_range" => "Zakres wyjściowy (RGB)".into(),
-            "quick_boot" => "Szybki start (Quick Boot)".into(),
-
-            // Sekcja: OSD Settings
-            "osd_group" => "Ustawienia Menu (OSD)".into(),
-            "osd_lang" => "Język menu OSD".into(),
-            "osd_time" => "Czas wyświetlania menu".into(),
-            "osd_h_pos" => "Pozycja pozioma (H)".into(),
-            "osd_v_pos" => "Pozycja pionowa (V)".into(),
-            "osd_trans" => "Przezroczystość menu".into(),
-
-            // Sekcja: Przywracanie (Reset)
-            "reset_group" => "Przywracanie ustawień".into(),
-            "reset_factory" => "Ustawienia fabryczne".into(),
-            "reset_br_con" => "Jasność i Kontrast".into(),
-            "reset_colors" => "Kolory RGB".into(),
-            "reset_btn" => "Resetuj".into(),
-
-            // Sekcja: Profile i Tryby (Profiles)
-            "active_mode" => "Aktywny tryb".into(),
-            "custom_config" => "Konfiguracja Custom".into(),
-            "manual_settings" => "Ustawienia Ręczne".into(),
-            "brightness" => "Jasność".into(),
-            "contrast" => "Kontrast".into(),
-            "sharpness" => "Ostrość".into(),
-            "shadow_balance" => "Shadow Balance".into(),
-            "cr_enhance" => "CR Enhance".into(),
-            "color_enhance" => "Color Enhance".into(),
-            "super_res" => "Super Resolution".into(),
-            "low_blue_light" => "Filtr światła niebieskiego".into(),
-            "color_temp" => "Temperatura kolorów".into(),
-            "hue" => "Odcień (Hue)".into(),
-            "saturation" => "Nasycenie (Saturation)".into(),
-            "hdr" => "HDR".into(),
-            "gamma" => "Gamma".into(),
-
-            // Sekcja: Gaming Aid
-            "game_aid" => "Wspomaganie gry".into(),
-            "screen_size" => "Rozmiar ekranu".into(),
-            "fps_counter" => "Licznik FPS/Hz".into(),
-            "crosshair" => "Celownik".into(),
-            "stopwatch" => "Stoper".into(),
-            "game_time" => "Czas gry".into(),
-            "magnifier" => "Lupa".into(),
-            "alignment_aid" => "Wspomaganie wyrównania".into(),
-            "hawkeye" => "Hawkeye Vision".into(),
-
-            // Sekcja: Picture Enhance (Gaming)
-            "pic_enhance" => "Ulepszanie obrazu".into(),
-            "adaptive_sync" => "Adaptive-Sync".into(),
-            "game_rush" => "Game Rush".into(),
-            "local_dimming" => "Lokalne przyciemnianie".into(),
-            "dyds" => "DyDs".into(),
-            "night_vision" => "Night Vision".into(),
-            "dynamic_od" => "Dynamic OD (Overdrive)".into(),
-            "halo_control" => "Halo Control".into(),
-
-            // Sekcja: Ustawienia Aplikacji (App Settings w Info)
-            "app_settings" => "Ustawienia Aplikacji".into(),
-            "app_lang" => "Język aplikacji".into(),
-            "app_theme" => "Motyw wizualny".into(),
-            "theme_system" => "Systemowy".into(),
-            "theme_light" => "Jasny".into(),
-            "theme_dark" => "Ciemny".into(),
-            "auto_start" => "Uruchamiaj przy starcie systemu".into(),
-            "start_minimized" => "Uruchom zminimalizowane".into(),
-            "about_app" => "O programie".into(),
-            "source_code" => "Kod źródłowy".into(),
-            "open_btn" => "Otwórz".into(),
-            "report_bug" => "Zgłoś problem".into(),
-            "support_author" => "Wesprzyj autora".into(),
-
-            _ => key.replace("_", " ").to_string(),
-        },
-        AppLang::EN => match key {
-            "tab_main" => "Main".into(),
-            "tab_profiles" => "Profiles".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-            "app_settings" => "Application Settings".into(),
-            "app_lang" => "Language".into(),
-            "app_theme" => "Theme".into(),
-            "auto_start" => "Start on boot".into(),
-            "start_minimized" => "Start minimized".into(),
-            "theme_system" => "System".into(),
-            "theme_light" => "Light".into(),
-            "theme_dark" => "Dark".into(),
-            "audio_group" => "Audio".into(),
-            "volume" => "Volume".into(),
-            "mute" => "Mute".into(),
-            "device_group" => "Device".into(),
-            "power_group" => "Power".into(),
-            "io_group" => "I/O & Signal".into(),
-            "osd_group" => "OSD Settings".into(),
-            "reset_group" => "Reset".into(),
-            _ => key.replace("_", " ").to_string(),
-        },
-        AppLang::DE => match key {
-            "tab_main" => "Main".into(),
-            "tab_profiles" => "Profiles".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-            "app_settings" => "Application Settings".into(),
-            "app_lang" => "Language".into(),
-            "app_theme" => "Theme".into(),
-            "auto_start" => "Start on boot".into(),
-            "start_minimized" => "Start minimized".into(),
-            "theme_system" => "System".into(),
-            "theme_light" => "Light".into(),
-            "theme_dark" => "Dark".into(),
-            "audio_group" => "Audio".into(),
-            "volume" => "Volume".into(),
-            "mute" => "Mute".into(),
-            "device_group" => "Device".into(),
-            "power_group" => "Power".into(),
-            "io_group" => "I/O & Signal".into(),
-            "osd_group" => "OSD Settings".into(),
-            "reset_group" => "Reset".into(),
-            _ => key.replace("_", " ").to_string(),
-        },
-        AppLang::ES => match key {
-            "tab_main" => "Main".into(),
-            "tab_profiles" => "Profiles".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-            "app_settings" => "Application Settings".into(),
-            "app_lang" => "Language".into(),
-            "app_theme" => "Theme".into(),
-            "auto_start" => "Start on boot".into(),
-            "start_minimized" => "Start minimized".into(),
-            "theme_system" => "System".into(),
-            "theme_light" => "Light".into(),
-            "theme_dark" => "Dark".into(),
-            "audio_group" => "Audio".into(),
-            "volume" => "Volume".into(),
-            "mute" => "Mute".into(),
-            "device_group" => "Device".into(),
-            "power_group" => "Power".into(),
-            "io_group" => "I/O & Signal".into(),
-            "osd_group" => "OSD Settings".into(),
-            "reset_group" => "Reset".into(),
-            _ => key.replace("_", " ").to_string(),
-        },
-        AppLang::FR => match key {
-            "tab_main" => "Main".into(),
-            "tab_profiles" => "Profiles".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-            "app_settings" => "Application Settings".into(),
-            "app_lang" => "Language".into(),
-            "app_theme" => "Theme".into(),
-            "auto_start" => "Start on boot".into(),
-            "start_minimized" => "Start minimized".into(),
-            "theme_system" => "System".into(),
-            "theme_light" => "Light".into(),
-            "theme_dark" => "Dark".into(),
-            "audio_group" => "Audio".into(),
-            "volume" => "Volume".into(),
-            "mute" => "Mute".into(),
-            "device_group" => "Device".into(),
-            "power_group" => "Power".into(),
-            "io_group" => "I/O & Signal".into(),
-            "osd_group" => "OSD Settings".into(),
-            "reset_group" => "Reset".into(),
-            _ => key.replace("_", " ").to_string(),
-        },
-        AppLang::UA => match key {
-            "tab_main" => "Main".into(),
-            "tab_profiles" => "Profiles".into(),
-            "tab_gaming" => "Gaming".into(),
-            "tab_info" => "Info".into(),
-            "app_settings" => "Application Settings".into(),
-            "app_lang" => "Language".into(),
-            "app_theme" => "Theme".into(),
-            "auto_start" => "Start on boot".into(),
-            "start_minimized" => "Start minimized".into(),
-            "theme_system" => "System".into(),
-            "theme_light" => "Light".into(),
-            "theme_dark" => "Dark".into(),
-            "audio_group" => "Audio".into(),
-            "volume" => "Volume".into(),
-            "mute" => "Mute".into(),
-            "device_group" => "Device".into(),
-            "power_group" => "Power".into(),
-            "io_group" => "I/O & Signal".into(),
-            "osd_group" => "OSD Settings".into(),
-            "reset_group" => "Reset".into(),
-            _ => key.replace("_", " ").to_string(),
-        },
+        AppLang::PL => tr_pl(key),
+        _ => tr_en(key),
     }
+}
+
+fn tr_en(key: &str) -> String {
+    match key {
+        // Tabs
+        "tab_main" => "Main",
+        "tab_profiles" => "Profiles",
+        "tab_gaming" => "Gaming",
+        "tab_info" => "Info",
+
+        // Audio
+        "audio_group" => "Audio",
+        "volume" => "Volume",
+        "mute" => "Mute",
+
+        // Device
+        "device_group" => "Device",
+        "model" => "Model",
+        "refresh_rate" => "Refresh Rate",
+        "controller" => "Controller",
+        "firmware" => "Firmware",
+        "usage_time" => "Usage Time",
+
+        // Power
+        "power_group" => "Power",
+        "power_off" => "Turn off display",
+        "power_button" => "Power button",
+        "power_saving" => "Power Saving",
+        "power_led" => "LED Indicator",
+
+        // I/O
+        "io_group" => "I/O & Signal",
+        "input_source" => "Source",
+        "output_range" => "Output Range",
+        "quick_boot" => "Quick Boot",
+
+        // OSD
+        "osd_group" => "OSD Settings",
+        "osd_lang" => "Language",
+        "osd_time" => "Display Time",
+        "osd_h_pos" => "H Position",
+        "osd_v_pos" => "V Position",
+        "osd_trans" => "Transparency",
+
+        // Reset
+        "reset_group" => "Reset",
+        "reset_factory" => "Factory Settings",
+        "reset_br_con" => "Brightness & Contrast",
+        "reset_colors" => "RGB Colors",
+        "reset_btn" => "Reset",
+
+        // Profiles
+        "display_mode" => "Display Mode",
+        "active_mode" => "Active mode",
+        "manual_settings" => "Manual Settings",
+        "custom_config" => "Custom Configuration",
+        "brightness" => "Brightness",
+        "contrast" => "Contrast",
+        "sharpness" => "Sharpness",
+        "shadow_balance" => "Shadow Balance",
+        "cr_enhance" => "CR Enhance",
+        "color_enhance" => "Color Enhance",
+        "super_res" => "Super Resolution",
+        "low_blue_light" => "Low Blue Light",
+        "color_temp" => "Color Temperature",
+        "color_temp_profile" => "Profile",
+        "red" => "Red",
+        "green" => "Green",
+        "blue" => "Blue",
+        "lists_group" => "Selection Lists",
+        "hdr" => "HDR",
+        "gamma" => "Gamma",
+        "night_vision" => "Night Vision",
+        "dynamic_od" => "Dynamic OD",
+        "hue" => "Hue",
+        "saturation" => "Color Saturation",
+
+        // Gaming - Game Aid
+        "game_aid" => "Game Aid",
+        "screen_size" => "Screen Size (DualMode)",
+        "fps_counter" => "FPS/Hz Counter",
+        "crosshair" => "Crosshair",
+        "stopwatch" => "Stopwatch",
+        "game_time" => "Game Time",
+        "magnifier" => "Magnifier",
+        "alignment_aid" => "Alignment",
+        "hawkeye" => "Hawkeye Vision",
+        "position" => "Position",
+        "shape" => "Shape",
+        "color" => "Color",
+        "time_min" => "Time (min)",
+        "zoom" => "Zoom",
+        "size" => "Size",
+        "level" => "Level",
+
+        // Gaming - Picture Enhance
+        "pic_enhance" => "Picture Enhance",
+        "adaptive_sync" => "Adaptive-Sync",
+        "game_rush" => "Game Rush",
+        "local_dimming" => "Local Dimming",
+        "dyds" => "DyDs",
+        "shadow_enhance" => "Shadow Enhance",
+        "super_resolution" => "Super Resolution",
+        "halo_control" => "Halo Control",
+
+        // Info / App settings
+        "app_name" => "Titan Control",
+        "app_desc" => "Monitor control application",
+        "app_settings" => "Application Settings",
+        "app_lang" => "Language",
+        "app_theme" => "Application Theme",
+        "theme_system" => "System theme",
+        "theme_light" => "Light theme",
+        "theme_dark" => "Dark theme",
+        "auto_start" => "Start with system",
+        "start_minimized" => "Start minimized",
+        "about_app" => "About",
+        "source_code" => "Source Code",
+        "source_code_sub" => "GitHub Repository",
+        "open_btn" => "Open",
+        "report_bug" => "Report a Problem",
+        "report_bug_sub" => "Found a bug or have a suggestion?",
+        "report_btn" => "Report",
+        "support_author" => "Support the Author",
+        "support_author_sub" => "Help develop the project",
+        "buy_coffee" => "Buy a coffee",
+        "version" => "Version",
+
+        // Splash / Tray
+        "splash_searching" => "Searching for monitor...",
+        "tray_show" => "Show",
+        "tray_quit" => "Quit",
+
+        // Misc
+        "usage_fmt" => "{h} h {m} min",
+        "hz_fmt" => "{hz} Hz",
+
+        _ => key,
+    }
+    .into()
+}
+
+fn tr_pl(key: &str) -> String {
+    match key {
+        // Tabs
+        "tab_main" => "Monitor",
+        "tab_profiles" => "Profile",
+        "tab_gaming" => "Gaming",
+        "tab_info" => "Info",
+
+        // Audio
+        "audio_group" => "Dźwięk",
+        "volume" => "Głośność",
+        "mute" => "Wyciszenie",
+
+        // Device
+        "device_group" => "Urządzenie",
+        "model" => "Model",
+        "refresh_rate" => "Odświeżanie",
+        "controller" => "Kontroler",
+        "firmware" => "Firmware",
+        "usage_time" => "Czas pracy",
+
+        // Power
+        "power_group" => "Zasilanie",
+        "power_off" => "Wyłącz ekran",
+        "power_button" => "Przycisk zasilania",
+        "power_saving" => "Oszczędzanie energii",
+        "power_led" => "Dioda LED",
+
+        // I/O
+        "io_group" => "Wejścia i Sygnał",
+        "input_source" => "Źródło",
+        "output_range" => "Output Range",
+        "quick_boot" => "Quick Boot",
+
+        // OSD
+        "osd_group" => "Ustawienia OSD",
+        "osd_lang" => "Język",
+        "osd_time" => "Czas wyświetlania",
+        "osd_h_pos" => "Pozycja H",
+        "osd_v_pos" => "Pozycja V",
+        "osd_trans" => "Przezroczystość",
+
+        // Reset
+        "reset_group" => "Resetowanie",
+        "reset_factory" => "Ustawienia fabryczne",
+        "reset_br_con" => "Jasność i Kontrast",
+        "reset_colors" => "Kolory RGB",
+        "reset_btn" => "Resetuj",
+
+        // Profiles
+        "display_mode" => "Tryb Wyświetlania",
+        "active_mode" => "Aktywny tryb",
+        "manual_settings" => "Ustawienia Ręczne",
+        "custom_config" => "Konfiguracja Custom",
+        "brightness" => "Jasność",
+        "contrast" => "Kontrast",
+        "sharpness" => "Ostrość",
+        "shadow_balance" => "Shadow Balance",
+        "cr_enhance" => "CR Enhance",
+        "color_enhance" => "Color Enhance",
+        "super_res" => "Super Res",
+        "low_blue_light" => "Low Blue Light",
+        "color_temp" => "Temperatura Kolorów",
+        "color_temp_profile" => "Profil",
+        "red" => "Czerwony",
+        "green" => "Zielony",
+        "blue" => "Niebieski",
+        "lists_group" => "Listy Wyboru",
+        "hdr" => "HDR",
+        "gamma" => "Gamma",
+        "night_vision" => "Night Vision",
+        "dynamic_od" => "Dynamic OD",
+        "hue" => "Odcień (Hue)",
+        "saturation" => "Nasycenie kolorów",
+
+        // Gaming - Game Aid
+        "game_aid" => "Wspomaganie gry",
+        "screen_size" => "Rozmiar ekranu (DualMode)",
+        "fps_counter" => "Licznik FPS/Hz",
+        "crosshair" => "Celownik",
+        "stopwatch" => "Stoper",
+        "game_time" => "Czas gry",
+        "magnifier" => "Lupa",
+        "alignment_aid" => "Wyrównanie",
+        "hawkeye" => "Hawkeye Vision",
+        "position" => "Pozycja",
+        "shape" => "Kształt",
+        "color" => "Kolor",
+        "time_min" => "Czas (min)",
+        "zoom" => "Powiększenie",
+        "size" => "Rozmiar",
+        "level" => "Poziom",
+
+        // Gaming - Picture Enhance
+        "pic_enhance" => "Ulepszanie obrazu",
+        "adaptive_sync" => "Adaptive-Sync",
+        "game_rush" => "Game Rush",
+        "local_dimming" => "Lokalne przyciemnianie",
+        "dyds" => "DyDs",
+        "shadow_enhance" => "Shadow Enhance",
+        "super_resolution" => "Super Resolution",
+        "halo_control" => "Halo Control",
+
+        // Info / App settings
+        "app_name" => "Titan Control",
+        "app_desc" => "Aplikacja do sterowania monitorem",
+        "app_settings" => "Ustawienia Aplikacji",
+        "app_lang" => "Język aplikacji",
+        "app_theme" => "Motyw aplikacji",
+        "theme_system" => "Motyw systemowy",
+        "theme_light" => "Jasny motyw",
+        "theme_dark" => "Ciemny motyw",
+        "auto_start" => "Uruchom z systemem",
+        "start_minimized" => "Uruchom zminimalizowany",
+        "about_app" => "O programie",
+        "source_code" => "Kod źródłowy",
+        "source_code_sub" => "GitHub Repository",
+        "open_btn" => "Otwórz",
+        "report_bug" => "Zgłoś problem",
+        "report_bug_sub" => "Masz błąd lub propozycję?",
+        "report_btn" => "Zgłoś",
+        "support_author" => "Wesprzyj autora",
+        "support_author_sub" => "Pomóż w rozwoju projektu",
+        "buy_coffee" => "Kup kawę ☕",
+        "version" => "Wersja",
+
+        // Splash / Tray
+        "splash_searching" => "Szukam monitora...",
+        "tray_show" => "Pokaż",
+        "tray_quit" => "Wyjdź",
+
+        // Misc
+        "usage_fmt" => "{h} h {m} min",
+        "hz_fmt" => "{hz} Hz",
+
+        _ => return tr_en(key),
+    }
+    .into()
 }

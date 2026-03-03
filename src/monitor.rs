@@ -117,34 +117,39 @@ pub fn vcp_to_combo_index(values: &[u16], vcp_val: u16) -> u32 {
     values.iter().position(|&v| v == vcp_val).unwrap_or(0) as u32
 }
 
-fn get_edid_name(path: &str) -> String {
-    if let Ok(file) = File::open(path) {
-        let mut i2c = I2c::new(file);
-        if i2c.smbus_set_slave_address(0x50, false).is_ok() {
-            let mut data = [0u8; 128];
-            if i2c.read_exact(&mut data).is_ok() {
-                let mfg = format!(
-                    "{}{}{}",
-                    (((data[8] >> 2) & 0x1F) + 64) as char,
-                    ((((data[8] & 0x03) << 3) | ((data[9] >> 5) & 0x07)) + 64) as char,
-                    ((data[9] & 0x1F) + 64) as char
-                );
-                for b in 0..4 {
-                    let o = 54 + (b * 18);
-                    if data[o..o + 4] == [0, 0, 0, 0xFC] {
-                        let n: String = data[o + 5..o + 18]
-                            .iter()
-                            .filter(|&&c| c >= 32 && c <= 126)
-                            .map(|&c| c as char)
-                            .collect();
-                        return format!("{} {}", mfg, n.trim());
-                    }
-                }
-                return mfg;
-            }
+const EDID_HEADER: [u8; 8] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
+
+/// Try to read EDID from an i2c device. Returns Some(name) only if valid EDID header is found.
+fn get_edid_name(path: &str) -> Option<String> {
+    let file = File::open(path).ok()?;
+    let mut i2c = I2c::new(file);
+    i2c.smbus_set_slave_address(0x50, false).ok()?;
+    let mut data = [0u8; 128];
+    i2c.read_exact(&mut data).ok()?;
+
+    // Validate EDID magic header
+    if data[0..8] != EDID_HEADER {
+        return None;
+    }
+
+    let mfg = format!(
+        "{}{}{}",
+        (((data[8] >> 2) & 0x1F) + 64) as char,
+        ((((data[8] & 0x03) << 3) | ((data[9] >> 5) & 0x07)) + 64) as char,
+        ((data[9] & 0x1F) + 64) as char
+    );
+    for b in 0..4 {
+        let o = 54 + (b * 18);
+        if data[o..o + 4] == [0, 0, 0, 0xFC] {
+            let n: String = data[o + 5..o + 18]
+                .iter()
+                .filter(|&&c| c >= 32 && c <= 126)
+                .map(|&c| c as char)
+                .collect();
+            return Some(format!("{} {}", mfg, n.trim()));
         }
     }
-    "Monitor".into()
+    Some(mfg)
 }
 
 pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::Sender<UiCmd>) {
@@ -152,66 +157,75 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
         let mut found = None;
         for i in 0..32 {
             let p = format!("/dev/i2c-{}", i);
-            if std::path::Path::new(&p).exists() {
-                let name = get_edid_name(&p);
-                if let Ok(mut ddc) = ddc_i2c::from_i2c_device(&p) {
-                    if let Ok(b) = ddc.get_vcp_feature(0x10) {
-                        let mins = ddc.get_vcp_feature(0xF3).map(|v| v.value()).unwrap_or(0);
-                        let fe = ddc.get_vcp_feature(0xFE).map(|v| v.value()).unwrap_or(0);
-                        let f7 = ddc.get_vcp_feature(0xF7).map(|v| v.value()).unwrap_or(0);
-                        let fd = ddc.get_vcp_feature(0xFD).map(|v| v.value()).unwrap_or(0);
-
-                        let vals = MonitorValues {
-                            name,
-                            brightness: b.value(),
-                            contrast: ddc.get_vcp_feature(0x12).map(|v| v.value()).unwrap_or(0),
-                            volume: ddc.get_vcp_feature(0x62).map(|v| v.value()).unwrap_or(0),
-                            mute: ddc.get_vcp_feature(0x8D).map(|v| v.value()).unwrap_or(2),
-                            low_blue_light: ddc
-                                .get_vcp_feature(0xE1)
-                                .map(|v| v.value())
-                                .unwrap_or(0),
-                            r: ddc.get_vcp_feature(0x16).map(|v| v.value()).unwrap_or(0),
-                            g: ddc.get_vcp_feature(0x18).map(|v| v.value()).unwrap_or(0),
-                            b: ddc.get_vcp_feature(0x1A).map(|v| v.value()).unwrap_or(0),
-                            temp: ddc.get_vcp_feature(0x14).map(|v| v.value()).unwrap_or(0),
-                            input: ddc.get_vcp_feature(0x60).map(|v| v.value()).unwrap_or(0),
-                            lang: ddc.get_vcp_feature(0xCC).map(|v| v.value()).unwrap_or(0),
-                            mode: ddc.get_vcp_feature(0xE0).map(|v| v.value()).unwrap_or(0),
-                            hz: ddc
-                                .get_vcp_feature(0xAE)
-                                .map(|v| v.value() / 100)
-                                .unwrap_or(0),
-                            usage_mins: mins,
-                            sharpness: ddc.get_vcp_feature(0x87).map(|v| v.value()).unwrap_or(0),
-                            cr_enhance: ddc.get_vcp_feature(0xE2).map(|v| v.value()).unwrap_or(0),
-                            color_enhance: ddc
-                                .get_vcp_feature(0xE3)
-                                .map(|v| v.value())
-                                .unwrap_or(0),
-                            super_res: ddc.get_vcp_feature(0xE4).map(|v| v.value()).unwrap_or(0),
-                            shadow_bal: ddc.get_vcp_feature(0xE5).map(|v| v.value()).unwrap_or(0),
-                            hdr: ddc.get_vcp_feature(0xE6).map(|v| v.value()).unwrap_or(0),
-                            gamma: ddc.get_vcp_feature(0x72).map(|v| v.value()).unwrap_or(0),
-                            firm: format!(
-                                "v {}.{}.{}",
-                                (fe >> 12) & 0xF,
-                                (fe >> 8) & 0xF,
-                                fe & 0xFF
-                            ),
-                            ctrl: format!(
-                                "NB{}{}-{:02X}",
-                                (f7 >> 8) as u8 as char,
-                                (f7 & 0xFF) as u8 as char,
-                                fd
-                            ),
-                        };
-                        let _ = ui_tx.send_blocking(UiCmd::MonitorFound(vals));
-                        found = Some(ddc);
-                        break;
-                    }
-                }
+            if !std::path::Path::new(&p).exists() {
+                continue;
             }
+            // Only accept devices with valid EDID (confirms it's a real monitor)
+            let name = match get_edid_name(&p) {
+                Some(n) => n,
+                None => continue,
+            };
+            let mut ddc = match ddc_i2c::from_i2c_device(&p) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let b = match ddc.get_vcp_feature(0x10) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let mins = ddc.get_vcp_feature(0xF3).map(|v| v.value()).unwrap_or(0);
+            let fe = ddc.get_vcp_feature(0xFE).map(|v| v.value()).unwrap_or(0);
+            let f7 = ddc.get_vcp_feature(0xF7).map(|v| v.value()).unwrap_or(0);
+            let fd = ddc.get_vcp_feature(0xFD).map(|v| v.value()).unwrap_or(0);
+
+            let vals = MonitorValues {
+                name,
+                brightness: b.value(),
+                contrast: ddc.get_vcp_feature(0x12).map(|v| v.value()).unwrap_or(0),
+                volume: ddc.get_vcp_feature(0x62).map(|v| v.value()).unwrap_or(0),
+                mute: ddc.get_vcp_feature(0x8D).map(|v| v.value()).unwrap_or(2),
+                low_blue_light: ddc
+                    .get_vcp_feature(0xE1)
+                    .map(|v| v.value())
+                    .unwrap_or(0),
+                r: ddc.get_vcp_feature(0x16).map(|v| v.value()).unwrap_or(0),
+                g: ddc.get_vcp_feature(0x18).map(|v| v.value()).unwrap_or(0),
+                b: ddc.get_vcp_feature(0x1A).map(|v| v.value()).unwrap_or(0),
+                temp: ddc.get_vcp_feature(0x14).map(|v| v.value()).unwrap_or(0),
+                input: ddc.get_vcp_feature(0x60).map(|v| v.value()).unwrap_or(0),
+                lang: ddc.get_vcp_feature(0xCC).map(|v| v.value()).unwrap_or(0),
+                mode: ddc.get_vcp_feature(0xE0).map(|v| v.value()).unwrap_or(0),
+                hz: ddc
+                    .get_vcp_feature(0xAE)
+                    .map(|v| v.value() / 100)
+                    .unwrap_or(0),
+                usage_mins: mins,
+                sharpness: ddc.get_vcp_feature(0x87).map(|v| v.value()).unwrap_or(0),
+                cr_enhance: ddc.get_vcp_feature(0xE2).map(|v| v.value()).unwrap_or(0),
+                color_enhance: ddc
+                    .get_vcp_feature(0xE3)
+                    .map(|v| v.value())
+                    .unwrap_or(0),
+                super_res: ddc.get_vcp_feature(0xE4).map(|v| v.value()).unwrap_or(0),
+                shadow_bal: ddc.get_vcp_feature(0xE5).map(|v| v.value()).unwrap_or(0),
+                hdr: ddc.get_vcp_feature(0xE6).map(|v| v.value()).unwrap_or(0),
+                gamma: ddc.get_vcp_feature(0x72).map(|v| v.value()).unwrap_or(0),
+                firm: format!(
+                    "v {}.{}.{}",
+                    (fe >> 12) & 0xF,
+                    (fe >> 8) & 0xF,
+                    fe & 0xFF
+                ),
+                ctrl: format!(
+                    "NB{}{}-{:02X}",
+                    (f7 >> 8) as u8 as char,
+                    (f7 & 0xFF) as u8 as char,
+                    fd
+                ),
+            };
+            let _ = ui_tx.send_blocking(UiCmd::MonitorFound(vals));
+            found = Some(ddc);
+            break;
         }
         let mut ddc = match found {
             Some(d) => d,

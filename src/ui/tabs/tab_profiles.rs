@@ -176,20 +176,40 @@ pub fn build(
 
     let mut h_v = Vec::new();
     let mut s_v = Vec::new();
-    let _g_hue = PreferencesGroup::new();
-    tr_group(u, &_g_hue, "hue", lang);
-    let _g_sat = PreferencesGroup::new();
-    tr_group(u, &_g_sat, "saturation", lang);
-    let _colors = ["R", "G", "B", "C", "M", "Y"];
-    for _i in 0..6 {
+    let g_hue = PreferencesGroup::new();
+    tr_group(u, &g_hue, "hue", lang);
+    let g_sat = PreferencesGroup::new();
+    tr_group(u, &g_sat, "saturation", lang);
+    let colors = ["R", "G", "B", "C", "M", "Y"];
+
+    let grid_hue = Grid::builder().column_spacing(20).row_spacing(12).build();
+    let grid_sat = Grid::builder().column_spacing(20).row_spacing(12).build();
+    for i in 0..6 {
         let h = create_scale();
         let s = create_scale();
+        let lbl_h = Label::builder()
+            .label(colors[i])
+            .halign(Align::Start)
+            .width_request(120)
+            .build();
+        let lbl_s = Label::builder()
+            .label(colors[i])
+            .halign(Align::Start)
+            .width_request(120)
+            .build();
+        grid_hue.attach(&lbl_h, 0, i as i32, 1, 1);
+        grid_hue.attach(&h, 1, i as i32, 1, 1);
+        grid_sat.attach(&lbl_s, 0, i as i32, 1, 1);
+        grid_sat.attach(&s, 1, i as i32, 1, 1);
         h_v.push(h);
         s_v.push(s);
     }
+    g_hue.add(&grid_hue);
+    g_sat.add(&grid_sat);
+    custom_container.append(&g_hue);
+    custom_container.append(&g_sat);
 
     let g_wrapper = PreferencesGroup::new();
-    tr_group(u, &g_wrapper, "custom_config", lang);
     g_wrapper.add(&custom_revealer);
     page.add(&g_wrapper);
 

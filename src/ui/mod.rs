@@ -10,8 +10,9 @@ use libadwaita::{self as adw, ExpanderRow};
 pub struct MainWidgets {
     pub window: adw::ApplicationWindow,
     pub combo_lang: ComboRow,
+    pub combo_theme: ComboRow,
 
-    // --- SYSTEM (tab_main) ---
+    // --- SYSTEM (tab_display) ---
     pub row_info_model: ActionRow,
     pub row_info_hz: ActionRow,
     pub row_info_controller: ActionRow,
@@ -39,7 +40,7 @@ pub struct MainWidgets {
     pub button_reset_brightness_contrast: Button,
     pub button_reset_color: Button,
 
-    // --- PROFILE (tab_presets) ---
+    // --- PROFILE (tab_profiles) ---
     pub combo_picture_mode: ComboRow,
     pub button_profile_default: ToggleButton,
     pub button_profile_custom: ToggleButton,
@@ -105,16 +106,16 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
     let css = gtk4::CssProvider::new();
     css.load_from_data(concat!(
         ".linked > button.toggle {",
-        "  min-height: 24px;",
+        "  min-height: 32px;",
         "  min-width: 0;",
-        "  padding: 2px 6px;",
-        "  font-size: 11px;",
+        "  padding: 4px 12px;",
+        "  font-size: 13px;",
         "}",
         ".color-btn.toggle {",
-        "  min-width: 24px;",
-        "  min-height: 24px;",
+        "  min-width: 28px;",
+        "  min-height: 28px;",
         "  padding: 0;",
-        "  border-radius: 0;",
+        "  border: 1px solid rgba(255,255,255,0.3);",
         "}",
         ".color-btn.color-red { background-color: #ff0000; }",
         ".color-btn.color-yel { background-color: #ffff00; }",
@@ -170,7 +171,7 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         b1,
         b2,
         b3,
-    ) = tabs::tab_main::build(lang, updaters);
+    ) = tabs::tab_display::build(lang, updaters);
 
     // 2. PROFILE
     let (
@@ -197,7 +198,7 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         cod,
         h_v,
         s_v,
-    ) = tabs::tab_presets::build(lang, updaters);
+    ) = tabs::tab_profiles::build(lang, updaters);
 
     // 3. GAMING
     let (
@@ -239,27 +240,26 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         s_halo_e,
     ) = tabs::tab_gaming::build(lang, updaters);
 
-    let (p_inf, c_lang) = tabs::tab_info::build(lang, updaters);
+    let (p_inf, c_lang, c_theme) = tabs::tab_info::build(lang, updaters);
 
     stack
-        .add_titled(&p_main, Some("main"), &tr(lang, "tab_main"))
-        .set_icon_name(Some("computer-symbolic"));
+        .add_titled(&p_main, Some("main"), &tr(lang, "tab_display"))
+        .set_icon_name(Some("display-symbolic"));
     stack
         .add_titled(&p_pre, Some("profiles"), &tr(lang, "tab_profiles"))
         .set_icon_name(Some("applications-graphics-symbolic"));
     stack
         .add_titled(&p_gam, Some("gaming"), &tr(lang, "tab_gaming"))
-        .set_icon_name(Some("input-gaming-symbolic"));
+        .set_icon_name(Some("applications-games-symbolic"));
     stack
         .add_titled(&p_inf, Some("info"), &tr(lang, "tab_info"))
         .set_icon_name(Some("help-about-symbolic"));
 
-    // Register stack tab titles for live update
     {
         let s = stack.clone();
         updaters.borrow_mut().push(Box::new(move |l| {
             if let Some(pg) = s.child_by_name("main") {
-                s.page(&pg).set_title(Some(&tr(l, "tab_main")));
+                s.page(&pg).set_title(Some(&tr(l, "tab_display")));
             }
             if let Some(pg) = s.child_by_name("profiles") {
                 s.page(&pg).set_title(Some(&tr(l, "tab_profiles")));
@@ -287,6 +287,7 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
     MainWidgets {
         window,
         combo_lang: c_lang,
+        combo_theme: c_theme,
         row_info_model: im,
         row_info_hz: rh,
         row_info_controller: rc,

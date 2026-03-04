@@ -1,13 +1,11 @@
 [package]
 name = "titan_control"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [dependencies]
 gtk4 = "0.11"
 libadwaita = "0.9.1"
-ddc = "0.2.2"
-ddc-i2c = { version = "0.2.2", features = ["with-linux"] }
 async-channel = "2.5.0"
 ksni = { version = "0.3", features = ["blocking"] }
 image = "0.25.9"

@@ -1,7 +1,7 @@
 use crate::i18n::{AppLang, LangUpdaters, tr};
 use adw::prelude::*;
 use adw::{ActionRow, ExpanderRow, PreferencesGroup, PreferencesPage};
-use gtk4::{Adjustment, Button, Label, Orientation, Scale};
+use gtk4::{Adjustment, Button, EventControllerScroll, EventControllerScrollFlags, Label, Orientation, PositionType, Scale, glib};
 use libadwaita as adw;
 
 pub fn create_scale() -> Scale {
@@ -10,12 +10,21 @@ pub fn create_scale() -> Scale {
 
 pub fn create_scale_with_max(max: f64) -> Scale {
     let page = if max <= 10.0 { 1.0 } else { 10.0 };
-    Scale::builder()
+    let scale = Scale::builder()
         .orientation(Orientation::Horizontal)
         .adjustment(&Adjustment::new(0.0, 0.0, max, 1.0, page, 0.0))
-        .hexpand(false)
-        .width_request(200)
-        .build()
+        .hexpand(true)
+        .draw_value(true)
+        .value_pos(PositionType::Right)
+        .build();
+    scale.set_digits(0);
+
+    // Disable scroll wheel
+    let scroll_ctrl = EventControllerScroll::new(EventControllerScrollFlags::VERTICAL);
+    scroll_ctrl.connect_scroll(|_, _, _| glib::Propagation::Stop);
+    scale.add_controller(scroll_ctrl);
+
+    scale
 }
 
 pub fn tr_page(u: &LangUpdaters, w: &PreferencesPage, key: &'static str, lang: &AppLang) {

@@ -5,7 +5,7 @@ use adw::{ActionRow, ComboRow, PreferencesGroup, PreferencesPage};
 use gtk4::{Align, Button, StringList, Switch};
 use libadwaita as adw;
 
-pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
+pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow, ComboRow) {
     let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_info", lang);
 
@@ -28,22 +28,31 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
     tr_row(u, &c_lang.clone().upcast::<ActionRow>(), "app_lang", lang);
 
     let c_theme = ComboRow::new();
+
     tr_row(u, &c_theme.clone().upcast::<ActionRow>(), "app_theme", lang);
     {
-        let model = StringList::new(&[
-            &crate::i18n::tr(lang, "theme_system"),
-            &crate::i18n::tr(lang, "theme_light"),
-            &crate::i18n::tr(lang, "theme_dark"),
-        ]);
+        let model = StringList::new(
+            &[
+                crate::i18n::tr(lang, "theme_system").as_str(),
+                crate::i18n::tr(lang, "theme_light").as_str(),
+                crate::i18n::tr(lang, "theme_dark").as_str(),
+            ][..],
+        );
+
         c_theme.set_model(Some(&model));
         let ct = c_theme.clone();
+
         u.borrow_mut().push(Box::new(move |l| {
             let sel = ct.selected();
-            let m = StringList::new(&[
-                &crate::i18n::tr(l, "theme_system"),
-                &crate::i18n::tr(l, "theme_light"),
-                &crate::i18n::tr(l, "theme_dark"),
-            ]);
+
+            let m = StringList::new(
+                &[
+                    crate::i18n::tr(l, "theme_system").as_str(),
+                    crate::i18n::tr(l, "theme_light").as_str(),
+                    crate::i18n::tr(l, "theme_dark").as_str(),
+                ][..],
+            );
+
             ct.set_model(Some(&m));
             ct.set_selected(sel);
         }));
@@ -117,5 +126,5 @@ pub fn build(lang: &AppLang, u: &LangUpdaters) -> (PreferencesPage, ComboRow) {
     page.add(&g_app_settings);
     page.add(&g_about);
 
-    (page, c_lang)
+    (page, c_lang, c_theme)
 }

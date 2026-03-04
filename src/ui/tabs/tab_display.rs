@@ -1,4 +1,4 @@
-use crate::i18n::{AppLang, LangUpdaters};
+use crate::i18n::{AppLang, LangUpdaters, tr};
 use crate::monitor;
 use crate::ui::helpers::*;
 use adw::prelude::*;
@@ -39,7 +39,7 @@ pub fn build(
     Button,
 ) {
     let page = PreferencesPage::builder().build();
-    tr_page(u, &page, "tab_main", lang);
+    tr_page(u, &page, "tab_display", lang);
 
     let g_dev = PreferencesGroup::new();
     tr_group(u, &g_dev, "device_group", lang);
@@ -99,10 +99,28 @@ pub fn build(
 
     let g_osd = PreferencesGroup::new();
     tr_group(u, &g_osd, "osd_group", lang);
+    let osd_names: Vec<String> = monitor::OSD_LANGUAGE_KEYS
+        .iter()
+        .map(|k| tr(lang, k))
+        .collect();
+    let osd_strs: Vec<&str> = osd_names.iter().map(|s| s.as_str()).collect();
     let cl = ComboRow::builder()
-        .model(&StringList::new(&monitor::OSD_LANGUAGE_NAMES[..]))
+        .model(&StringList::new(&osd_strs))
         .build();
     tr_row(u, &cl.clone().upcast::<ActionRow>(), "osd_lang", lang);
+    {
+        let cl_ref = cl.clone();
+        u.borrow_mut().push(Box::new(move |l| {
+            let sel = cl_ref.selected();
+            let names: Vec<String> = monitor::OSD_LANGUAGE_KEYS
+                .iter()
+                .map(|k| tr(l, k))
+                .collect();
+            let strs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            cl_ref.set_model(Some(&StringList::new(&strs)));
+            cl_ref.set_selected(sel);
+        }));
+    }
     let s_time = create_scale_with_max(60.0);
     let r_time = ActionRow::new();
     tr_row(u, &r_time, "osd_time", lang);
@@ -127,7 +145,7 @@ pub fn build(
 
     let g_pwr = PreferencesGroup::new();
     tr_group(u, &g_pwr, "power_group", lang);
-    let bo = Button::new();
+    let bo = Button::builder().valign(Align::Center).build();
     bo.add_css_class("destructive-action");
     tr_button(u, &bo, "power_off", lang);
     let r_o = ActionRow::new();
@@ -187,18 +205,24 @@ pub fn build(
 
     let g_res = PreferencesGroup::new();
     tr_group(u, &g_res, "reset_group", lang);
-    let b1 = Button::new();
+
+    let b1 = Button::builder().valign(Align::Center).build();
     tr_button(u, &b1, "reset_btn", lang);
-    let b2 = Button::new();
+
+    let b2 = Button::builder().valign(Align::Center).build();
     tr_button(u, &b2, "reset_btn", lang);
-    let b3 = Button::new();
+
+    let b3 = Button::builder().valign(Align::Center).build();
     tr_button(u, &b3, "reset_btn", lang);
+
     let row1 = ActionRow::new();
     tr_row(u, &row1, "reset_factory", lang);
     row1.add_suffix(&b1);
+
     let row2 = ActionRow::new();
     tr_row(u, &row2, "reset_br_con", lang);
     row2.add_suffix(&b2);
+
     let row3 = ActionRow::new();
     tr_row(u, &row3, "reset_colors", lang);
     row3.add_suffix(&b3);

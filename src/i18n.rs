@@ -62,7 +62,7 @@ pub fn tr(lang: &AppLang, key: &str) -> String {
 fn tr_en(key: &str) -> String {
     match key {
         // Tabs
-        "tab_main" => "Display",
+        "tab_display" => "Display",
         "tab_profiles" => "Profiles",
         "tab_gaming" => "Gaming",
         "tab_info" => "Info",
@@ -88,7 +88,7 @@ fn tr_en(key: &str) -> String {
         "power_led" => "LED Indicator",
 
         // I/O
-        "io_group" => "I/O & Signal",
+        "io_group" => "I/O &amp; Signal",
         "input_source" => "Source",
         "output_range" => "Output Range",
         "quick_boot" => "Quick Boot",
@@ -104,7 +104,7 @@ fn tr_en(key: &str) -> String {
         // Reset
         "reset_group" => "Reset",
         "reset_factory" => "Factory Settings",
-        "reset_br_con" => "Brightness & Contrast",
+        "reset_br_con" => "Brightness &amp; Contrast",
         "reset_colors" => "RGB Colors",
         "reset_btn" => "Reset",
 
@@ -190,6 +190,30 @@ fn tr_en(key: &str) -> String {
         "tray_show" => "Show",
         "tray_quit" => "Quit",
 
+        // OSD Languages
+        "osd_lang_chinese_h" => "Chinese (Simplified)",
+        "osd_lang_english" => "English",
+        "osd_lang_french" => "French",
+        "osd_lang_german" => "German",
+        "osd_lang_italian" => "Italian",
+        "osd_lang_japanese" => "Japanese",
+        "osd_lang_korean" => "Korean",
+        "osd_lang_portuguese" => "Portuguese",
+        "osd_lang_russian" => "Russian",
+        "osd_lang_spanish" => "Spanish",
+        "osd_lang_turkish" => "Turkish",
+        "osd_lang_chinese_t" => "Chinese (Traditional)",
+        "osd_lang_portuguese_br" => "Portuguese (Brazil)",
+        "osd_lang_arabic" => "Arabic",
+        "osd_lang_dutch" => "Dutch",
+        "osd_lang_finnish" => "Finnish",
+        "osd_lang_greek" => "Greek",
+        "osd_lang_hindi" => "Hindi",
+        "osd_lang_polish" => "Polish",
+        "osd_lang_thai" => "Thai",
+        "osd_lang_ukrainian" => "Ukrainian",
+        "osd_lang_vietnamese" => "Vietnamese",
+
         // Misc
         "usage_fmt" => "{h} h {m} min",
         "hz_fmt" => "{hz} Hz",
@@ -202,10 +226,10 @@ fn tr_en(key: &str) -> String {
 fn tr_pl(key: &str) -> String {
     match key {
         // Tabs
-        "tab_main" => "Monitor",
+        "tab_display" => "Monitor",
         "tab_profiles" => "Profile",
         "tab_gaming" => "Gaming",
-        "tab_info" => "Info",
+        "tab_info" => "Informacje",
 
         // Audio
         "audio_group" => "Dźwięk",
@@ -329,6 +353,30 @@ fn tr_pl(key: &str) -> String {
         "splash_searching" => "Szukam monitora...",
         "tray_show" => "Pokaż",
         "tray_quit" => "Wyjdź",
+
+        // OSD Languages
+        "osd_lang_chinese_h" => "Chiński (uproszczony)",
+        "osd_lang_english" => "Angielski",
+        "osd_lang_french" => "Francuski",
+        "osd_lang_german" => "Niemiecki",
+        "osd_lang_italian" => "Włoski",
+        "osd_lang_japanese" => "Japoński",
+        "osd_lang_korean" => "Koreański",
+        "osd_lang_portuguese" => "Portugalski",
+        "osd_lang_russian" => "Rosyjski",
+        "osd_lang_spanish" => "Hiszpański",
+        "osd_lang_turkish" => "Turecki",
+        "osd_lang_chinese_t" => "Chiński (tradycyjny)",
+        "osd_lang_portuguese_br" => "Portugalski (Brazylia)",
+        "osd_lang_arabic" => "Arabski",
+        "osd_lang_dutch" => "Holenderski",
+        "osd_lang_finnish" => "Fiński",
+        "osd_lang_greek" => "Grecki",
+        "osd_lang_hindi" => "Hindi",
+        "osd_lang_polish" => "Polski",
+        "osd_lang_thai" => "Tajski",
+        "osd_lang_ukrainian" => "Ukraiński",
+        "osd_lang_vietnamese" => "Wietnamski",
 
         // Misc
         "usage_fmt" => "{h} h {m} min",

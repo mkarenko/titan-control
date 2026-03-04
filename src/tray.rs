@@ -1,11 +1,8 @@
-use crate::i18n::{tr, AppLang};
+use crate::i18n::{AppLang, tr};
 use adw::prelude::*;
 use gtk4::glib;
-use image::GenericImageView;
 use ksni::blocking::TrayMethods;
 use libadwaita as adw;
-use std::path::Path;
-use std::sync::LazyLock;
 
 enum TrayAction {
     ToggleVisibility,
@@ -31,8 +28,17 @@ impl ksni::Tray for TitanTray {
         ksni::Category::Hardware
     }
 
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![ICON.clone()]
+    fn icon_name(&self) -> String {
+        "display-symbolic".into()
+    }
+
+    fn icon_theme_path(&self) -> String {
+        if let Ok(mut path) = std::env::current_dir() {
+            path.push("assets");
+            path.push("icons");
+            return path.to_string_lossy().into_owned();
+        }
+        String::new()
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
@@ -51,6 +57,7 @@ impl ksni::Tray for TitanTray {
         vec![
             StandardItem {
                 label: tr(&self.lang, "tray_show"),
+                icon_name: "document-properties-symbolic".into(),
                 activate: Box::new(|this: &mut Self| {
                     let _ = this.tx.send_blocking(TrayAction::Show);
                 }),
@@ -60,7 +67,7 @@ impl ksni::Tray for TitanTray {
             ksni::MenuItem::Separator,
             StandardItem {
                 label: tr(&self.lang, "tray_quit"),
-                icon_name: "application-exit".into(),
+                icon_name: "application-exit-symbolic".into(),
                 activate: Box::new(|this: &mut Self| {
                     let _ = this.tx.send_blocking(TrayAction::Quit);
                 }),
@@ -70,46 +77,6 @@ impl ksni::Tray for TitanTray {
         ]
     }
 }
-
-static ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
-    let path = Path::new("assets/icons/tray-light.png");
-    if path.exists() {
-        let img = image::open(path).expect("Nie można załadować ikony");
-        let (width, height) = img.dimensions();
-        let mut data = img.into_rgba8().into_vec();
-        for pixel in data.chunks_exact_mut(4) {
-            pixel.rotate_right(1);
-        }
-        ksni::Icon {
-            width: width as i32,
-            height: height as i32,
-            data,
-        }
-    } else {
-        let size = 32i32;
-        let mut data = vec![0u8; (size * size * 4) as usize];
-        let center = size as f32 / 2.0;
-        let radius = center - 1.0;
-        for y in 0..size {
-            for x in 0..size {
-                let idx = ((y * size + x) * 4) as usize;
-                let dx = x as f32 - center;
-                let dy = y as f32 - center;
-                if dx * dx + dy * dy <= radius * radius {
-                    data[idx] = 255; // A
-                    data[idx + 1] = 80; // R
-                    data[idx + 2] = 140; // G
-                    data[idx + 3] = 240; // B
-                }
-            }
-        }
-        ksni::Icon {
-            width: size,
-            height: size,
-            data,
-        }
-    }
-});
 
 pub fn setup_tray(
     app: &adw::Application,

@@ -8,6 +8,33 @@ use gtk4::{
 };
 use libadwaita as adw;
 
+fn create_linked_buttons(labels: &[&str]) -> (GtkBox, Vec<ToggleButton>) {
+    let container = GtkBox::builder()
+        .css_classes(["linked"])
+        .halign(Align::End)
+        .valign(Align::Center)
+        .build();
+    let mut buttons = Vec::new();
+
+    let first_btn = ToggleButton::builder()
+        .label(labels[0])
+        .active(true)
+        .build();
+    container.append(&first_btn);
+    buttons.push(first_btn.clone());
+
+    for label in &labels[1..] {
+        let btn = ToggleButton::builder()
+            .label(*label)
+            .group(&first_btn)
+            .build();
+        container.append(&btn);
+        buttons.push(btn);
+    }
+
+    (container, buttons)
+}
+
 pub fn build(
     lang: &AppLang,
     u: &LangUpdaters,
@@ -25,14 +52,14 @@ pub fn build(
     Scale,
     Scale,
     Scale,
-    ComboRow,
+    Vec<ToggleButton>,
     Scale,
     Scale,
     Scale,
-    ComboRow,
-    ComboRow,
-    ComboRow,
-    ComboRow,
+    Vec<ToggleButton>,
+    Vec<ToggleButton>,
+    Vec<ToggleButton>,
+    Vec<ToggleButton>,
     Vec<Scale>,
     Vec<Scale>,
 ) {
@@ -77,8 +104,7 @@ pub fn build(
     let custom_container = GtkBox::new(Orientation::Vertical, 18);
     custom_revealer.set_child(Some(&custom_container));
 
-    let g_cust = PreferencesGroup::new();
-    tr_group(u, &g_cust, "manual_settings", lang);
+    let (g_cust_wrap, g_cust) = create_collapsible_group(u, "manual_settings", lang);
     let grid = Grid::builder().column_spacing(20).row_spacing(12).build();
     let sb = create_scale();
     let sc = create_scale();
@@ -108,78 +134,65 @@ pub fn build(
             .build();
         tr_label(u, &lbl, lab_keys[i], lang);
         grid.attach(&lbl, 0, i as i32, 1, 1);
-        grid.attach(all_w[i], 1, i as i32, 1, 1);
+        grid.attach(&create_scale_control(all_w[i]), 1, i as i32, 1, 1);
     }
     g_cust.add(&grid);
-    custom_container.append(&g_cust);
+    custom_container.append(&g_cust_wrap);
 
-    let g_temp = PreferencesGroup::new();
-    tr_group(u, &g_temp, "color_temp", lang);
-    let combo_temp = ComboRow::builder()
-        .model(&StringList::new(
-            &["Warm", "Cold", "Natural", "User1", "User2", "User3"][..],
-        ))
-        .build();
-    tr_row(
-        u,
-        &combo_temp.clone().upcast::<ActionRow>(),
-        "color_temp_profile",
-        lang,
-    );
+    let (g_temp_wrap, g_temp) = create_collapsible_group(u, "color_temp", lang);
+    let (box_temp, combo_temp) =
+        create_linked_buttons(&["Warm", "Natural", "Cold", "User 1", "User 2", "User 3"][..]);
+    let row_temp = ActionRow::new();
+    tr_row(u, &row_temp, "color_temp_profile", lang);
+    row_temp.add_suffix(&box_temp);
     let r_r = ActionRow::new();
     let sr = create_scale();
     tr_row(u, &r_r, "red", lang);
-    r_r.add_suffix(&sr);
+    r_r.add_suffix(&create_scale_control(&sr));
     let r_g = ActionRow::new();
     let sg = create_scale();
     tr_row(u, &r_g, "green", lang);
-    r_g.add_suffix(&sg);
+    r_g.add_suffix(&create_scale_control(&sg));
     let r_bl = ActionRow::new();
     let sbl = create_scale();
     tr_row(u, &r_bl, "blue", lang);
-    r_bl.add_suffix(&sbl);
-    g_temp.add(&combo_temp);
+    r_bl.add_suffix(&create_scale_control(&sbl));
+    g_temp.add(&row_temp);
     g_temp.add(&r_r);
     g_temp.add(&r_g);
     g_temp.add(&r_bl);
-    custom_container.append(&g_temp);
+    custom_container.append(&g_temp_wrap);
 
-    let g_list = PreferencesGroup::new();
-    tr_group(u, &g_list, "lists_group", lang);
-    let c_hdr = ComboRow::builder()
-        .model(&StringList::new(&["Disabled", "Auto", "Game", "Movie"][..]))
-        .build();
-    tr_row(u, &c_hdr.clone().upcast::<ActionRow>(), "hdr", lang);
-    let c_gam = ComboRow::builder()
-        .model(&StringList::new(
-            &["1.8", "2.0", "2.2", "2.4", "2.6", "S.curve"][..],
-        ))
-        .build();
-    tr_row(u, &c_gam.clone().upcast::<ActionRow>(), "gamma", lang);
-    let c_nv = ComboRow::builder()
-        .model(&StringList::new(
-            &["Disabled", "Lvl 1", "Lvl 2", "Lvl 3", "Auto-L1", "Auto-L2"][..],
-        ))
-        .build();
-    tr_row(u, &c_nv.clone().upcast::<ActionRow>(), "night_vision", lang);
-    let c_od = ComboRow::builder()
-        .model(&StringList::new(
-            &["Disabled", "Lvl 1", "Lvl 2", "Lvl 3", "Topspeed"][..],
-        ))
-        .build();
-    tr_row(u, &c_od.clone().upcast::<ActionRow>(), "dynamic_od", lang);
-    g_list.add(&c_hdr);
-    g_list.add(&c_gam);
-    g_list.add(&c_nv);
-    g_list.add(&c_od);
-    custom_container.append(&g_list);
+    let (g_list_wrap, g_list) = create_collapsible_group(u, "lists_group", lang);
+    let (box_hdr, c_hdr) = create_linked_buttons(&["Disabled", "Auto", "Game", "Movie"][..]);
+    let r_hdr = ActionRow::new();
+    tr_row(u, &r_hdr, "hdr", lang);
+    r_hdr.add_suffix(&box_hdr);
+    let (box_gam, c_gam) =
+        create_linked_buttons(&["1.8", "2.0", "2.2", "2.4", "2.6", "S Curve"][..]);
+    let r_gam = ActionRow::new();
+    tr_row(u, &r_gam, "gamma", lang);
+    r_gam.add_suffix(&box_gam);
+    let (box_nv, c_nv) =
+        create_linked_buttons(&["Disabled", "Lvl 1", "Lvl 2", "Auto-L1", "Auto-L2"][..]);
+    let r_nv = ActionRow::new();
+    tr_row(u, &r_nv, "night_vision", lang);
+    r_nv.add_suffix(&box_nv);
+    let (box_od, c_od) =
+        create_linked_buttons(&["Disabled", "Lvl 1", "Lvl 2", "Lvl 3", "Topspeed"][..]);
+    let r_od = ActionRow::new();
+    tr_row(u, &r_od, "dynamic_od", lang);
+    r_od.add_suffix(&box_od);
+    g_list.add(&r_hdr);
+    g_list.add(&r_gam);
+    g_list.add(&r_nv);
+    g_list.add(&r_od);
+    custom_container.append(&g_list_wrap);
 
     let mut h_v = Vec::new();
     let mut s_v = Vec::new();
-    let g_hue = PreferencesGroup::new();
-    tr_group(u, &g_hue, "hue", lang);
-    let g_sat = PreferencesGroup::new();
-    tr_group(u, &g_sat, "saturation", lang);
+    let (g_hue_wrap, g_hue) = create_collapsible_group(u, "hue", lang);
+    let (g_sat_wrap, g_sat) = create_collapsible_group(u, "saturation", lang);
     let colors = ["R", "G", "B", "C", "M", "Y"];
 
     let grid_hue = Grid::builder().column_spacing(20).row_spacing(12).build();
@@ -198,16 +211,16 @@ pub fn build(
             .width_request(120)
             .build();
         grid_hue.attach(&lbl_h, 0, i as i32, 1, 1);
-        grid_hue.attach(&h, 1, i as i32, 1, 1);
+        grid_hue.attach(&create_scale_control(&h), 1, i as i32, 1, 1);
         grid_sat.attach(&lbl_s, 0, i as i32, 1, 1);
-        grid_sat.attach(&s, 1, i as i32, 1, 1);
+        grid_sat.attach(&create_scale_control(&s), 1, i as i32, 1, 1);
         h_v.push(h);
         s_v.push(s);
     }
     g_hue.add(&grid_hue);
     g_sat.add(&grid_sat);
-    custom_container.append(&g_hue);
-    custom_container.append(&g_sat);
+    custom_container.append(&g_hue_wrap);
+    custom_container.append(&g_sat_wrap);
 
     let g_wrapper = PreferencesGroup::new();
     g_wrapper.add(&custom_revealer);

@@ -5,7 +5,7 @@ use ksni::blocking::TrayMethods;
 use libadwaita as adw;
 
 enum TrayAction {
-    ToggleVisibility,
+    Toggle,
     Show,
     Quit,
 }
@@ -17,11 +17,11 @@ struct TitanTray {
 
 impl ksni::Tray for TitanTray {
     fn id(&self) -> String {
-        "org.titan.MonitorControl".into()
+        crate::app_settings::APP_ID.into()
     }
 
     fn title(&self) -> String {
-        "Titan Control".into()
+        crate::app_settings::APP_DISPLAY_NAME.into()
     }
 
     fn category(&self) -> ksni::Category {
@@ -29,13 +29,11 @@ impl ksni::Tray for TitanTray {
     }
 
     fn icon_name(&self) -> String {
-        "display-symbolic".into()
+        crate::app_settings::APP_ICON_NAME.into()
     }
 
     fn icon_theme_path(&self) -> String {
-        if let Ok(mut path) = std::env::current_dir() {
-            path.push("assets");
-            path.push("icons");
+        if let Some(path) = crate::app_settings::resolve_assets_dir() {
             return path.to_string_lossy().into_owned();
         }
         String::new()
@@ -43,13 +41,13 @@ impl ksni::Tray for TitanTray {
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
-            title: "Titan Control".into(),
+            title: crate::app_settings::APP_DISPLAY_NAME.into(),
             ..Default::default()
         }
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.tx.send_blocking(TrayAction::ToggleVisibility);
+        let _ = self.tx.send_blocking(TrayAction::Toggle);
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
@@ -98,14 +96,22 @@ pub fn setup_tray(
 
         while let Ok(action) = rx.recv().await {
             match action {
-                TrayAction::ToggleVisibility => {
-                    if window_clone.is_visible() {
-                        window_clone.set_visible(false);
-                    } else {
+                TrayAction::Toggle => {
+                    if !window_clone.is_visible() || !window_clone.is_active() {
+                        // app_clone.activate();
+                        window_clone.set_visible(true);
                         window_clone.present();
+                        window_clone.grab_focus();
+                    } else {
+                        window_clone.set_visible(false);
                     }
                 }
-                TrayAction::Show => window_clone.present(),
+                TrayAction::Show => {
+                    // app_clone.activate();
+                    window_clone.set_visible(true);
+                    window_clone.present();
+                    window_clone.grab_focus();
+                }
                 TrayAction::Quit => app_clone.quit(),
             }
         }

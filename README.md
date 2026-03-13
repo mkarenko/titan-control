@@ -70,6 +70,27 @@ cd titan_control
 cargo build --release
 ```
 
+To zbuduje tylko plik wykonywalny w `target/release/titan_control`.
+
+### 4. Instalacja lokalna z ikoną i wpisem w menu
+
+Jeśli chcesz, aby aplikacja była widoczna w menu systemu i miała poprawne ikony, użyj skryptu instalacyjnego:
+
+```bash
+chmod +x scripts/install_local.sh
+./scripts/install_local.sh
+```
+
+Skrypt:
+
+* kompiluje wersję `release`,
+* instaluje binarkę do `~/.local/bin/`,
+* kopiuje zasoby do `~/.local/share/titan_control/`,
+* instaluje ikonę aplikacji do `~/.local/share/icons/hicolor/scalable/apps/`,
+* tworzy plik `.desktop` w `~/.local/share/applications/`.
+
+Po tym kroku aplikacja powinna być dostępna normalnie z menu pulpitu.
+
 ---
 
 ## 🖥️ Uruchomienie
@@ -78,6 +99,12 @@ W trybie deweloperskim:
 
 ```bash
 cargo run
+```
+
+Po instalacji lokalnej:
+
+```bash
+~/.local/bin/titan_control
 ```
 
 ---

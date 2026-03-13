@@ -2,7 +2,7 @@ use crate::i18n::{AppLang, LangUpdaters, tr};
 use crate::monitor;
 use crate::ui::helpers::*;
 use adw::prelude::*;
-use adw::{ActionRow, ComboRow, PreferencesGroup, PreferencesPage};
+use adw::{ActionRow, ComboRow, PreferencesPage};
 use gtk4::{Align, Box as GtkBox, Button, Scale, StringList, Switch, ToggleButton};
 use libadwaita as adw;
 
@@ -41,30 +41,28 @@ pub fn build(
     let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_display", lang);
 
-    let g_dev = PreferencesGroup::new();
-    tr_group(u, &g_dev, "device_group", lang);
+    let (g_dev_wrap, g_dev) = create_collapsible_group(u, "device_group", lang);
     let im = ActionRow::new();
     tr_row(u, &im, "model", lang);
+    let rr = ActionRow::new();
+    tr_row(u, &rr, "resolution", lang);
     let rh = ActionRow::new();
     tr_row(u, &rh, "refresh_rate", lang);
-    let rc = ActionRow::new();
-    tr_row(u, &rc, "controller", lang);
     let rf = ActionRow::new();
     tr_row(u, &rf, "firmware", lang);
     let ru = ActionRow::new();
     tr_row(u, &ru, "usage_time", lang);
     g_dev.add(&im);
+    g_dev.add(&rr);
     g_dev.add(&rh);
-    g_dev.add(&rc);
     g_dev.add(&rf);
     g_dev.add(&ru);
 
-    let g_aud = PreferencesGroup::new();
-    tr_group(u, &g_aud, "audio_group", lang);
+    let (g_aud_wrap, g_aud) = create_collapsible_group(u, "audio_group", lang);
     let r_v = ActionRow::new();
     tr_row(u, &r_v, "volume", lang);
     let sv = create_scale();
-    r_v.add_suffix(&sv);
+    r_v.add_suffix(&create_scale_control(&sv));
     let sw_m = Switch::builder().valign(Align::Center).build();
     let r_m = ActionRow::new();
     tr_row(u, &r_m, "mute", lang);
@@ -72,11 +70,10 @@ pub fn build(
     g_aud.add(&r_v);
     g_aud.add(&r_m);
 
-    let g_io = PreferencesGroup::new();
-    tr_group(u, &g_io, "io_group", lang);
+    let (g_io_wrap, g_io) = create_collapsible_group(u, "io_group", lang);
     let ci = ComboRow::builder()
         .model(&StringList::new(
-            &["HDMI-1", "HDMI-2", "USB-C", "DisplayPort"][..],
+            &["HDMI 1", "HDMI 2", "DisplayPort 1", "DisplayPort 2"][..],
         ))
         .build();
     tr_row(u, &ci.clone().upcast::<ActionRow>(), "input_source", lang);
@@ -97,8 +94,7 @@ pub fn build(
     g_io.add(&c_range);
     g_io.add(&r_boot);
 
-    let g_osd = PreferencesGroup::new();
-    tr_group(u, &g_osd, "osd_group", lang);
+    let (g_osd_wrap, g_osd) = create_collapsible_group(u, "osd_group", lang);
     let osd_names: Vec<String> = monitor::OSD_LANGUAGE_KEYS
         .iter()
         .map(|k| tr(lang, k))
@@ -117,34 +113,34 @@ pub fn build(
                 .map(|k| tr(l, k))
                 .collect();
             let strs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            let _freeze = cl_ref.freeze_notify();
             cl_ref.set_model(Some(&StringList::new(&strs)));
             cl_ref.set_selected(sel);
         }));
     }
-    let s_time = create_scale_with_max(60.0);
+    let s_time = create_scale_with_range(10.0, 60.0);
     let r_time = ActionRow::new();
     tr_row(u, &r_time, "osd_time", lang);
-    r_time.add_suffix(&s_time);
+    r_time.add_suffix(&create_scale_control(&s_time));
     let s_hpos = create_scale();
     let r_hpos = ActionRow::new();
     tr_row(u, &r_hpos, "osd_h_pos", lang);
-    r_hpos.add_suffix(&s_hpos);
+    r_hpos.add_suffix(&create_scale_control(&s_hpos));
     let s_vpos = create_scale();
     let r_vpos = ActionRow::new();
     tr_row(u, &r_vpos, "osd_v_pos", lang);
-    r_vpos.add_suffix(&s_vpos);
-    let s_trans = create_scale();
+    r_vpos.add_suffix(&create_scale_control(&s_vpos));
+    let s_trans = create_scale_with_max(5.0);
     let r_trans = ActionRow::new();
     tr_row(u, &r_trans, "osd_trans", lang);
-    r_trans.add_suffix(&s_trans);
+    r_trans.add_suffix(&create_scale_control(&s_trans));
     g_osd.add(&cl);
     g_osd.add(&r_time);
     g_osd.add(&r_hpos);
     g_osd.add(&r_vpos);
     g_osd.add(&r_trans);
 
-    let g_pwr = PreferencesGroup::new();
-    tr_group(u, &g_pwr, "power_group", lang);
+    let (g_pwr_wrap, g_pwr) = create_collapsible_group(u, "power_group", lang);
     let bo = Button::builder().valign(Align::Center).build();
     bo.add_css_class("destructive-action");
     tr_button(u, &bo, "power_off", lang);
@@ -199,12 +195,11 @@ pub fn build(
     tr_row(u, &r_pl, "power_led", lang);
     r_pl.add_suffix(&box_pl);
 
-    g_pwr.add(&r_o);
     g_pwr.add(&r_ps);
     g_pwr.add(&r_pl);
+    g_pwr.add(&r_o);
 
-    let g_res = PreferencesGroup::new();
-    tr_group(u, &g_res, "reset_group", lang);
+    let (g_res_wrap, g_res) = create_collapsible_group(u, "reset_group", lang);
 
     let b1 = Button::builder().valign(Align::Center).build();
     tr_button(u, &b1, "reset_btn", lang);
@@ -230,15 +225,15 @@ pub fn build(
     g_res.add(&row2);
     g_res.add(&row3);
 
-    page.add(&g_dev);
-    page.add(&g_aud);
-    page.add(&g_io);
-    page.add(&g_osd);
-    page.add(&g_pwr);
-    page.add(&g_res);
+    page.add(&g_dev_wrap);
+    page.add(&g_aud_wrap);
+    page.add(&g_io_wrap);
+    page.add(&g_osd_wrap);
+    page.add(&g_pwr_wrap);
+    page.add(&g_res_wrap);
 
     (
-        page, sv, sw_m, im, rh, rc, rf, ru, bo, b_ps_off, b_ps_l1, b_ps_l2, b_pl_off, b_pl_l1,
+        page, sv, sw_m, im, rr, rh, rf, ru, bo, b_ps_off, b_ps_l1, b_ps_l2, b_pl_off, b_pl_l1,
         b_pl_l2, b_pl_l3, ci, c_range, sw_boot, cl, s_time, s_hpos, s_vpos, s_trans, b1, b2, b3,
     )
 }

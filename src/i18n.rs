@@ -75,6 +75,7 @@ fn tr_en(key: &str) -> String {
         // Device
         "device_group" => "Device",
         "model" => "Model",
+        "resolution" => "Resolution",
         "refresh_rate" => "Refresh Rate",
         "controller" => "Controller",
         "firmware" => "Firmware",
@@ -187,6 +188,13 @@ fn tr_en(key: &str) -> String {
 
         // Splash / Tray
         "splash_searching" => "Searching for monitor...",
+        "splash_detecting_monitors" => "Detecting monitors...",
+        "splash_searching_monitors" => "Searching for monitors...",
+        "splash_loading_cached" => "Loading cached settings...",
+        "splash_connecting" => "Connecting to {name}...",
+        "splash_using_cached_info" => "Using cached monitor info: {name}...",
+        "splash_reading_info" => "Reading info: {name}...",
+        "splash_monitor_not_found" => "Monitor not found",
         "tray_show" => "Show",
         "tray_quit" => "Quit",
 
@@ -239,6 +247,7 @@ fn tr_pl(key: &str) -> String {
         // Device
         "device_group" => "Urządzenie",
         "model" => "Model",
+        "resolution" => "Rozdzielczość",
         "refresh_rate" => "Odświeżanie",
         "controller" => "Kontroler",
         "firmware" => "Firmware",
@@ -351,6 +360,13 @@ fn tr_pl(key: &str) -> String {
 
         // Splash / Tray
         "splash_searching" => "Szukam monitora...",
+        "splash_detecting_monitors" => "Wykrywam monitory...",
+        "splash_searching_monitors" => "Szukam monitorów...",
+        "splash_loading_cached" => "Wczytuję zapisane ustawienia...",
+        "splash_connecting" => "Łączę z monitorem {name}...",
+        "splash_using_cached_info" => "Używam zapisanych informacji monitora: {name}...",
+        "splash_reading_info" => "Odczytuję informacje monitora: {name}...",
+        "splash_monitor_not_found" => "Nie znaleziono monitora",
         "tray_show" => "Pokaż",
         "tray_quit" => "Wyjdź",
 

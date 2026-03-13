@@ -1,21 +1,25 @@
 pub mod helpers;
 pub mod tabs;
 
+use crate::app_settings;
 use crate::i18n::{AppLang, LangUpdaters, tr};
 use adw::prelude::*;
 use adw::{ActionRow, ComboRow, HeaderBar, ViewStack, ViewSwitcher};
 use gtk4::{Box as GtkBox, Button, Orientation, Revealer, Scale, Switch, ToggleButton};
 use libadwaita::{self as adw, ExpanderRow};
 
+#[allow(dead_code)]
 pub struct MainWidgets {
     pub window: adw::ApplicationWindow,
     pub combo_lang: ComboRow,
     pub combo_theme: ComboRow,
+    pub switch_auto_start: Switch,
+    pub switch_start_minimized: Switch,
 
     // --- SYSTEM (tab_display) ---
     pub row_info_model: ActionRow,
+    pub row_info_resolution: ActionRow,
     pub row_info_hz: ActionRow,
-    pub row_info_controller: ActionRow,
     pub row_info_firmware: ActionRow,
     pub row_info_usage: ActionRow,
     pub scale_audio_volume: Scale,
@@ -53,14 +57,14 @@ pub struct MainWidgets {
     pub scale_custom_color_enhance: Scale,
     pub scale_custom_super_res: Scale,
     pub scale_custom_low_blue_light: Scale,
-    pub combo_custom_color_temp: ComboRow,
+    pub combo_custom_color_temp: Vec<ToggleButton>,
     pub scale_custom_red_gain: Scale,
     pub scale_custom_green_gain: Scale,
     pub scale_custom_blue_gain: Scale,
-    pub combo_custom_hdr: ComboRow,
-    pub combo_custom_gamma: ComboRow,
-    pub combo_custom_night_vision: ComboRow,
-    pub combo_custom_dynamic_od: ComboRow,
+    pub combo_custom_hdr: Vec<ToggleButton>,
+    pub combo_custom_gamma: Vec<ToggleButton>,
+    pub combo_custom_night_vision: Vec<ToggleButton>,
+    pub combo_custom_dynamic_od: Vec<ToggleButton>,
     pub hue_scales_vector: Vec<Scale>,
     pub saturation_scales_vector: Vec<Scale>,
 
@@ -103,6 +107,13 @@ pub struct MainWidgets {
 }
 
 pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters) -> MainWidgets {
+    if let Some(display) = gtk4::gdk::Display::default() {
+        let icon_theme = gtk4::IconTheme::for_display(&display);
+        for icon_path in app_settings::icon_search_paths() {
+            icon_theme.add_search_path(&icon_path);
+        }
+    }
+
     let css = gtk4::CssProvider::new();
     css.load_from_data(concat!(
         ".linked > button.toggle {",
@@ -111,12 +122,21 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         "  padding: 4px 12px;",
         "  font-size: 13px;",
         "}",
-        ".color-btn.toggle {",
+        ".scale-stepper > button {",
+        "  min-height: 32px;",
+        "  min-width: 32px;",
+        "  padding: 0;",
+        "}",
+        ".linked > button.color-btn.toggle {",
+        "  min-width: 42px;",
+        "  padding: 0;",
+        "  border: 1px solid alpha(@window_fg_color, 0.3);",
+        "}",
+        ".crosshair-shape-btn image {",
         "  min-width: 28px;",
         "  min-height: 28px;",
-        "  padding: 0;",
-        "  border: 1px solid rgba(255,255,255,0.3);",
         "}",
+        ".crosshair-shape-btn { padding: 2px 8px; }",
         ".color-btn.color-red { background-color: #ff0000; }",
         ".color-btn.color-yel { background-color: #ffff00; }",
         ".color-btn.color-grn { background-color: #00ff00; }",
@@ -148,8 +168,8 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         sv,
         sw_mute,
         im,
+        ir,
         rh,
-        rc,
         rf,
         ru,
         bo,
@@ -240,20 +260,21 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         s_halo_e,
     ) = tabs::tab_gaming::build(lang, updaters);
 
-    let (p_inf, c_lang, c_theme) = tabs::tab_info::build(lang, updaters);
+    let (p_inf, c_lang, c_theme, sw_auto_start, sw_start_minimized) =
+        tabs::tab_info::build(lang, updaters);
 
     stack
         .add_titled(&p_main, Some("main"), &tr(lang, "tab_display"))
-        .set_icon_name(Some("display-symbolic"));
+        .set_icon_name(Some("tab-monitor-symbolic"));
     stack
         .add_titled(&p_pre, Some("profiles"), &tr(lang, "tab_profiles"))
-        .set_icon_name(Some("applications-graphics-symbolic"));
+        .set_icon_name(Some("tab-profiles-symbolic"));
     stack
         .add_titled(&p_gam, Some("gaming"), &tr(lang, "tab_gaming"))
-        .set_icon_name(Some("applications-games-symbolic"));
+        .set_icon_name(Some("tab-gaming-symbolic"));
     stack
         .add_titled(&p_inf, Some("info"), &tr(lang, "tab_info"))
-        .set_icon_name(Some("help-about-symbolic"));
+        .set_icon_name(Some("tab-info-symbolic"));
 
     {
         let s = stack.clone();
@@ -279,6 +300,7 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
+        .icon_name(app_settings::APP_ICON_NAME)
         .default_width(650)
         .default_height(800)
         .content(&layout)
@@ -288,9 +310,11 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         window,
         combo_lang: c_lang,
         combo_theme: c_theme,
+        switch_auto_start: sw_auto_start,
+        switch_start_minimized: sw_start_minimized,
         row_info_model: im,
+        row_info_resolution: ir,
         row_info_hz: rh,
-        row_info_controller: rc,
         row_info_firmware: rf,
         row_info_usage: ru,
         scale_audio_volume: sv,

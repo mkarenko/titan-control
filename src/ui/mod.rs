@@ -41,8 +41,6 @@ pub struct MainWidgets {
     pub scale_osd_v_position: Scale,
     pub scale_osd_transparency: Scale,
     pub button_reset_factory: Button,
-    pub button_reset_brightness_contrast: Button,
-    pub button_reset_color: Button,
 
     // --- PROFILE (tab_profiles) ---
     pub combo_picture_mode: ComboRow,
@@ -189,8 +187,6 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         sv_osd,
         str_osd,
         b1,
-        b2,
-        b3,
     ) = tabs::tab_display::build(lang, updaters);
 
     // 2. PROFILE
@@ -336,8 +332,6 @@ pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters)
         scale_osd_v_position: sv_osd,
         scale_osd_transparency: str_osd,
         button_reset_factory: b1,
-        button_reset_brightness_contrast: b2,
-        button_reset_color: b3,
         combo_picture_mode: cm,
         button_profile_default: bdef,
         button_profile_custom: bcust,

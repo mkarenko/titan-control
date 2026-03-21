@@ -35,8 +35,6 @@ pub fn build(
     Scale,
     Scale,
     Button,
-    Button,
-    Button,
 ) {
     let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_display", lang);
@@ -195,45 +193,26 @@ pub fn build(
     tr_row(u, &r_pl, "power_led", lang);
     r_pl.add_suffix(&box_pl);
 
+    let b_fac = Button::builder().valign(Align::Center).build();
+    b_fac.add_css_class("destructive-action");
+    tr_button(u, &b_fac, "reset_btn", lang);
+    let row_fac = ActionRow::new();
+    tr_row(u, &row_fac, "reset_factory", lang);
+    row_fac.add_suffix(&b_fac);
+
     g_pwr.add(&r_ps);
     g_pwr.add(&r_pl);
     g_pwr.add(&r_o);
-
-    let (g_res_wrap, g_res) = create_collapsible_group(u, "reset_group", lang);
-
-    let b1 = Button::builder().valign(Align::Center).build();
-    tr_button(u, &b1, "reset_btn", lang);
-
-    let b2 = Button::builder().valign(Align::Center).build();
-    tr_button(u, &b2, "reset_btn", lang);
-
-    let b3 = Button::builder().valign(Align::Center).build();
-    tr_button(u, &b3, "reset_btn", lang);
-
-    let row1 = ActionRow::new();
-    tr_row(u, &row1, "reset_factory", lang);
-    row1.add_suffix(&b1);
-
-    let row2 = ActionRow::new();
-    tr_row(u, &row2, "reset_br_con", lang);
-    row2.add_suffix(&b2);
-
-    let row3 = ActionRow::new();
-    tr_row(u, &row3, "reset_colors", lang);
-    row3.add_suffix(&b3);
-    g_res.add(&row1);
-    g_res.add(&row2);
-    g_res.add(&row3);
+    g_pwr.add(&row_fac);
 
     page.add(&g_dev_wrap);
     page.add(&g_aud_wrap);
     page.add(&g_io_wrap);
     page.add(&g_osd_wrap);
     page.add(&g_pwr_wrap);
-    page.add(&g_res_wrap);
 
     (
         page, sv, sw_m, im, rr, rh, rf, ru, bo, b_ps_off, b_ps_l1, b_ps_l2, b_pl_off, b_pl_l1,
-        b_pl_l2, b_pl_l3, ci, c_range, sw_boot, cl, s_time, s_hpos, s_vpos, s_trans, b1, b2, b3,
+        b_pl_l2, b_pl_l3, ci, c_range, sw_boot, cl, s_time, s_hpos, s_vpos, s_trans, b_fac,
     )
 }

@@ -3,8 +3,9 @@ use crate::i18n::{AppLang, LangUpdaters, tr};
 use adw::prelude::*;
 use adw::{ActionRow, ExpanderRow, PreferencesGroup, PreferencesPage};
 use gtk4::{
-    Adjustment, Box as GtkBox, Button, EventControllerScroll, EventControllerScrollFlags, Label,
-    MenuButton, Orientation, Popover, PositionType, Revealer, Scale, ToggleButton, Widget, glib,
+    Adjustment, Box as GtkBox, Button, EventControllerScroll, EventControllerScrollFlags,
+    GestureClick, Label, MenuButton, Orientation, Popover, PositionType, PropagationPhase,
+    Revealer, Scale, ToggleButton, Widget, glib,
 };
 use libadwaita as adw;
 
@@ -223,6 +224,21 @@ pub fn create_collapsible_group(
             });
             let _ = app_settings::set_collapsible_section_expanded(key, expanded);
         });
+    }
+
+    // Make the entire header row clickable (not just the toggle button)
+    {
+        let toggle_click = toggle.clone();
+        let header_gesture = GestureClick::new();
+        header_gesture.set_propagation_phase(PropagationPhase::Capture);
+        header_gesture.connect_pressed(move |gesture, _, _x, y| {
+            // Header height is approximately 52px; only trigger for clicks in that area
+            if y <= 56.0 {
+                toggle_click.set_active(!toggle_click.is_active());
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+            }
+        });
+        wrapper.add_controller(header_gesture);
     }
 
     let wrapper_ref = wrapper.clone();

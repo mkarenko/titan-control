@@ -23,45 +23,10 @@ fn wire_scale(
 ) {
     let tx = tx.clone();
     let init = init.clone();
-    let dragging = Rc::new(Cell::new(false));
     let debounce_generation = Rc::new(Cell::new(0u64));
-
-    {
-        let tx = tx.clone();
-        let dragging_begin = dragging.clone();
-        let dragging_release = dragging.clone();
-        let init_begin = init.clone();
-        let init_release = init.clone();
-        let scale_release = scale.clone();
-        let scale_begin = scale.clone();
-        let debounce_generation_release = debounce_generation.clone();
-        let gesture = gtk4::GestureDrag::new();
-        gesture.connect_drag_begin(move |_, _, _| {
-            if init_begin.get() || !scale_begin.is_sensitive() {
-                return;
-            }
-            dragging_begin.set(true);
-        });
-        gesture.connect_drag_end(move |_, _, _| {
-            if init_release.get() || !dragging_release.get() {
-                return;
-            }
-            dragging_release.set(false);
-            debounce_generation_release.set(debounce_generation_release.get().wrapping_add(1));
-            let _ = tx.send(if save {
-                WorkerCmd::SetSave(code, scale_release.value() as u16)
-            } else {
-                WorkerCmd::Set(code, scale_release.value() as u16)
-            });
-        });
-        scale.add_controller(gesture);
-    }
 
     scale.connect_value_changed(move |s| {
         if init.get() || !s.is_sensitive() {
-            return;
-        }
-        if dragging.get() {
             return;
         }
         let generation = debounce_generation.get().wrapping_add(1);
@@ -69,7 +34,7 @@ fn wire_scale(
         let tx = tx.clone();
         let debounce_generation = debounce_generation.clone();
         let value = s.value() as u16;
-        glib::timeout_add_local(Duration::from_millis(90), move || {
+        glib::timeout_add_local(Duration::from_millis(300), move || {
             if debounce_generation.get() != generation {
                 return glib::ControlFlow::Break;
             }
@@ -93,49 +58,10 @@ fn wire_color_temp_rgb_scale(
     let tx = tx.clone();
     let init = init.clone();
     let color_temp_buttons = color_temp_buttons.to_vec();
-    let dragging = Rc::new(Cell::new(false));
     let debounce_generation = Rc::new(Cell::new(0u64));
 
-    {
-        let tx = tx.clone();
-        let dragging_begin = dragging.clone();
-        let dragging_release = dragging.clone();
-        let init_begin = init.clone();
-        let init_release = init.clone();
-        let scale_release = scale.clone();
-        let scale_begin = scale.clone();
-        let color_temp_buttons = color_temp_buttons.clone();
-        let debounce_generation_release = debounce_generation.clone();
-        let gesture = gtk4::GestureDrag::new();
-        gesture.connect_drag_begin(move |_, _, _| {
-            if init_begin.get() || !scale_begin.is_sensitive() {
-                return;
-            }
-            dragging_begin.set(true);
-        });
-        gesture.connect_drag_end(move |_, _, _| {
-            if init_release.get() || !dragging_release.get() {
-                return;
-            }
-            dragging_release.set(false);
-            let Some(color_temp) =
-                selected_toggle_value(&color_temp_buttons, &monitor::COLOR_TEMP_VALUES[..])
-            else {
-                return;
-            };
-            let Some((red_code, green_code, blue_code)) = monitor::color_temp_rgb_codes(color_temp)
-            else {
-                return;
-            };
-            debounce_generation_release.set(debounce_generation_release.get().wrapping_add(1));
-            let code = [red_code, green_code, blue_code][channel_index];
-            let _ = tx.send(WorkerCmd::Set(code, scale_release.value() as u16));
-        });
-        scale.add_controller(gesture);
-    }
-
     scale.connect_value_changed(move |s| {
-        if init.get() || dragging.get() || !s.is_sensitive() {
+        if init.get() || !s.is_sensitive() {
             return;
         }
         let Some(color_temp) =
@@ -153,7 +79,7 @@ fn wire_color_temp_rgb_scale(
         let tx = tx.clone();
         let debounce_generation = debounce_generation.clone();
         let value = s.value() as u16;
-        glib::timeout_add_local(Duration::from_millis(90), move || {
+        glib::timeout_add_local(Duration::from_millis(300), move || {
             if debounce_generation.get() != generation {
                 return glib::ControlFlow::Break;
             }
@@ -546,8 +472,6 @@ fn build_application(app: &adw::Application) {
         scale_osd_v_position,
         scale_osd_transparency,
         button_reset_factory,
-        button_reset_brightness_contrast,
-        button_reset_color,
         // Profile tab
         combo_picture_mode,
         button_profile_default,
@@ -1450,8 +1374,6 @@ fn build_application(app: &adw::Application) {
         button_profile_custom.clone().upcast(),
         button_power_off.clone().upcast(),
         button_reset_factory.clone().upcast(),
-        button_reset_brightness_contrast.clone().upcast(),
-        button_reset_color.clone().upcast(),
     ]);
     monitor_control_widgets.extend(
         switch_binds
@@ -1742,6 +1664,12 @@ fn build_application(app: &adw::Application) {
                         if !splash.is_visible() {
                             splash.present();
                         }
+                        if e == "Monitor not found" {
+                            splash.close();
+                            if let Some(app) = window.application() {
+                                app.quit();
+                            }
+                        }
                     }
                     monitor::UiCmd::Busy(busy) => {
                         for widget in &monitor_control_widgets {
@@ -1800,14 +1728,30 @@ fn build_application(app: &adw::Application) {
             }
         });
     }
-    wire_combo_values(
-        &combo_output_range,
-        &tx,
-        monitor::VCP_OUTPUT_RANGE,
-        &monitor::OUTPUT_RANGE_VALUES[..],
-        true,
-        &init,
-    );
+    {
+        let tx = tx.clone();
+        let init = init.clone();
+        combo_output_range.connect_selected_notify(move |c| {
+            if init.get() || !c.is_sensitive() {
+                return;
+            }
+            let idx = c.selected() as usize;
+            if idx >= monitor::OUTPUT_RANGE_VALUES.len() {
+                return;
+            }
+            let val = monitor::OUTPUT_RANGE_VALUES[idx];
+            if val == 0 {
+                let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, 0));
+            } else {
+                // Monitor requires reset to Auto (0) before switching to another mode
+                let _ = tx.send(WorkerCmd::Set(monitor::VCP_OUTPUT_RANGE, 0));
+                let tx = tx.clone();
+                glib::timeout_add_local_once(Duration::from_millis(250), move || {
+                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, val));
+                });
+            }
+        });
+    }
     wire_switch_values(
         &switch_quick_boot,
         &tx,
@@ -1890,19 +1834,6 @@ fn build_application(app: &adw::Application) {
             let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_FACTORY, 1));
         });
     }
-    {
-        let tx = tx.clone();
-        button_reset_brightness_contrast.connect_clicked(move |_| {
-            let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_BC, 1));
-        });
-    }
-    {
-        let tx = tx.clone();
-        button_reset_color.connect_clicked(move |_| {
-            let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_COLOR, 1));
-        });
-    }
-
     // ===== PROFILE TAB =====
 
     {

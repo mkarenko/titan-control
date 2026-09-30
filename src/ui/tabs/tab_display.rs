@@ -6,10 +6,7 @@ use adw::{ActionRow, ComboRow, PreferencesPage};
 use gtk4::{Align, Box as GtkBox, Button, Scale, StringList, Switch, ToggleButton};
 use libadwaita as adw;
 
-pub fn build(
-    lang: &AppLang,
-    u: &LangUpdaters,
-) -> (
+pub type DisplayTabWidgets = (
     PreferencesPage,
     Scale,
     Switch,
@@ -19,6 +16,7 @@ pub fn build(
     ActionRow,
     ActionRow,
     Button,
+    Switch,
     ToggleButton,
     ToggleButton,
     ToggleButton,
@@ -35,7 +33,11 @@ pub fn build(
     Scale,
     Scale,
     Button,
-) {
+    Button,
+    Button,
+);
+
+pub fn build(lang: &AppLang, u: &LangUpdaters) -> DisplayTabWidgets {
     let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_display", lang);
 
@@ -71,7 +73,7 @@ pub fn build(
     let (g_io_wrap, g_io) = create_collapsible_group(u, "io_group", lang);
     let ci = ComboRow::builder()
         .model(&StringList::new(
-            &["HDMI 1", "HDMI 2", "DisplayPort 1", "DisplayPort 2"][..],
+            &["HDMI 1", "HDMI 2", "USB-C", "DisplayPort"][..],
         ))
         .build();
     tr_row(u, &ci.clone().upcast::<ActionRow>(), "input_source", lang);
@@ -146,6 +148,11 @@ pub fn build(
     tr_row(u, &r_o, "power_button", lang);
     r_o.add_suffix(&bo);
 
+    let sw_rear_led = Switch::builder().valign(Align::Center).build();
+    let r_rear_led = ActionRow::new();
+    tr_row(u, &r_rear_led, "rear_led", lang);
+    r_rear_led.add_suffix(&sw_rear_led);
+
     let b_ps_off = ToggleButton::builder().label("Off").active(true).build();
     let b_ps_l1 = ToggleButton::builder()
         .label("Level 1")
@@ -193,6 +200,20 @@ pub fn build(
     tr_row(u, &r_pl, "power_led", lang);
     r_pl.add_suffix(&box_pl);
 
+    let b_col = Button::builder().valign(Align::Center).build();
+    b_col.add_css_class("destructive-action");
+    tr_button(u, &b_col, "reset_btn", lang);
+    let row_col = ActionRow::new();
+    tr_row(u, &row_col, "reset_colors", lang);
+    row_col.add_suffix(&b_col);
+
+    let b_bc = Button::builder().valign(Align::Center).build();
+    b_bc.add_css_class("destructive-action");
+    tr_button(u, &b_bc, "reset_btn", lang);
+    let row_bc = ActionRow::new();
+    tr_row(u, &row_bc, "reset_br_con", lang);
+    row_bc.add_suffix(&b_bc);
+
     let b_fac = Button::builder().valign(Align::Center).build();
     b_fac.add_css_class("destructive-action");
     tr_button(u, &b_fac, "reset_btn", lang);
@@ -200,8 +221,11 @@ pub fn build(
     tr_row(u, &row_fac, "reset_factory", lang);
     row_fac.add_suffix(&b_fac);
 
+    g_pwr.add(&r_rear_led);
     g_pwr.add(&r_ps);
     g_pwr.add(&r_pl);
+    g_pwr.add(&row_col);
+    g_pwr.add(&row_bc);
     g_pwr.add(&r_o);
     g_pwr.add(&row_fac);
 
@@ -212,7 +236,8 @@ pub fn build(
     page.add(&g_pwr_wrap);
 
     (
-        page, sv, sw_m, im, rr, rh, rf, ru, bo, b_ps_off, b_ps_l1, b_ps_l2, b_pl_off, b_pl_l1,
-        b_pl_l2, b_pl_l3, ci, c_range, sw_boot, cl, s_time, s_hpos, s_vpos, s_trans, b_fac,
+        page, sv, sw_m, im, rr, rh, rf, ru, bo, sw_rear_led, b_ps_off, b_ps_l1, b_ps_l2,
+        b_pl_off, b_pl_l1, b_pl_l2, b_pl_l3, ci, c_range, sw_boot, cl, s_time, s_hpos, s_vpos,
+        s_trans, b_col, b_bc, b_fac,
     )
 }

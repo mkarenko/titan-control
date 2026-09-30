@@ -3,7 +3,7 @@ use crate::i18n::{AppLang, LangUpdaters};
 use crate::ui::helpers::*;
 use adw::prelude::*;
 use adw::{ActionRow, ExpanderRow, PreferencesPage};
-use gtk4::{Align, Box as GtkBox, Image, Label, Scale, Switch, ToggleButton};
+use gtk4::{Align, Box as GtkBox, Image, Label, Switch, ToggleButton};
 use libadwaita as adw;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -168,19 +168,6 @@ pub fn build(
     Vec<ToggleButton>,
     Vec<ToggleButton>,
     Vec<ToggleButton>, // Hawkeye
-    // Picture Enhance
-    Switch,
-    Switch,            // async, rush
-    Vec<ToggleButton>, // Local Dimming
-    Vec<ToggleButton>, // DyDs
-    Vec<ToggleButton>, // Night Vision
-    Vec<ToggleButton>, // Dynamic OD
-    Vec<ToggleButton>, // HDR
-    Scale,
-    Scale,
-    Scale,
-    Scale,
-    Scale, // Scales
 ) {
     let page = PreferencesPage::builder().build();
     tr_page(u, &page, "tab_gaming", lang);
@@ -368,90 +355,7 @@ pub fn build(
     g_aid.add(&exp_hawk);
     g_aid.add(&r_align);
 
-    // --- SEKCJA: PICTURE ENHANCE ---
-    let (g_enh_wrap, g_enh) = create_collapsible_group(u, "pic_enhance", lang);
-
-    let sw_async = Switch::builder().valign(Align::Center).build();
-    let r_async = ActionRow::new();
-    tr_row(u, &r_async, "adaptive_sync", lang);
-    r_async.add_suffix(&sw_async);
-    let sw_rush = Switch::builder().valign(Align::Center).build();
-    let r_rush = ActionRow::new();
-    set_row_title_with_info(
-        &r_rush,
-        u,
-        "game_rush",
-        "Nie mam pojęcia co to robi, w ustawieniach monitora jest to zawsze włączone oraz wyszarzone",
-        lang,
-    );
-    r_rush.add_suffix(&sw_rush);
-
-    let (box_dim, btn_dim) =
-        create_linked_buttons(&["Disabled", "Low", "Smooth", "Medium", "High"][..]);
-    let r_dim = ActionRow::new();
-    tr_row(u, &r_dim, "local_dimming", lang);
-    r_dim.add_suffix(&box_dim);
-
-    let (box_dyds, btn_dyds) =
-        create_linked_buttons(&["Off", "Low", "Med", "High", "ULL-1", "ULL-2", "ULL-3"][..]);
-    let r_dyds = ActionRow::new();
-    tr_row(u, &r_dyds, "dyds", lang);
-    r_dyds.add_suffix(&box_dyds);
-
-    let (box_nv, btn_nv_enh) =
-        create_linked_buttons(&["Off", "Lvl 1", "Lvl 2", "Auto-Lvl 1", "Auto-Lvl 2"][..]);
-    let r_nv = ActionRow::new();
-    tr_row(u, &r_nv, "night_vision", lang);
-    r_nv.add_suffix(&box_nv);
-
-    let (box_od, btn_od_enh) =
-        create_linked_buttons(&["Off", "Lvl 1", "Lvl 2", "Lvl 3", "Top Speed"][..]);
-    let r_od = ActionRow::new();
-    tr_row(u, &r_od, "dynamic_od", lang);
-    r_od.add_suffix(&box_od);
-
-    let (box_hdr, btn_hdr_enh) = create_linked_buttons(&["Off", "Auto", "Game", "Movie"][..]);
-    let r_hdr = ActionRow::new();
-    tr_row(u, &r_hdr, "hdr", lang);
-    r_hdr.add_suffix(&box_hdr);
-
-    let s_col = create_scale_with_max(10.0);
-    let r_col = ActionRow::new();
-    tr_row(u, &r_col, "color_enhance", lang);
-    r_col.add_suffix(&create_scale_control(&s_col));
-    let s_cr = create_scale_with_max(5.0);
-    let r_cr = ActionRow::new();
-    tr_row(u, &r_cr, "cr_enhance", lang);
-    r_cr.add_suffix(&create_scale_control(&s_cr));
-    let s_sh = create_scale();
-    let r_sh = ActionRow::new();
-    tr_row(u, &r_sh, "shadow_enhance", lang);
-    r_sh.add_suffix(&create_scale_control(&s_sh));
-    let s_sr = create_scale_with_max(5.0);
-    let r_sr = ActionRow::new();
-    tr_row(u, &r_sr, "super_resolution", lang);
-    r_sr.add_suffix(&create_scale_control(&s_sr));
-
-    let s_halo = create_scale();
-    let r_halo = ActionRow::new();
-    tr_row(u, &r_halo, "halo_control", lang);
-    r_halo.add_suffix(&create_scale_control(&s_halo));
-
-    g_enh.add(&r_async);
-    g_enh.add(&r_rush);
-    g_enh.add(&r_dim);
-    g_enh.add(&r_dyds);
-    g_enh.add(&r_nv);
-    g_enh.add(&r_od);
-    g_enh.add(&r_hdr);
-    g_enh.add(&r_col);
-    g_enh.add(&r_cr);
-    g_enh.add(&r_sh);
-    g_enh.add(&r_sr);
-    g_enh.add(&r_halo);
-
     page.add(&g_aid_wrap);
-    page.add(&g_enh_wrap);
 
     (
         page,
@@ -478,17 +382,5 @@ pub fn build(
         btn_hawk_size,
         btn_hawk_pos,
         btn_hawk_lvl,
-        sw_async,
-        sw_rush,
-        btn_dim,
-        btn_dyds,
-        btn_nv_enh,
-        btn_od_enh,
-        btn_hdr_enh,
-        s_col,
-        s_cr,
-        s_sh,
-        s_sr,
-        s_halo,
     )
 }

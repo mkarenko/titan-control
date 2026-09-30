@@ -16,6 +16,7 @@ pub fn basic_profile_values() -> HashMap<u8, u16> {
     HashMap::from([
         (monitor::VCP_BRIGHTNESS, 100),
         (monitor::VCP_CONTRAST, 50),
+        (monitor::VCP_DCR, 0),
         (monitor::VCP_SHARPNESS, 0),
         (monitor::VCP_SHADOW_BALANCE, 50),
         (monitor::VCP_CR_ENHANCE, 0),
@@ -30,6 +31,7 @@ pub fn basic_profile_values() -> HashMap<u8, u16> {
         (monitor::VCP_GAMMA, monitor::GAMMA_VALUES[2]),
         (monitor::VCP_NIGHT_VISION, monitor::NIGHT_VISION_VALUES[0]),
         (monitor::VCP_DYNAMIC_OD, monitor::DYNAMIC_OD_VALUES[0]),
+        (monitor::VCP_DYDS, monitor::DYDS_VALUES[0]),
         (monitor::VCP_HUE_RED, 50),
         (monitor::VCP_HUE_GREEN, 50),
         (monitor::VCP_HUE_BLUE, 50),
@@ -262,21 +264,10 @@ fn desktop_entry() -> String {
 }
 
 pub fn resolve_assets_dir() -> Option<PathBuf> {
-    for candidate in asset_dir_candidates() {
-        if candidate.join("pl.mkarenko.titan_control.svg").exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    asset_dir_candidates()
+        .into_iter()
+        .find(|candidate| candidate.join("pl.mkarenko.titan_control.svg").exists())
 }
-
-// pub fn resolve_icons_dir() -> Option<PathBuf> {
-//     resolve_assets_dir().and_then(|assets_dir| {
-//         let icons_dir = assets_dir.join("icons");
-//         icons_dir.exists().then_some(icons_dir)
-//     })
-// }
 
 pub fn icon_search_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();

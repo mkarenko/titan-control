@@ -3,9 +3,8 @@ use crate::i18n::{AppLang, LangUpdaters, tr};
 use adw::prelude::*;
 use adw::{ActionRow, ExpanderRow, PreferencesGroup, PreferencesPage};
 use gtk4::{
-    Adjustment, Box as GtkBox, Button, EventControllerScroll, EventControllerScrollFlags,
-    GestureClick, Label, MenuButton, Orientation, Popover, PositionType, PropagationPhase,
-    Revealer, Scale, ToggleButton, Widget, glib,
+    Adjustment, Box as GtkBox, Button, GestureClick, Label, MenuButton, Orientation, Popover,
+    PositionType, PropagationPhase, Revealer, Scale, ScrollType, ToggleButton, Widget, glib,
 };
 use libadwaita as adw;
 
@@ -29,10 +28,18 @@ pub fn create_scale_with_range(min: f64, max: f64) -> Scale {
         .build();
     scale.set_digits(0);
 
-    // Disable scroll wheel
-    let scroll_ctrl = EventControllerScroll::new(EventControllerScrollFlags::VERTICAL);
-    scroll_ctrl.connect_scroll(|_, _, _| glib::Propagation::Stop);
-    scale.add_controller(scroll_ctrl);
+    // Block wheel-driven value changes. The scroll event still bubbles to the page.
+    scale.connect_change_value(|_, scroll_type, _| match scroll_type {
+        ScrollType::StepUp
+        | ScrollType::StepDown
+        | ScrollType::StepLeft
+        | ScrollType::StepRight
+        | ScrollType::PageUp
+        | ScrollType::PageDown
+        | ScrollType::PageLeft
+        | ScrollType::PageRight => glib::Propagation::Stop,
+        _ => glib::Propagation::Proceed,
+    });
 
     scale
 }
@@ -47,7 +54,7 @@ pub fn create_scale_control(scale: &Scale) -> GtkBox {
     let btn_down = Button::builder().icon_name("pan-down-symbolic").build();
     let btn_up = Button::builder().icon_name("pan-up-symbolic").build();
     let value_label = Label::builder()
-        .label(&format!("{:>3}", scale.value() as i32))
+        .label(format!("{:>3}", scale.value() as i32))
         .width_chars(3)
         .xalign(1.0)
         .css_classes(["numeric"])
@@ -156,14 +163,6 @@ pub fn tr_group(u: &LangUpdaters, w: &PreferencesGroup, key: &'static str, lang:
         .push(Box::new(move |l| w.set_title(&tr(l, key))));
 }
 
-#[allow(dead_code)]
-pub fn tr_group_desc(u: &LangUpdaters, w: &PreferencesGroup, key: &'static str, lang: &AppLang) {
-    w.set_description(Some(&tr(lang, key)));
-    let w = w.clone();
-    u.borrow_mut()
-        .push(Box::new(move |l| w.set_description(Some(&tr(l, key)))));
-}
-
 pub fn tr_row(u: &LangUpdaters, w: &ActionRow, key: &'static str, lang: &AppLang) {
     w.set_title(&tr(lang, key));
     let w = w.clone();
@@ -203,7 +202,7 @@ pub fn create_collapsible_group(
         } else {
             "pan-down-symbolic"
         })
-        .tooltip_text(&tr(lang, key))
+        .tooltip_text(tr(lang, key))
         .build();
 
     wrapper.set_title(&tr(lang, key));

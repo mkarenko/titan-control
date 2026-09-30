@@ -98,7 +98,6 @@ pub fn setup_tray(
             match action {
                 TrayAction::Toggle => {
                     if !window_clone.is_visible() || !window_clone.is_active() {
-                        // app_clone.activate();
                         window_clone.set_visible(true);
                         window_clone.present();
                         window_clone.grab_focus();
@@ -107,7 +106,6 @@ pub fn setup_tray(
                     }
                 }
                 TrayAction::Show => {
-                    // app_clone.activate();
                     window_clone.set_visible(true);
                     window_clone.present();
                     window_clone.grab_focus();

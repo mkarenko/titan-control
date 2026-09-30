@@ -5,22 +5,81 @@ mod tray;
 mod ui;
 
 use adw::prelude::*;
-use gtk4::{Align, Orientation, Scale, Switch, ToggleButton, glib};
+use gtk4::{Align, Orientation, ResponseType, Scale, Switch, ToggleButton, glib};
 use i18n::{LangUpdaters, lang_from_index, tr};
 use libadwaita::{self as adw, ExpanderRow};
+use std::collections::HashMap;
 use monitor::WorkerCmd;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
-fn wire_scale(
+type ProfileValues = HashMap<u8, u16>;
+type ProfileValuesCallback = Rc<dyn Fn(&ProfileValues)>;
+
+fn confirm_destructive_action<F>(
+    parent: &adw::ApplicationWindow,
+    heading: &str,
+    body: &str,
+    cancel_label: &str,
+    confirm_label: &str,
+    on_confirm: F,
+) where
+    F: Fn() + 'static,
+{
+    let dialog = gtk4::Dialog::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title(heading)
+        .build();
+    dialog.add_button(cancel_label, ResponseType::Cancel);
+    dialog.add_button(confirm_label, ResponseType::Accept);
+    dialog.set_default_response(ResponseType::Cancel);
+
+    let label = gtk4::Label::builder()
+        .label(body)
+        .wrap(true)
+        .width_chars(38)
+        .max_width_chars(38)
+        .xalign(0.0)
+        .margin_top(18)
+        .margin_bottom(18)
+        .margin_start(18)
+        .margin_end(18)
+        .build();
+    let content = dialog.content_area();
+    content.set_margin_top(6);
+    content.set_margin_bottom(12);
+    content.set_margin_start(12);
+    content.set_margin_end(12);
+    content.append(&label);
+
+    dialog.connect_response(move |dialog, response| {
+        if response == ResponseType::Accept {
+            on_confirm();
+        }
+        dialog.close();
+    });
+    dialog.present();
+}
+
+fn worker_cmd(code: u8, value: u16, save: bool) -> WorkerCmd {
+    if save {
+        WorkerCmd::SetSave(code, value)
+    } else {
+        WorkerCmd::Set(code, value)
+    }
+}
+
+fn wire_debounced_scale<F>(
     scale: &Scale,
     tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    save: bool,
     init: &Rc<Cell<bool>>,
-) {
+    build_cmd: F,
+) where
+    F: Fn(&Scale) -> Option<WorkerCmd> + 'static,
+{
     let tx = tx.clone();
     let init = init.clone();
     let debounce_generation = Rc::new(Cell::new(0u64));
@@ -29,22 +88,36 @@ fn wire_scale(
         if init.get() || !s.is_sensitive() {
             return;
         }
+
+        let Some(cmd) = build_cmd(s) else {
+            return;
+        };
+
         let generation = debounce_generation.get().wrapping_add(1);
         debounce_generation.set(generation);
         let tx = tx.clone();
         let debounce_generation = debounce_generation.clone();
-        let value = s.value() as u16;
+        let mut cmd = Some(cmd);
         glib::timeout_add_local(Duration::from_millis(300), move || {
-            if debounce_generation.get() != generation {
-                return glib::ControlFlow::Break;
+            if debounce_generation.get() == generation
+                && let Some(cmd) = cmd.take()
+            {
+                let _ = tx.send(cmd);
             }
-            let _ = tx.send(if save {
-                WorkerCmd::SetSave(code, value)
-            } else {
-                WorkerCmd::Set(code, value)
-            });
             glib::ControlFlow::Break
         });
+    });
+}
+
+fn wire_scale(
+    scale: &Scale,
+    tx: &mpsc::Sender<WorkerCmd>,
+    code: u8,
+    save: bool,
+    init: &Rc<Cell<bool>>,
+) {
+    wire_debounced_scale(scale, tx, init, move |s| {
+        Some(worker_cmd(code, s.value() as u16, save))
     });
 }
 
@@ -55,37 +128,13 @@ fn wire_color_temp_rgb_scale(
     channel_index: usize,
     init: &Rc<Cell<bool>>,
 ) {
-    let tx = tx.clone();
-    let init = init.clone();
     let color_temp_buttons = color_temp_buttons.to_vec();
-    let debounce_generation = Rc::new(Cell::new(0u64));
 
-    scale.connect_value_changed(move |s| {
-        if init.get() || !s.is_sensitive() {
-            return;
-        }
-        let Some(color_temp) =
-            selected_toggle_value(&color_temp_buttons, &monitor::COLOR_TEMP_VALUES[..])
-        else {
-            return;
-        };
-        let Some((red_code, green_code, blue_code)) = monitor::color_temp_rgb_codes(color_temp)
-        else {
-            return;
-        };
+    wire_debounced_scale(scale, tx, init, move |s| {
+        let color_temp = selected_toggle_value(&color_temp_buttons, &monitor::COLOR_TEMP_VALUES[..])?;
+        let (red_code, green_code, blue_code) = monitor::color_temp_rgb_codes(color_temp)?;
         let code = [red_code, green_code, blue_code][channel_index];
-        let generation = debounce_generation.get().wrapping_add(1);
-        debounce_generation.set(generation);
-        let tx = tx.clone();
-        let debounce_generation = debounce_generation.clone();
-        let value = s.value() as u16;
-        glib::timeout_add_local(Duration::from_millis(300), move || {
-            if debounce_generation.get() != generation {
-                return glib::ControlFlow::Break;
-            }
-            let _ = tx.send(WorkerCmd::Set(code, value));
-            glib::ControlFlow::Break
-        });
+        Some(WorkerCmd::Set(code, s.value() as u16))
     });
 }
 
@@ -116,38 +165,8 @@ fn wire_switch_values(
             return glib::Propagation::Proceed;
         }
         let val = if state { on_value } else { off_value };
-        let _ = tx.send(if save {
-            WorkerCmd::SetSave(code, val)
-        } else {
-            WorkerCmd::Set(code, val)
-        });
+        let _ = tx.send(worker_cmd(code, val, save));
         glib::Propagation::Proceed
-    });
-}
-
-fn wire_combo_values(
-    combo: &adw::ComboRow,
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    values: &'static [u16],
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    let tx = tx.clone();
-    let init = init.clone();
-    combo.connect_selected_notify(move |c| {
-        if init.get() || !c.is_sensitive() {
-            return;
-        }
-        let idx = c.selected() as usize;
-        if idx >= values.len() {
-            return;
-        }
-        let _ = tx.send(if save {
-            WorkerCmd::SetSave(code, values[idx])
-        } else {
-            WorkerCmd::Set(code, values[idx])
-        });
     });
 }
 
@@ -168,11 +187,7 @@ fn wire_toggles(
                 return;
             }
             if b.is_active() {
-                let _ = tx.send(if save {
-                    WorkerCmd::SetSave(code, val)
-                } else {
-                    WorkerCmd::Set(code, val)
-                });
+                let _ = tx.send(worker_cmd(code, val, save));
             }
         });
     }
@@ -214,11 +229,7 @@ fn wire_toggle_values(
                 return;
             }
             if b.is_active() {
-                let _ = tx.send(if save {
-                    WorkerCmd::SetSave(code, val)
-                } else {
-                    WorkerCmd::Set(code, val)
-                });
+                let _ = tx.send(worker_cmd(code, val, save));
             }
         });
     }
@@ -238,17 +249,13 @@ fn wire_expander(
             return;
         }
         let val = if e.enables_expansion() { 1u16 } else { 0 };
-        let _ = tx.send(if save {
-            WorkerCmd::SetSave(code, val)
-        } else {
-            WorkerCmd::Set(code, val)
-        });
+        let _ = tx.send(worker_cmd(code, val, save));
     });
 }
 
 fn send_profile_values_to_monitor(
     tx: &mpsc::Sender<WorkerCmd>,
-    values: &std::collections::HashMap<u8, u16>,
+    values: &ProfileValues,
 ) {
     let color_temp = values
         .get(&monitor::VCP_COLOR_TEMP)
@@ -270,7 +277,9 @@ fn send_profile_values_to_monitor(
             monitor::VCP_HDR
             | monitor::VCP_NIGHT_VISION
             | monitor::VCP_DYNAMIC_OD
+            | monitor::VCP_DYDS
             | monitor::VCP_GAMMA
+            | monitor::VCP_DCR
             | monitor::VCP_COLOR_TEMP => {
                 let _ = tx.send(WorkerCmd::SetSave(code, value));
             }
@@ -456,6 +465,7 @@ fn build_application(app: &adw::Application) {
         scale_audio_volume,
         switch_audio_mute,
         button_power_off,
+        switch_rear_led,
         button_power_save_off,
         button_power_save_lvl1,
         button_power_save_lvl2,
@@ -471,6 +481,8 @@ fn build_application(app: &adw::Application) {
         scale_osd_h_position,
         scale_osd_v_position,
         scale_osd_transparency,
+        button_reset_colors,
+        button_reset_settings,
         button_reset_factory,
         // Profile tab
         combo_picture_mode,
@@ -485,6 +497,7 @@ fn build_application(app: &adw::Application) {
         scale_custom_color_enhance,
         scale_custom_super_res,
         scale_custom_low_blue_light,
+        switch_custom_dcr,
         combo_custom_color_temp,
         scale_custom_red_gain,
         scale_custom_green_gain,
@@ -493,10 +506,10 @@ fn build_application(app: &adw::Application) {
         combo_custom_gamma,
         combo_custom_night_vision,
         combo_custom_dynamic_od,
+        combo_custom_dyds,
         hue_scales_vector,
         saturation_scales_vector,
         // Gaming tab
-        row_screen_size: _,
         buttons_screen_size,
         expander_fps_counter,
         buttons_fps_pos,
@@ -548,7 +561,8 @@ fn build_application(app: &adw::Application) {
         button_profile_custom.set_sensitive(has_custom);
         button_profile_custom.set_active(has_custom && initial_custom_profile.active);
         button_profile_default.set_active(!has_custom || !initial_custom_profile.active);
-        custom_revealer.set_reveal_child(has_custom && initial_custom_profile.active);
+        custom_revealer.set_reveal_child(true);
+        custom_revealer.set_sensitive(has_custom && initial_custom_profile.active);
     }
 
     monitor::start_worker(worker_rx, ui_tx);
@@ -575,18 +589,19 @@ fn build_application(app: &adw::Application) {
             if has_custom {
                 button_profile_custom.set_active(custom_active);
                 button_profile_default.set_active(!custom_active);
-                custom_revealer.set_reveal_child(custom_active);
+                custom_revealer.set_reveal_child(true);
+                custom_revealer.set_sensitive(custom_active);
             } else {
                 button_profile_default.set_active(true);
                 button_profile_custom.set_active(false);
-                custom_revealer.set_reveal_child(false);
+                custom_revealer.set_reveal_child(true);
+                custom_revealer.set_sensitive(false);
             }
             syncing_custom_profile_ui.set(false);
         }
     });
 
-    let collect_custom_profile_values: Rc<dyn Fn() -> std::collections::HashMap<u8, u16>> =
-        Rc::new({
+    let collect_custom_profile_values: Rc<dyn Fn() -> ProfileValues> = Rc::new({
             let scale_custom_brightness = scale_custom_brightness.clone();
             let scale_custom_contrast = scale_custom_contrast.clone();
             let scale_custom_sharpness = scale_custom_sharpness.clone();
@@ -595,6 +610,7 @@ fn build_application(app: &adw::Application) {
             let scale_custom_color_enhance = scale_custom_color_enhance.clone();
             let scale_custom_super_res = scale_custom_super_res.clone();
             let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
+            let switch_custom_dcr = switch_custom_dcr.clone();
             let combo_custom_color_temp = combo_custom_color_temp.clone();
             let scale_custom_red_gain = scale_custom_red_gain.clone();
             let scale_custom_green_gain = scale_custom_green_gain.clone();
@@ -603,15 +619,20 @@ fn build_application(app: &adw::Application) {
             let combo_custom_gamma = combo_custom_gamma.clone();
             let combo_custom_night_vision = combo_custom_night_vision.clone();
             let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
+            let combo_custom_dyds = combo_custom_dyds.clone();
             let hue_scales_vector = hue_scales_vector.clone();
             let saturation_scales_vector = saturation_scales_vector.clone();
             move || {
-                let mut values = std::collections::HashMap::new();
+                let mut values = ProfileValues::new();
                 values.insert(
                     monitor::VCP_BRIGHTNESS,
                     scale_custom_brightness.value() as u16,
                 );
                 values.insert(monitor::VCP_CONTRAST, scale_custom_contrast.value() as u16);
+                values.insert(
+                    monitor::VCP_DCR,
+                    if switch_custom_dcr.is_active() { 1 } else { 0 },
+                );
                 values.insert(
                     monitor::VCP_SHARPNESS,
                     scale_custom_sharpness.value() as u16,
@@ -665,6 +686,11 @@ fn build_application(app: &adw::Application) {
                 {
                     values.insert(monitor::VCP_DYNAMIC_OD, value);
                 }
+                if let Some(value) =
+                    selected_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..])
+                {
+                    values.insert(monitor::VCP_DYDS, value);
+                }
                 for (scale, code) in hue_scales_vector.iter().zip(monitor::HUE_CODES.iter()) {
                     values.insert(*code, scale.value() as u16);
                 }
@@ -678,7 +704,7 @@ fn build_application(app: &adw::Application) {
             }
         });
 
-    let apply_custom_profile_values: Rc<dyn Fn(&std::collections::HashMap<u8, u16>)> = Rc::new({
+    let apply_custom_profile_values: ProfileValuesCallback = Rc::new({
         let scale_custom_brightness = scale_custom_brightness.clone();
         let scale_custom_contrast = scale_custom_contrast.clone();
         let scale_custom_sharpness = scale_custom_sharpness.clone();
@@ -687,6 +713,7 @@ fn build_application(app: &adw::Application) {
         let scale_custom_color_enhance = scale_custom_color_enhance.clone();
         let scale_custom_super_res = scale_custom_super_res.clone();
         let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
+        let switch_custom_dcr = switch_custom_dcr.clone();
         let combo_custom_color_temp = combo_custom_color_temp.clone();
         let scale_custom_red_gain = scale_custom_red_gain.clone();
         let scale_custom_green_gain = scale_custom_green_gain.clone();
@@ -695,26 +722,40 @@ fn build_application(app: &adw::Application) {
         let combo_custom_gamma = combo_custom_gamma.clone();
         let combo_custom_night_vision = combo_custom_night_vision.clone();
         let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
+        let combo_custom_dyds = combo_custom_dyds.clone();
+        let buttons_gaming_hdr = buttons_gaming_hdr.clone();
+        let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
+        let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
+        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
+        let scale_gaming_shadow_enhance = scale_gaming_shadow_enhance.clone();
+        let scale_gaming_cr_enhance = scale_gaming_cr_enhance.clone();
+        let scale_gaming_color_enhance = scale_gaming_color_enhance.clone();
         let hue_scales_vector = hue_scales_vector.clone();
         let saturation_scales_vector = saturation_scales_vector.clone();
-        move |values: &std::collections::HashMap<u8, u16>| {
+        move |values: &ProfileValues| {
             if let Some(&v) = values.get(&monitor::VCP_BRIGHTNESS) {
                 scale_custom_brightness.set_value(v as f64);
             }
             if let Some(&v) = values.get(&monitor::VCP_CONTRAST) {
                 scale_custom_contrast.set_value(v as f64);
             }
+            if let Some(&v) = values.get(&monitor::VCP_DCR) {
+                switch_custom_dcr.set_active(v != 0);
+            }
             if let Some(&v) = values.get(&monitor::VCP_SHARPNESS) {
                 scale_custom_sharpness.set_value(v as f64);
             }
             if let Some(&v) = values.get(&monitor::VCP_SHADOW_BALANCE) {
                 scale_custom_shadow_balance.set_value(v as f64);
+                scale_gaming_shadow_enhance.set_value(v as f64);
             }
             if let Some(&v) = values.get(&monitor::VCP_CR_ENHANCE) {
                 scale_custom_cr_enhance.set_value(v as f64);
+                scale_gaming_cr_enhance.set_value(v as f64);
             }
             if let Some(&v) = values.get(&monitor::VCP_COLOR_ENHANCE) {
                 scale_custom_color_enhance.set_value(v as f64);
+                scale_gaming_color_enhance.set_value(v as f64);
             }
             if let Some(&v) = values.get(&monitor::VCP_SUPER_RES) {
                 scale_custom_super_res.set_value(v as f64);
@@ -736,6 +777,7 @@ fn build_application(app: &adw::Application) {
             }
             if let Some(&v) = values.get(&monitor::VCP_HDR) {
                 activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], v);
+                activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], v);
             }
             if let Some(&v) = values.get(&monitor::VCP_GAMMA) {
                 activate_toggle_value(&combo_custom_gamma, &monitor::GAMMA_VALUES[..], v);
@@ -746,9 +788,19 @@ fn build_application(app: &adw::Application) {
                     &monitor::NIGHT_VISION_VALUES[..],
                     v,
                 );
+                activate_toggle_value(
+                    &buttons_gaming_night_vision,
+                    &monitor::NIGHT_VISION_VALUES[..],
+                    v,
+                );
             }
             if let Some(&v) = values.get(&monitor::VCP_DYNAMIC_OD) {
                 activate_toggle_value(&combo_custom_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], v);
+                activate_toggle_value(&buttons_gaming_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], v);
+            }
+            if let Some(&v) = values.get(&monitor::VCP_DYDS) {
+                activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], v);
+                activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], v);
             }
             for (scale, code) in hue_scales_vector.iter().zip(monitor::HUE_CODES.iter()) {
                 if let Some(&v) = values.get(code) {
@@ -766,10 +818,10 @@ fn build_application(app: &adw::Application) {
         }
     });
 
-    let apply_profile_values_silently: Rc<dyn Fn(&std::collections::HashMap<u8, u16>)> = Rc::new({
+    let apply_profile_values_silently: ProfileValuesCallback = Rc::new({
         let init = init.clone();
         let apply_custom_profile_values = apply_custom_profile_values.clone();
-        move |values: &std::collections::HashMap<u8, u16>| {
+        move |values: &ProfileValues| {
             let previous_init = init.replace(true);
             (apply_custom_profile_values)(values);
             init.set(previous_init);
@@ -807,12 +859,11 @@ fn build_application(app: &adw::Application) {
             let custom_active = has_custom && profile.active;
 
             (sync_picture_mode_controls)(mode, custom_active);
-            let values = if custom_active {
-                &profile.values
-            } else {
-                &default_values
-            };
-            (apply_profile_values_silently)(values);
+            let mut values = default_values;
+            if custom_active {
+                values.extend(profile.values);
+            }
+            (apply_profile_values_silently)(&values);
         }
     });
 
@@ -839,14 +890,18 @@ fn build_application(app: &adw::Application) {
                     return;
                 }
 
-                custom_revealer.set_reveal_child(btn.is_active());
+                custom_revealer.set_reveal_child(true);
+                custom_revealer.set_sensitive(true);
                 let mut cfg = app_cfg.borrow().clone();
                 let profile = cfg
                     .custom_profiles
                     .entry(active_picture_mode.get())
                     .or_default();
                 profile.active = true;
-                let values_to_apply = profile.values.clone();
+                let mut values_to_apply =
+                    app_settings::basic_profile_values_for_mode(active_picture_mode.get());
+                values_to_apply.extend(profile.values.clone());
+                profile.values = values_to_apply.clone();
                 let _ = app_settings::save(&cfg);
                 *app_cfg.borrow_mut() = cfg;
 
@@ -885,7 +940,8 @@ fn build_application(app: &adw::Application) {
                     return;
                 }
 
-                custom_revealer.set_reveal_child(false);
+                custom_revealer.set_reveal_child(true);
+                custom_revealer.set_sensitive(false);
                 let mut cfg = app_cfg.borrow().clone();
                 let profile = cfg
                     .custom_profiles
@@ -907,10 +963,11 @@ fn build_application(app: &adw::Application) {
                 syncing_custom_profile_ui.set(true);
                 (apply_profile_values_silently)(&default_values);
                 syncing_custom_profile_ui.set(false);
+
+                send_profile_values_to_monitor(&worker_tx, &default_values);
             }
         ));
     }
-
     for scale in [
         scale_custom_brightness.clone(),
         scale_custom_contrast.clone(),
@@ -925,8 +982,8 @@ fn build_application(app: &adw::Application) {
         scale_custom_blue_gain.clone(),
     ]
     .into_iter()
-    .chain(hue_scales_vector.clone().into_iter())
-    .chain(saturation_scales_vector.clone().into_iter())
+    .chain(hue_scales_vector.clone())
+    .chain(saturation_scales_vector.clone())
     {
         let init = init.clone();
         let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
@@ -945,6 +1002,7 @@ fn build_application(app: &adw::Application) {
         combo_custom_gamma.clone(),
         combo_custom_night_vision.clone(),
         combo_custom_dynamic_od.clone(),
+        combo_custom_dyds.clone(),
     ] {
         for button in buttons {
             let init = init.clone();
@@ -957,6 +1015,17 @@ fn build_application(app: &adw::Application) {
                 (persist_current_custom_profile_state)();
             });
         }
+    }
+    {
+        let init = init.clone();
+        let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
+        let persist_current_custom_profile_state = persist_current_custom_profile_state.clone();
+        switch_custom_dcr.connect_active_notify(move |_| {
+            if init.get() || syncing_custom_profile_ui.get() {
+                return;
+            }
+            (persist_current_custom_profile_state)();
+        });
     }
 
     // --- MONITOR -> UI ---
@@ -971,6 +1040,12 @@ fn build_application(app: &adw::Application) {
         let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
         let expander_magnifier = expander_magnifier.clone();
         let expander_hawkeye = expander_hawkeye.clone();
+        let buttons_magnifier_zoom = buttons_magnifier_zoom.clone();
+        let buttons_magnifier_size = buttons_magnifier_size.clone();
+        let buttons_magnifier_pos = buttons_magnifier_pos.clone();
+        let buttons_hawkeye_size = buttons_hawkeye_size.clone();
+        let buttons_hawkeye_pos = buttons_hawkeye_pos.clone();
+        let buttons_hawkeye_lvl = buttons_hawkeye_lvl.clone();
         let switch_alignment = switch_alignment.clone();
         let scale_gaming_halo_control = scale_gaming_halo_control.clone();
         Rc::new(move || {
@@ -1016,10 +1091,10 @@ fn build_application(app: &adw::Application) {
                 expander_hawkeye.set_enable_expansion(false);
             }
 
-            if dyds_ull_active {
-                if let Some(disabled_button) = buttons_gaming_local_dimming.first() {
-                    disabled_button.set_active(true);
-                }
+            if dyds_ull_active
+                && let Some(disabled_button) = buttons_gaming_local_dimming.first()
+            {
+                disabled_button.set_active(true);
             }
 
             if !switch_gaming_rush.is_active() {
@@ -1035,10 +1110,27 @@ fn build_application(app: &adw::Application) {
 
             switch_alignment.set_sensitive(false);
 
-            expander_magnifier
-                .set_sensitive(wide_mode_active && !adaptive_sync_active && !hawkeye_active);
-            expander_hawkeye
-                .set_sensitive(wide_mode_active && !adaptive_sync_active && !magnifier_active);
+            expander_magnifier.set_sensitive(true);
+            expander_hawkeye.set_sensitive(true);
+            let magnifier_controls_enabled =
+                wide_mode_active && !adaptive_sync_active && !hawkeye_active && magnifier_active;
+            let hawkeye_controls_enabled =
+                wide_mode_active && !adaptive_sync_active && !magnifier_active && hawkeye_active;
+
+            for button in buttons_magnifier_zoom
+                .iter()
+                .chain(buttons_magnifier_size.iter())
+                .chain(buttons_magnifier_pos.iter())
+            {
+                button.set_sensitive(magnifier_controls_enabled);
+            }
+            for button in buttons_hawkeye_size
+                .iter()
+                .chain(buttons_hawkeye_pos.iter())
+                .chain(buttons_hawkeye_lvl.iter())
+            {
+                button.set_sensitive(hawkeye_controls_enabled);
+            }
             switch_gaming_async.set_sensitive(wide_mode_active);
             scale_gaming_halo_control
                 .set_sensitive(wide_mode_active && local_dimming_enabled && !dyds_ull_active);
@@ -1060,31 +1152,72 @@ fn build_application(app: &adw::Application) {
             }
         })
     };
+    let sync_dcr_constraints: Rc<dyn Fn()> = {
+        let switch_custom_dcr = switch_custom_dcr.clone();
+        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+        let scale_custom_brightness = scale_custom_brightness.clone();
+        let scale_custom_contrast = scale_custom_contrast.clone();
+        let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
+        let scale_custom_halo_control = scale_gaming_halo_control.clone();
+        Rc::new(move || {
+            let local_dimming_enabled = buttons_gaming_local_dimming
+                .iter()
+                .enumerate()
+                .skip(1)
+                .any(|(_, button)| button.is_active());
+            let dcr_active = switch_custom_dcr.is_active();
+
+            switch_custom_dcr.set_sensitive(!local_dimming_enabled);
+            for button in &buttons_gaming_local_dimming {
+                button.set_sensitive(!dcr_active);
+            }
+            scale_custom_brightness.set_sensitive(!dcr_active);
+            scale_custom_contrast.set_sensitive(!dcr_active);
+            scale_custom_shadow_balance.set_sensitive(!dcr_active);
+            scale_custom_halo_control.set_sensitive(!dcr_active);
+        })
+    };
+    {
+        let sync_dcr_constraints = sync_dcr_constraints.clone();
+        switch_custom_dcr.connect_active_notify(move |_| {
+            sync_dcr_constraints();
+        });
+    }
 
     {
         let buttons_gaming_dyds = buttons_gaming_dyds.clone();
         let sync_gaming_constraints = sync_gaming_constraints.clone();
         switch_gaming_async.connect_active_notify(move |sw| {
-            if sw.is_active() {
-                if let Some(off_button) = buttons_gaming_dyds.first() {
-                    off_button.set_active(true);
-                }
+            if sw.is_active()
+                && let Some(off_button) = buttons_gaming_dyds.first()
+            {
+                off_button.set_active(true);
             }
             sync_gaming_constraints();
         });
     }
 
-    for button in &buttons_gaming_dyds {
+    for (index, button) in buttons_gaming_dyds.iter().enumerate() {
         let sync_gaming_constraints = sync_gaming_constraints.clone();
-        button.connect_toggled(move |_| {
+        let sync_dcr_constraints = sync_dcr_constraints.clone();
+        let switch_custom_dcr = switch_custom_dcr.clone();
+        let tx = worker_tx.clone();
+        button.connect_toggled(move |button| {
+            if button.is_active() && index > 0 && switch_custom_dcr.is_active() {
+                switch_custom_dcr.set_active(false);
+                let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, 0));
+            }
             sync_gaming_constraints();
+            sync_dcr_constraints();
         });
     }
 
     for button in &buttons_gaming_local_dimming {
         let sync_gaming_constraints = sync_gaming_constraints.clone();
+        let sync_dcr_constraints = sync_dcr_constraints.clone();
         button.connect_toggled(move |_| {
             sync_gaming_constraints();
+            sync_dcr_constraints();
         });
     }
 
@@ -1217,11 +1350,9 @@ fn build_application(app: &adw::Application) {
         (scale_gaming_halo_control.clone(), monitor::VCP_HALO_CONTROL),
     ];
 
-    // Collect combo bindings: (ComboRow, VCP code)
-    let combo_binds: Vec<(adw::ComboRow, u8)> = vec![];
-
     // Collect switch bindings: (Switch, VCP code, active value)
     let switch_binds: Vec<(Switch, u8, u16)> = vec![
+        (switch_rear_led.clone(), monitor::VCP_REAR_LED, 0),
         (switch_quick_boot.clone(), monitor::VCP_QUICK_BOOT, 1),
         (switch_gaming_async.clone(), monitor::VCP_ADAPTIVE_SYNC, 1),
         (
@@ -1229,6 +1360,7 @@ fn build_application(app: &adw::Application) {
             monitor::VCP_MAGNIFIER_NV,
             1,
         ),
+        (switch_custom_dcr.clone(), monitor::VCP_DCR, 1),
         (switch_alignment.clone(), monitor::VCP_ALIGNMENT, 1),
         (switch_gaming_rush.clone(), monitor::VCP_GAME_RUSH, 2),
     ];
@@ -1372,7 +1504,9 @@ fn build_application(app: &adw::Application) {
         combo_picture_mode.clone().upcast(),
         button_profile_default.clone().upcast(),
         button_profile_custom.clone().upcast(),
+        switch_rear_led.clone().upcast(),
         button_power_off.clone().upcast(),
+        button_reset_colors.clone().upcast(),
         button_reset_factory.clone().upcast(),
     ]);
     monitor_control_widgets.extend(
@@ -1470,6 +1604,18 @@ fn build_application(app: &adw::Application) {
         #[strong]
         combo_custom_dynamic_od,
         #[strong]
+        combo_custom_dyds,
+        #[strong]
+        switch_custom_dcr,
+        #[strong]
+        buttons_gaming_hdr,
+        #[strong]
+        buttons_gaming_night_vision,
+        #[strong]
+        buttons_gaming_dynamic_od,
+        #[strong]
+        buttons_gaming_dyds,
+        #[strong]
         button_profile_custom,
         #[strong]
         monitor_control_widgets,
@@ -1491,6 +1637,8 @@ fn build_application(app: &adw::Application) {
         sync_color_temp_controls,
         #[strong]
         sync_gaming_constraints,
+        #[strong]
+        sync_dcr_constraints,
         #[strong]
         sync_picture_mode_controls,
         #[strong]
@@ -1524,13 +1672,6 @@ fn build_application(app: &adw::Application) {
                             }
                         }
 
-                        // Combos
-                        for (combo, code) in &combo_binds {
-                            if let Some(&val) = s.get(code) {
-                                combo.set_selected(val as u32);
-                            }
-                        }
-
                         if let Some(&val) = s.get(&monitor::VCP_OUTPUT_RANGE) {
                             combo_output_range.set_selected(monitor::vcp_to_combo_index(
                                 &monitor::OUTPUT_RANGE_VALUES[..],
@@ -1539,16 +1680,15 @@ fn build_application(app: &adw::Application) {
                         }
 
                         // Color temp (special mapping)
-                        if let Some(&val) = s.get(&monitor::VCP_MODE) {
-                            if let Some((mode_index, custom_active)) =
+                        if let Some(&val) = s.get(&monitor::VCP_MODE)
+                            && let Some((mode_index, custom_active)) =
                                 monitor::picture_mode_from_vcp(val)
-                            {
-                                combo_picture_mode_ui.set_selected(mode_index as u32);
-                                active_picture_mode.set(mode_index as u16);
-                                active_picture_mode_has_custom
-                                    .set(monitor::picture_mode_has_custom(mode_index));
-                                (sync_picture_mode_controls)(mode_index as u16, custom_active);
-                            }
+                        {
+                            combo_picture_mode_ui.set_selected(mode_index as u32);
+                            active_picture_mode.set(mode_index as u16);
+                            active_picture_mode_has_custom
+                                .set(monitor::picture_mode_has_custom(mode_index));
+                            (sync_picture_mode_controls)(mode_index as u16, custom_active);
                         }
 
                         if let Some(&val) = s.get(&monitor::VCP_COLOR_TEMP) {
@@ -1564,11 +1704,17 @@ fn build_application(app: &adw::Application) {
 
                         if let Some(&val) = s.get(&monitor::VCP_HDR) {
                             activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], val);
+                            activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], val);
                         }
 
                         if let Some(&val) = s.get(&monitor::VCP_NIGHT_VISION) {
                             activate_toggle_value(
                                 &combo_custom_night_vision,
+                                &monitor::NIGHT_VISION_VALUES[..],
+                                val,
+                            );
+                            activate_toggle_value(
+                                &buttons_gaming_night_vision,
                                 &monitor::NIGHT_VISION_VALUES[..],
                                 val,
                             );
@@ -1580,6 +1726,16 @@ fn build_application(app: &adw::Application) {
                                 &monitor::DYNAMIC_OD_VALUES[..],
                                 val,
                             );
+                            activate_toggle_value(
+                                &buttons_gaming_dynamic_od,
+                                &monitor::DYNAMIC_OD_VALUES[..],
+                                val,
+                            );
+                        }
+
+                        if let Some(&val) = s.get(&monitor::VCP_DYDS) {
+                            activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], val);
+                            activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], val);
                         }
 
                         if let Some(&val) = s.get(&monitor::VCP_GAMMA) {
@@ -1589,6 +1745,7 @@ fn build_application(app: &adw::Application) {
                                 val,
                             );
                         }
+                        sync_dcr_constraints();
 
                         // OSD language (actual values from MCCS capability list)
                         if let Some(&val) = s.get(&monitor::VCP_OSD_LANG) {
@@ -1636,12 +1793,12 @@ fn build_application(app: &adw::Application) {
                         }
 
                         for (btns, code, values) in &toggle_value_binds {
-                            if let Some(&val) = s.get(code) {
-                                if let Some(idx) = values.iter().position(|&mapped| mapped == val) {
-                                    if idx < btns.len() {
-                                        btns[idx].set_active(true);
-                                    }
-                                }
+                            if let Some(&val) = s.get(code)
+                                && let Some(idx) =
+                                    values.iter().position(|&mapped| mapped == val)
+                                && idx < btns.len()
+                            {
+                                btns[idx].set_active(true);
                             }
                         }
 
@@ -1671,6 +1828,19 @@ fn build_application(app: &adw::Application) {
                             }
                         }
                     }
+                    monitor::UiCmd::Settings(s) => {
+                        let previous_init = init.replace(true);
+                        for (scale, code) in &scale_binds {
+                            if let Some(&val) = s.get(code) {
+                                scale.set_value(val as f64);
+                            }
+                        }
+                        if let Some(&val) = s.get(&monitor::VCP_DCR) {
+                            switch_custom_dcr.set_active(val != 0);
+                        }
+                        init.set(previous_init);
+                        sync_dcr_constraints();
+                    }
                     monitor::UiCmd::Busy(busy) => {
                         for widget in &monitor_control_widgets {
                             widget.set_sensitive(!busy);
@@ -1682,6 +1852,7 @@ fn build_application(app: &adw::Application) {
                             );
                             sync_color_temp_controls();
                             sync_gaming_constraints();
+                            sync_dcr_constraints();
                         }
                     }
                 }
@@ -1710,6 +1881,16 @@ fn build_application(app: &adw::Application) {
             glib::Propagation::Proceed
         });
     }
+
+    wire_switch_values(
+        &switch_rear_led,
+        &tx,
+        monitor::VCP_REAR_LED,
+        0,
+        1,
+        true,
+        &init,
+    );
 
     // I/O & OSD
     {
@@ -1800,14 +1981,14 @@ fn build_application(app: &adw::Application) {
         &init,
     );
 
-    // Power Saving (Off=1, Lvl1=2, Lvl2=3, Lvl3=4)
+    // Power Saving (Off=0, Lvl1=1, Lvl2=2)
     {
         let ps = vec![
             button_power_save_off.clone(),
             button_power_save_lvl1.clone(),
             button_power_save_lvl2.clone(),
         ];
-        wire_toggles(&ps, &tx, monitor::VCP_POWER_SAVING, true, 1, &init);
+        wire_toggles(&ps, &tx, monitor::VCP_POWER_SAVING, true, 0, &init);
     }
 
     // Power LED (Off=1, Lvl1=2, Lvl2=3, Lvl3=4)
@@ -1824,14 +2005,310 @@ fn build_application(app: &adw::Application) {
     // Resets & Power Off
     {
         let tx = tx.clone();
+        let window = window.clone();
+        let lang_cell = lang_cell.clone();
         button_power_off.connect_clicked(move |_| {
-            let _ = tx.send(WorkerCmd::Set(monitor::VCP_DPMS, 0x04));
+            let lang = lang_cell.get();
+            let tx = tx.clone();
+            confirm_destructive_action(
+                &window,
+                &tr(&lang, "confirm_power_off_title"),
+                &tr(&lang, "confirm_power_off_body"),
+                &tr(&lang, "cancel_btn"),
+                &tr(&lang, "power_off"),
+                move || {
+                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_DPMS, 0x04));
+                },
+            );
         });
     }
     {
         let tx = tx.clone();
+        let init = init.clone();
+        let window = window.clone();
+        let lang_cell = lang_cell.clone();
+        let scale_custom_brightness = scale_custom_brightness.clone();
+        let scale_custom_contrast = scale_custom_contrast.clone();
+        let scale_custom_red_gain = scale_custom_red_gain.clone();
+        let scale_custom_green_gain = scale_custom_green_gain.clone();
+        let scale_custom_blue_gain = scale_custom_blue_gain.clone();
+        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+        button_reset_colors.connect_clicked(move |_| {
+            let lang = lang_cell.get();
+            let tx = tx.clone();
+            let init = init.clone();
+            let scale_custom_brightness = scale_custom_brightness.clone();
+            let scale_custom_contrast = scale_custom_contrast.clone();
+            let scale_custom_red_gain = scale_custom_red_gain.clone();
+            let scale_custom_green_gain = scale_custom_green_gain.clone();
+            let scale_custom_blue_gain = scale_custom_blue_gain.clone();
+            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+            confirm_destructive_action(
+                &window,
+                &tr(&lang, "confirm_reset_colors_title"),
+                &tr(&lang, "confirm_reset_colors_body"),
+                &tr(&lang, "cancel_btn"),
+                &tr(&lang, "reset_btn"),
+                move || {
+                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_COLOR, 1));
+
+                    let previous_init = init.replace(true);
+                    scale_custom_brightness.set_value(25.0);
+                    scale_custom_contrast.set_value(50.0);
+                    scale_custom_red_gain.set_value(50.0);
+                    scale_custom_green_gain.set_value(50.0);
+                    scale_custom_blue_gain.set_value(50.0);
+                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
+                        high_button.set_active(true);
+                    }
+                    init.set(previous_init);
+
+                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
+                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
+                    let _ = tx.send(WorkerCmd::SetSave(
+                        monitor::VCP_LOCAL_DIMMING,
+                        monitor::LOCAL_DIMMING_VALUES[4],
+                    ));
+                    for code in [
+                        monitor::VCP_USER1_RED,
+                        monitor::VCP_USER1_GREEN,
+                        monitor::VCP_USER1_BLUE,
+                        monitor::VCP_USER2_RED,
+                        monitor::VCP_USER2_GREEN,
+                        monitor::VCP_USER2_BLUE,
+                        monitor::VCP_USER3_RED,
+                        monitor::VCP_USER3_GREEN,
+                        monitor::VCP_USER3_BLUE,
+                    ] {
+                        let _ = tx.send(WorkerCmd::SetSave(code, 50));
+                    }
+                },
+            );
+        });
+    }
+    {
+        let tx = tx.clone();
+        let init = init.clone();
+        let window = window.clone();
+        let lang_cell = lang_cell.clone();
+        let scale_custom_brightness = scale_custom_brightness.clone();
+        let scale_custom_contrast = scale_custom_contrast.clone();
+        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+        button_reset_settings.connect_clicked(move |_| {
+            let lang = lang_cell.get();
+            let tx = tx.clone();
+            let init = init.clone();
+            let scale_custom_brightness = scale_custom_brightness.clone();
+            let scale_custom_contrast = scale_custom_contrast.clone();
+            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+            confirm_destructive_action(
+                &window,
+                &tr(&lang, "confirm_reset_settings_title"),
+                &tr(&lang, "confirm_reset_settings_body"),
+                &tr(&lang, "cancel_btn"),
+                &tr(&lang, "reset_btn"),
+                move || {
+                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_BC, 1));
+                    let previous_init = init.replace(true);
+                    scale_custom_brightness.set_value(25.0);
+                    scale_custom_contrast.set_value(50.0);
+                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
+                        high_button.set_active(true);
+                    }
+                    init.set(previous_init);
+
+                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
+                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
+                    let _ = tx.send(WorkerCmd::SetSave(
+                        monitor::VCP_LOCAL_DIMMING,
+                        monitor::LOCAL_DIMMING_VALUES[4],
+                    ));
+                },
+            );
+        });
+    }
+    {
+        let tx = tx.clone();
+        let init = init.clone();
+        let window = window.clone();
+        let lang_cell = lang_cell.clone();
+        let scale_osd_time = scale_osd_time.clone();
+        let scale_osd_h_position = scale_osd_h_position.clone();
+        let scale_osd_v_position = scale_osd_v_position.clone();
+        let scale_osd_transparency = scale_osd_transparency.clone();
+        let switch_audio_mute = switch_audio_mute.clone();
+        let scale_audio_volume = scale_audio_volume.clone();
+        let switch_rear_led = switch_rear_led.clone();
+        let combo_output_range = combo_output_range.clone();
+        let switch_quick_boot = switch_quick_boot.clone();
+        let combo_osd_language = combo_osd_language.clone();
+        let scale_custom_brightness = scale_custom_brightness.clone();
+        let scale_custom_contrast = scale_custom_contrast.clone();
+        let scale_custom_sharpness = scale_custom_sharpness.clone();
+        let scale_custom_color_enhance = scale_custom_color_enhance.clone();
+        let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
+        let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
+        let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
+        let scale_gaming_halo_control = scale_gaming_halo_control.clone();
+        let scale_gaming_super_res = scale_gaming_super_res.clone();
+        let switch_custom_dcr = switch_custom_dcr.clone();
+        let switch_gaming_async = switch_gaming_async.clone();
+        let combo_custom_color_temp = combo_custom_color_temp.clone();
+        let combo_custom_gamma = combo_custom_gamma.clone();
+        let combo_custom_hdr = combo_custom_hdr.clone();
+        let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
+        let combo_custom_dyds = combo_custom_dyds.clone();
+        let combo_custom_night_vision = combo_custom_night_vision.clone();
+        let buttons_gaming_hdr = buttons_gaming_hdr.clone();
+        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
+        let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
+        let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
+        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+        let button_power_save_off = button_power_save_off.clone();
+        let button_led_lvl2 = button_led_lvl2.clone();
+        let combo_picture_mode = combo_picture_mode.clone();
+        let button_profile_default = button_profile_default.clone();
+        let button_profile_custom = button_profile_custom.clone();
+        let custom_revealer = custom_revealer.clone();
         button_reset_factory.connect_clicked(move |_| {
-            let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_FACTORY, 1));
+            let lang = lang_cell.get();
+            let tx = tx.clone();
+            let init = init.clone();
+            let scale_osd_time = scale_osd_time.clone();
+            let scale_osd_h_position = scale_osd_h_position.clone();
+            let scale_osd_v_position = scale_osd_v_position.clone();
+            let scale_osd_transparency = scale_osd_transparency.clone();
+            let switch_audio_mute = switch_audio_mute.clone();
+            let scale_audio_volume = scale_audio_volume.clone();
+            let switch_rear_led = switch_rear_led.clone();
+            let combo_output_range = combo_output_range.clone();
+            let switch_quick_boot = switch_quick_boot.clone();
+            let combo_osd_language = combo_osd_language.clone();
+            let scale_custom_brightness = scale_custom_brightness.clone();
+            let scale_custom_contrast = scale_custom_contrast.clone();
+            let scale_custom_sharpness = scale_custom_sharpness.clone();
+            let scale_custom_color_enhance = scale_custom_color_enhance.clone();
+            let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
+            let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
+            let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
+            let scale_gaming_halo_control = scale_gaming_halo_control.clone();
+            let scale_gaming_super_res = scale_gaming_super_res.clone();
+            let switch_custom_dcr = switch_custom_dcr.clone();
+            let switch_gaming_async = switch_gaming_async.clone();
+            let combo_custom_color_temp = combo_custom_color_temp.clone();
+            let combo_custom_gamma = combo_custom_gamma.clone();
+            let combo_custom_hdr = combo_custom_hdr.clone();
+            let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
+            let combo_custom_dyds = combo_custom_dyds.clone();
+            let combo_custom_night_vision = combo_custom_night_vision.clone();
+            let buttons_gaming_hdr = buttons_gaming_hdr.clone();
+            let buttons_gaming_dyds = buttons_gaming_dyds.clone();
+            let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
+            let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
+            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
+            let button_power_save_off = button_power_save_off.clone();
+            let button_led_lvl2 = button_led_lvl2.clone();
+            let combo_picture_mode = combo_picture_mode.clone();
+            let button_profile_default = button_profile_default.clone();
+            let button_profile_custom = button_profile_custom.clone();
+            let custom_revealer = custom_revealer.clone();
+            confirm_destructive_action(
+                &window,
+                &tr(&lang, "confirm_reset_factory_title"),
+                &tr(&lang, "confirm_reset_factory_body"),
+                &tr(&lang, "cancel_btn"),
+                &tr(&lang, "reset_btn"),
+                move || {
+                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_FACTORY, 1));
+
+                    let previous_init = init.replace(true);
+                    scale_osd_time.set_value(10.0);
+                    scale_osd_h_position.set_value(50.0);
+                    scale_osd_v_position.set_value(50.0);
+                    scale_osd_transparency.set_value(0.0);
+                    switch_audio_mute.set_active(false);
+                    scale_audio_volume.set_value(50.0);
+                    switch_rear_led.set_active(true);
+                    combo_output_range.set_selected(0);
+                    switch_quick_boot.set_active(false);
+                    combo_osd_language.set_selected(0);
+                    scale_custom_brightness.set_value(25.0);
+                    scale_custom_contrast.set_value(50.0);
+                    scale_custom_sharpness.set_value(0.0);
+                    scale_custom_color_enhance.set_value(0.0);
+                    scale_custom_cr_enhance.set_value(0.0);
+                    scale_custom_low_blue_light.set_value(0.0);
+                    scale_custom_shadow_balance.set_value(50.0);
+                    scale_gaming_halo_control.set_value(0.0);
+                    scale_gaming_super_res.set_value(0.0);
+                    switch_custom_dcr.set_active(false);
+                    switch_gaming_async.set_active(false);
+                    activate_toggle_value(&combo_custom_color_temp, &monitor::COLOR_TEMP_VALUES[..], monitor::COLOR_TEMP_VALUES[0]);
+                    activate_toggle_value(&combo_custom_gamma, &monitor::GAMMA_VALUES[..], monitor::GAMMA_VALUES[2]);
+                    activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], monitor::HDR_VALUES[0]);
+                    activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], monitor::HDR_VALUES[0]);
+                    activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], monitor::DYDS_VALUES[0]);
+                    activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], monitor::DYDS_VALUES[0]);
+                    activate_toggle_value(&combo_custom_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], monitor::DYNAMIC_OD_VALUES[0]);
+                    activate_toggle_value(&buttons_gaming_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], monitor::DYNAMIC_OD_VALUES[0]);
+                    activate_toggle_value(&combo_custom_night_vision, &monitor::NIGHT_VISION_VALUES[..], monitor::NIGHT_VISION_VALUES[0]);
+                    activate_toggle_value(&buttons_gaming_night_vision, &monitor::NIGHT_VISION_VALUES[..], monitor::NIGHT_VISION_VALUES[0]);
+                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
+                        high_button.set_active(true);
+                    }
+                    button_power_save_off.set_active(true);
+                    button_led_lvl2.set_active(true);
+                    combo_picture_mode.set_selected(0);
+                    button_profile_default.set_active(true);
+                    button_profile_custom.set_active(false);
+                    custom_revealer.set_reveal_child(true);
+                    custom_revealer.set_sensitive(false);
+                    init.set(previous_init);
+
+                    let tx = tx.clone();
+                    glib::timeout_add_local_once(Duration::from_millis(1500), move || {
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_TIME, 10));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_H_POS, 50));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_V_POS, 50));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_TRANS, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_LANG, 0x02));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_MUTE, 1));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_VOLUME, 50));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, monitor::OUTPUT_RANGE_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_QUICK_BOOT, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_REAR_LED, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_POWER_LED, 3));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_POWER_SAVING, monitor::POWER_SAVING_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SHARPNESS, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_COLOR_TEMP, monitor::COLOR_TEMP_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_GAMMA, monitor::GAMMA_VALUES[2]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_HDR, monitor::HDR_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_ADAPTIVE_SYNC, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(
+                            monitor::VCP_LOCAL_DIMMING,
+                            monitor::LOCAL_DIMMING_VALUES[4],
+                        ));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DYDS, monitor::DYDS_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_LOW_BLUE, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_COLOR_ENHANCE, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CR_ENHANCE, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SHADOW_BALANCE, 50));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_NIGHT_VISION, monitor::NIGHT_VISION_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SUPER_RES, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DYNAMIC_OD, monitor::DYNAMIC_OD_VALUES[0]));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_HALO_CONTROL, 0));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CROSSHAIR, 1));
+                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CROSSHAIR_COLOR, 8));
+                        let _ = tx.send(WorkerCmd::Set(
+                            monitor::VCP_MODE,
+                            monitor::PICTURE_MODE_DEFAULT_VALUES[0],
+                        ));
+                    });
+                },
+            );
         });
     }
     // ===== PROFILE TAB =====
@@ -2032,6 +2509,14 @@ fn build_application(app: &adw::Application) {
         true,
         &init,
     );
+    wire_toggle_values(
+        &combo_custom_dyds,
+        &tx,
+        monitor::VCP_DYDS,
+        &monitor::DYDS_VALUES[..],
+        true,
+        &init,
+    );
 
     // ===== GAMING TAB =====
 
@@ -2144,6 +2629,37 @@ fn build_application(app: &adw::Application) {
         true,
         &init,
     );
+    {
+        let tx = tx.clone();
+        let init = init.clone();
+        let sync_dcr_constraints = sync_dcr_constraints.clone();
+        let switch_custom_dcr_ref = switch_custom_dcr.clone();
+        switch_custom_dcr.connect_state_set(move |_, state| {
+            if init.get() || !switch_custom_dcr_ref.is_sensitive() {
+                return glib::Propagation::Proceed;
+            }
+            let val = if state { 1 } else { 0 };
+            let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, val));
+            let tx_refresh = tx.clone();
+            glib::timeout_add_local_once(Duration::from_millis(900), move || {
+                let _ = tx_refresh.send(WorkerCmd::ReadStable(vec![
+                    monitor::VCP_BRIGHTNESS,
+                    monitor::VCP_CONTRAST,
+                    monitor::VCP_DCR,
+                ]));
+                let tx_refresh = tx_refresh.clone();
+                glib::timeout_add_local_once(Duration::from_millis(500), move || {
+                    let _ = tx_refresh.send(WorkerCmd::ReadStable(vec![
+                        monitor::VCP_BRIGHTNESS,
+                        monitor::VCP_CONTRAST,
+                        monitor::VCP_DCR,
+                    ]));
+                });
+            });
+            sync_dcr_constraints();
+            glib::Propagation::Proceed
+        });
+    }
     wire_toggle_values(
         &buttons_magnifier_zoom,
         &tx,

@@ -1,0 +1,681 @@
+﻿call_line;return_line;id;step;label;time_utc;function;code_hex;value_dec;api_ok;error_if_failed;current_dec;current_hex;maximum_dec;maximum_hex;payload_MH_ML_SH_SL_if_success;duration_ms
+108;109;1;1;Full Game -> 25;2026-09-29T08:18:01.213Z;SetVCPFeature;0x99;1;True;;;;;;;78
+110;111;2;1;Full Game -> 25;2026-09-29T08:18:01.290Z;SetVCPFeature;0x3a;1;True;;;;;;;63
+114;115;3;2;Full Game -> Wide;2026-09-29T08:18:56.071Z;SetVCPFeature;0x99;0;True;;;;;;;66
+116;117;4;2;Full Game -> Wide;2026-09-29T08:18:56.137Z;SetVCPFeature;0x3a;0;True;;;;;;;64
+120;121;5;3;Full Game -> sPX;2026-09-29T08:19:42.637Z;SetVCPFeature;0x99;4;True;;;;;;;60
+122;123;6;3;Full Game -> sPX;2026-09-29T08:19:42.697Z;SetVCPFeature;0x3a;4;True;;;;;;;63
+125;126;7;;;2026-09-29T08:20:02.845Z;SetVCPFeature;0x99;1;True;;;;;;;60
+127;128;8;;;2026-09-29T08:20:02.905Z;SetVCPFeature;0x22;1;True;;;;;;;63
+130;131;9;4;Profile -> Standard/Custom;2026-09-29T08:20:41.812Z;SetVCPFeature;0x99;2;True;;;;;;;67
+132;133;10;4;Profile -> Standard/Custom;2026-09-29T08:20:41.879Z;SetVCPFeature;0x22;2;True;;;;;;;63
+136;137;11;5;Profile -> Standard/Default;2026-09-29T08:20:56.012Z;SetVCPFeature;0x99;1;True;;;;;;;58
+138;139;12;5;Profile -> Standard/Default;2026-09-29T08:20:56.070Z;SetVCPFeature;0x22;1;True;;;;;;;62
+141;142;13;;;2026-09-29T08:20:59.674Z;SetVCPFeature;0x99;27;True;;;;;;;66
+143;144;14;;;2026-09-29T08:20:59.740Z;SetVCPFeature;0x22;27;True;;;;;;;64
+145;146;15;;;2026-09-29T08:20:59.807Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+147;148;16;;;2026-09-29T08:20:59.871Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;64
+149;150;17;;;2026-09-29T08:21:00.190Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+151;152;18;;;2026-09-29T08:21:00.257Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;62
+153;154;19;;;2026-09-29T08:21:00.320Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;60
+155;156;20;;;2026-09-29T08:21:00.380Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;8;0x8;65288;0xff08;ff 08 00 08;60
+157;158;21;;;2026-09-29T08:21:03.674Z;SetVCPFeature;0x99;1;True;;;;;;;64
+159;160;22;;;2026-09-29T08:21:03.738Z;SetVCPFeature;0x22;1;True;;;;;;;63
+161;162;23;;;2026-09-29T08:21:03.806Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+163;164;24;;;2026-09-29T08:21:03.869Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+165;166;25;;;2026-09-29T08:21:04.193Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+167;168;26;;;2026-09-29T08:21:04.260Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+169;170;27;;;2026-09-29T08:21:04.324Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+171;172;28;;;2026-09-29T08:21:04.387Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;63
+173;174;29;;;2026-09-29T08:21:23.976Z;SetVCPFeature;0x99;27;True;;;;;;;62
+175;176;30;;;2026-09-29T08:21:24.038Z;SetVCPFeature;0x22;27;True;;;;;;;62
+177;178;31;;;2026-09-29T08:21:24.103Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+179;180;32;;;2026-09-29T08:21:24.167Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+181;182;33;;;2026-09-29T08:21:24.493Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+183;184;34;;;2026-09-29T08:21:24.562Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;62
+185;186;35;;;2026-09-29T08:21:24.625Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+187;188;36;;;2026-09-29T08:21:24.687Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;8;0x8;65288;0xff08;ff 08 00 08;62
+189;190;37;;;2026-09-29T08:21:24.754Z;SetVCPFeature;0x99;1;True;;;;;;;54
+191;192;38;;;2026-09-29T08:21:24.808Z;SetVCPFeature;0x22;1;True;;;;;;;63
+193;194;39;;;2026-09-29T08:21:24.873Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+195;196;40;;;2026-09-29T08:21:24.938Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;64
+197;198;41;;;2026-09-29T08:21:25.264Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+199;200;42;;;2026-09-29T08:21:25.333Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;61
+201;202;43;;;2026-09-29T08:21:25.394Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+203;204;44;;;2026-09-29T08:21:25.460Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;61
+206;207;45;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.346Z;SetVCPFeature;0x99;27;True;;;;;;;64
+208;209;46;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.410Z;SetVCPFeature;0x22;27;True;;;;;;;63
+210;211;47;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.477Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+212;213;48;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.541Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+214;215;49;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.866Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+216;217;50;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.934Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;63
+218;219;51;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:55.997Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+220;221;52;6;Profile -> DyDs/ULL FPS - Def;2026-09-29T08:21:56.059Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;8;0x8;65288;0xff08;ff 08 00 08;63
+224;225;53;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.049Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;66
+226;227;54;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.115Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;27;0x1b;38;0x26;00 26 00 1b;64
+228;229;55;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.179Z;GetVCPFeatureAndVCPFeatureReply;0x1c;;True;;5;0x5;25650;0x6432;64 32 00 05;63
+230;231;56;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.242Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;62
+232;233;57;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.304Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+234;235;58;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.367Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+236;237;59;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.428Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+238;239;60;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.490Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;15677;0x3d3d;12850;0x3232;32 32 3d 3d;61
+240;241;61;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.551Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14649;0x3939;15929;0x3e39;3e 39 39 39;64
+242;243;62;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.615Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;2;0x2;1;0x1;00 01 00 02;62
+244;245;63;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.678Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;768;0x300;768;0x300;03 00 03 00;62
+246;247;64;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.740Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;64
+248;249;65;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.804Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+250;251;66;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.867Z;SetVCPFeature;0x99;28;True;;;;;;;56
+252;253;67;7;Profile -> DyDs/ULL FPS - Cus;2026-09-29T08:22:13.923Z;SetVCPFeature;0x22;28;True;;;;;;;64
+256;257;68;8;Profile -> DyDs/LD Def;2026-09-29T08:22:31.582Z;SetVCPFeature;0x99;29;True;;;;;;;63
+258;259;69;8;Profile -> DyDs/LD Def;2026-09-29T08:22:31.645Z;SetVCPFeature;0x22;29;True;;;;;;;63
+260;261;70;8;Profile -> DyDs/LD Def;2026-09-29T08:22:31.712Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+262;263;71;8;Profile -> DyDs/LD Def;2026-09-29T08:22:31.776Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;61
+264;265;72;8;Profile -> DyDs/LD Def;2026-09-29T08:22:32.097Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+266;267;73;8;Profile -> DyDs/LD Def;2026-09-29T08:22:32.166Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+268;269;74;8;Profile -> DyDs/LD Def;2026-09-29T08:22:32.230Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+270;271;75;8;Profile -> DyDs/LD Def;2026-09-29T08:22:32.293Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;5;0x5;65288;0xff08;ff 08 00 05;62
+274;275;76;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.066Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+276;277;77;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.128Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;29;0x1d;38;0x26;00 26 00 1d;61
+278;279;78;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.189Z;GetVCPFeatureAndVCPFeatureReply;0x1e;;True;;5;0x5;25650;0x6432;64 32 00 05;65
+280;281;79;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.254Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;62
+282;283;80;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.316Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+284;285;81;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.379Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+286;287;82;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.442Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+288;289;83;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.505Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;False;0xc0262589;;;;;;62
+290;291;84;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.828Z;GetVCPFeatureAndVCPFeatureReply;0xff;;True;;12850;0x3232;12850;0x3232;32 32 32 32;69
+292;293;85;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.897Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+294;295;86;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:44.960Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+296;297;87;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:45.023Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;4;0x4;1;0x1;00 01 00 04;62
+298;299;88;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:45.085Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;768;0x300;768;0x300;03 00 03 00;64
+300;301;89;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:45.149Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;66
+302;303;90;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:45.215Z;SetVCPFeature;0x99;30;True;;;;;;;70
+304;305;91;9;Profile -> DyDs/LD Cus;2026-09-29T08:22:45.285Z;SetVCPFeature;0x22;30;True;;;;;;;63
+307;308;92;;;2026-09-29T08:22:53.471Z;SetVCPFeature;0x99;1;True;;;;;;;70
+309;310;93;;;2026-09-29T08:22:53.540Z;SetVCPFeature;0x22;1;True;;;;;;;63
+311;312;94;;;2026-09-29T08:22:53.607Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+313;314;95;;;2026-09-29T08:22:53.672Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;65
+315;316;96;;;2026-09-29T08:22:53.998Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;70
+317;318;97;;;2026-09-29T08:22:54.068Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+319;320;98;;;2026-09-29T08:22:54.132Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+321;322;99;;;2026-09-29T08:22:54.194Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;68
+323;324;100;;;2026-09-29T08:22:54.274Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+325;326;101;;;2026-09-29T08:22:54.336Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;1;0x1;38;0x26;00 26 00 01;63
+327;328;102;;;2026-09-29T08:22:54.399Z;GetVCPFeatureAndVCPFeatureReply;0x02;;True;;0;0x0;25650;0x6432;64 32 00 00;62
+329;330;103;;;2026-09-29T08:22:54.461Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;50;0x32;00 32 05 32;63
+331;332;104;;;2026-09-29T08:22:54.524Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+333;334;105;;;2026-09-29T08:22:54.587Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+335;336;106;;;2026-09-29T08:22:54.649Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+337;338;107;;;2026-09-29T08:22:54.711Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+339;340;108;;;2026-09-29T08:22:54.773Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+341;342;109;;;2026-09-29T08:22:54.835Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;63
+343;344;110;;;2026-09-29T08:22:54.898Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+345;346;111;;;2026-09-29T08:22:54.959Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+347;348;112;;;2026-09-29T08:22:55.022Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+349;350;113;;;2026-09-29T08:22:55.085Z;SetVCPFeature;0x99;2;True;;;;;;;57
+351;352;114;;;2026-09-29T08:22:55.142Z;SetVCPFeature;0x22;2;True;;;;;;;63
+353;354;115;;;2026-09-29T08:22:55.215Z;SetVCPFeature;0x99;2;True;;;;;;;68
+355;356;116;;;2026-09-29T08:22:55.283Z;SetVCPFeature;0x22;2;True;;;;;;;62
+358;359;117;10;Profile -> RTS/RPG Def;2026-09-29T08:23:44.749Z;SetVCPFeature;0x99;3;True;;;;;;;58
+360;361;118;10;Profile -> RTS/RPG Def;2026-09-29T08:23:44.807Z;SetVCPFeature;0x22;3;True;;;;;;;63
+362;363;119;10;Profile -> RTS/RPG Def;2026-09-29T08:23:44.874Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+364;365;120;10;Profile -> RTS/RPG Def;2026-09-29T08:23:44.939Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+366;367;121;10;Profile -> RTS/RPG Def;2026-09-29T08:23:45.262Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+368;369;122;10;Profile -> RTS/RPG Def;2026-09-29T08:23:45.330Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+370;371;123;10;Profile -> RTS/RPG Def;2026-09-29T08:23:45.394Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+372;373;124;10;Profile -> RTS/RPG Def;2026-09-29T08:23:45.457Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;62
+376;377;125;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:54.968Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;60
+378;379;126;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.028Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;3;0x3;38;0x26;00 26 00 03;62
+380;381;127;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.090Z;GetVCPFeatureAndVCPFeatureReply;0x04;;True;;259;0x103;23090;0x5a32;5a 32 01 03;65
+382;383;128;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.155Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;562;0x232;02 32 05 32;62
+384;385;129;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.217Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+386;387;130;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.280Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+388;389;131;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.341Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+390;391;132;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.405Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+392;393;133;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.468Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+394;395;134;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.529Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;64
+396;397;135;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.594Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;256;0x100;0;0x0;00 00 01 00;62
+398;399;136;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.656Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+400;401;137;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.719Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;64
+402;403;138;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.783Z;SetVCPFeature;0x99;4;True;;;;;;;57
+404;405;139;11;Profile -> RTS/RPG Cus;2026-09-29T08:23:55.840Z;SetVCPFeature;0x22;4;True;;;;;;;62
+408;409;140;12;Profile -> FPS Def;2026-09-29T08:24:08.620Z;SetVCPFeature;0x99;5;True;;;;;;;56
+410;411;141;12;Profile -> FPS Def;2026-09-29T08:24:08.676Z;SetVCPFeature;0x22;5;True;;;;;;;63
+412;413;142;12;Profile -> FPS Def;2026-09-29T08:24:08.742Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;66
+414;415;143;12;Profile -> FPS Def;2026-09-29T08:24:08.808Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+416;417;144;12;Profile -> FPS Def;2026-09-29T08:24:09.132Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+418;419;145;12;Profile -> FPS Def;2026-09-29T08:24:09.199Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+420;421;146;12;Profile -> FPS Def;2026-09-29T08:24:09.263Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+422;423;147;12;Profile -> FPS Def;2026-09-29T08:24:09.325Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;63
+426;427;148;13;Profile -> FPS Cus;2026-09-29T08:24:25.054Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+428;429;149;13;Profile -> FPS Cus;2026-09-29T08:24:25.121Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;5;0x5;38;0x26;00 26 00 05;63
+430;431;150;13;Profile -> FPS Cus;2026-09-29T08:24:25.184Z;GetVCPFeatureAndVCPFeatureReply;0x06;;True;;514;0x202;24370;0x5f32;5f 32 02 02;63
+432;433;151;13;Profile -> FPS Cus;2026-09-29T08:24:25.247Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;562;0x232;02 32 05 32;62
+434;435;152;13;Profile -> FPS Cus;2026-09-29T08:24:25.309Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+436;437;153;13;Profile -> FPS Cus;2026-09-29T08:24:25.373Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+438;439;154;13;Profile -> FPS Cus;2026-09-29T08:24:25.435Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+440;441;155;13;Profile -> FPS Cus;2026-09-29T08:24:25.498Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+442;443;156;13;Profile -> FPS Cus;2026-09-29T08:24:25.560Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+444;445;157;13;Profile -> FPS Cus;2026-09-29T08:24:25.622Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;63
+446;447;158;13;Profile -> FPS Cus;2026-09-29T08:24:25.685Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;256;0x100;0;0x0;00 00 01 00;62
+448;449;159;13;Profile -> FPS Cus;2026-09-29T08:24:25.747Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+450;451;160;13;Profile -> FPS Cus;2026-09-29T08:24:25.809Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;64
+452;453;161;13;Profile -> FPS Cus;2026-09-29T08:24:25.873Z;SetVCPFeature;0x99;6;True;;;;;;;71
+454;455;162;13;Profile -> FPS Cus;2026-09-29T08:24:25.944Z;SetVCPFeature;0x22;6;True;;;;;;;63
+458;459;163;14;Profile -> MOBA Def;2026-09-29T08:24:38.910Z;SetVCPFeature;0x99;7;True;;;;;;;63
+460;461;164;14;Profile -> MOBA Def;2026-09-29T08:24:38.973Z;SetVCPFeature;0x22;7;True;;;;;;;61
+462;463;165;14;Profile -> MOBA Def;2026-09-29T08:24:39.038Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;66
+464;465;166;14;Profile -> MOBA Def;2026-09-29T08:24:39.104Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;60
+466;467;167;14;Profile -> MOBA Def;2026-09-29T08:24:39.426Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+468;469;168;14;Profile -> MOBA Def;2026-09-29T08:24:39.495Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;63
+470;471;169;14;Profile -> MOBA Def;2026-09-29T08:24:39.558Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+472;473;170;14;Profile -> MOBA Def;2026-09-29T08:24:39.622Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;64
+476;477;171;15;Profile -> MOBA Cus;2026-09-29T08:24:49.852Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+478;479;172;15;Profile -> MOBA Cus;2026-09-29T08:24:49.916Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;7;0x7;38;0x26;00 26 00 07;67
+480;481;173;15;Profile -> MOBA Cus;2026-09-29T08:24:49.984Z;GetVCPFeatureAndVCPFeatureReply;0x08;;True;;259;0x103;24370;0x5f32;5f 32 01 03;73
+482;483;174;15;Profile -> MOBA Cus;2026-09-29T08:24:50.056Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;828;0x33c;03 3c 05 32;61
+484;485;175;15;Profile -> MOBA Cus;2026-09-29T08:24:50.117Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+486;487;176;15;Profile -> MOBA Cus;2026-09-29T08:24:50.180Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+488;489;177;15;Profile -> MOBA Cus;2026-09-29T08:24:50.243Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;False;0xc0262589;;;;;;63
+490;491;178;15;Profile -> MOBA Cus;2026-09-29T08:24:50.567Z;GetVCPFeatureAndVCPFeatureReply;0xff;;True;;12850;0x3232;12850;0x3232;32 32 32 32;69
+492;493;179;15;Profile -> MOBA Cus;2026-09-29T08:24:50.636Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;65
+494;495;180;15;Profile -> MOBA Cus;2026-09-29T08:24:50.701Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+496;497;181;15;Profile -> MOBA Cus;2026-09-29T08:24:50.763Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+498;499;182;15;Profile -> MOBA Cus;2026-09-29T08:24:50.826Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;62
+500;501;183;15;Profile -> MOBA Cus;2026-09-29T08:24:50.888Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;768;0x300;1;0x1;00 01 03 00;61
+502;503;184;15;Profile -> MOBA Cus;2026-09-29T08:24:50.949Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+504;505;185;15;Profile -> MOBA Cus;2026-09-29T08:24:51.012Z;SetVCPFeature;0x99;8;True;;;;;;;58
+506;507;186;15;Profile -> MOBA Cus;2026-09-29T08:24:51.070Z;SetVCPFeature;0x22;8;True;;;;;;;62
+510;511;187;16;Profile -> Movie Def;2026-09-29T08:25:02.504Z;SetVCPFeature;0x99;9;True;;;;;;;61
+512;513;188;16;Profile -> Movie Def;2026-09-29T08:25:02.565Z;SetVCPFeature;0x22;9;True;;;;;;;62
+514;515;189;16;Profile -> Movie Def;2026-09-29T08:25:02.629Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;66
+516;517;190;16;Profile -> Movie Def;2026-09-29T08:25:02.695Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+518;519;191;16;Profile -> Movie Def;2026-09-29T08:25:03.019Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+520;521;192;16;Profile -> Movie Def;2026-09-29T08:25:03.087Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;61
+522;523;193;16;Profile -> Movie Def;2026-09-29T08:25:03.148Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+524;525;194;16;Profile -> Movie Def;2026-09-29T08:25:03.211Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;62
+528;529;195;17;Profile -> Movie Cus;2026-09-29T08:25:15.126Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;73
+530;531;196;17;Profile -> Movie Cus;2026-09-29T08:25:15.199Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;9;0x9;38;0x26;00 26 00 09;62
+532;533;197;17;Profile -> Movie Cus;2026-09-29T08:25:15.261Z;GetVCPFeatureAndVCPFeatureReply;0x0a;;True;;0;0x0;25660;0x643c;64 3c 00 00;63
+534;535;198;17;Profile -> Movie Cus;2026-09-29T08:25:15.324Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;562;0x232;02 32 05 32;62
+536;537;199;17;Profile -> Movie Cus;2026-09-29T08:25:15.386Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+538;539;200;17;Profile -> Movie Cus;2026-09-29T08:25:15.450Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+540;541;201;17;Profile -> Movie Cus;2026-09-29T08:25:15.511Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+542;543;202;17;Profile -> Movie Cus;2026-09-29T08:25:15.575Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;12850;0x3232;32 32 37 37;62
+544;545;203;17;Profile -> Movie Cus;2026-09-29T08:25:15.637Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;14135;0x3737;37 37 37 37;62
+546;547;204;17;Profile -> Movie Cus;2026-09-29T08:25:15.699Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;63
+548;549;205;17;Profile -> Movie Cus;2026-09-29T08:25:15.762Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;61
+550;551;206;17;Profile -> Movie Cus;2026-09-29T08:25:15.823Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+552;553;207;17;Profile -> Movie Cus;2026-09-29T08:25:15.884Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;63
+554;555;208;17;Profile -> Movie Cus;2026-09-29T08:25:15.948Z;SetVCPFeature;0x99;10;True;;;;;;;55
+556;557;209;17;Profile -> Movie Cus;2026-09-29T08:25:16.003Z;SetVCPFeature;0x22;10;True;;;;;;;63
+560;561;210;18;Profile -> Reading Def;2026-09-29T08:25:29.856Z;SetVCPFeature;0x99;9;True;;;;;;;60
+562;563;211;18;Profile -> Reading Def;2026-09-29T08:25:29.916Z;SetVCPFeature;0x22;9;True;;;;;;;64
+566;567;212;19;Profile -> Reading Cus;2026-09-29T08:25:38.892Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;76
+568;569;213;19;Profile -> Reading Cus;2026-09-29T08:25:38.968Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;9;0x9;38;0x26;00 26 00 09;62
+570;571;214;19;Profile -> Reading Cus;2026-09-29T08:25:39.030Z;GetVCPFeatureAndVCPFeatureReply;0x0a;;True;;0;0x0;25660;0x643c;64 3c 00 00;63
+572;573;215;19;Profile -> Reading Cus;2026-09-29T08:25:39.093Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;562;0x232;02 32 05 32;62
+574;575;216;19;Profile -> Reading Cus;2026-09-29T08:25:39.155Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+576;577;217;19;Profile -> Reading Cus;2026-09-29T08:25:39.217Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;66
+578;579;218;19;Profile -> Reading Cus;2026-09-29T08:25:39.283Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;74
+580;581;219;19;Profile -> Reading Cus;2026-09-29T08:25:39.357Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;12850;0x3232;32 32 37 37;63
+582;583;220;19;Profile -> Reading Cus;2026-09-29T08:25:39.421Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;14135;0x3737;37 37 37 37;62
+584;585;221;19;Profile -> Reading Cus;2026-09-29T08:25:39.483Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;62
+586;587;222;19;Profile -> Reading Cus;2026-09-29T08:25:39.545Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;62
+588;589;223;19;Profile -> Reading Cus;2026-09-29T08:25:39.607Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+590;591;224;19;Profile -> Reading Cus;2026-09-29T08:25:39.670Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+592;593;225;19;Profile -> Reading Cus;2026-09-29T08:25:39.732Z;SetVCPFeature;0x99;10;True;;;;;;;58
+594;595;226;19;Profile -> Reading Cus;2026-09-29T08:25:39.790Z;SetVCPFeature;0x22;10;True;;;;;;;63
+598;599;227;20;Profile -> Reading Def;2026-09-29T08:25:52.264Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+600;601;228;20;Profile -> Reading Def;2026-09-29T08:25:52.329Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;10;0xa;38;0x26;00 26 00 0a;78
+602;603;229;20;Profile -> Reading Def;2026-09-29T08:25:52.407Z;GetVCPFeatureAndVCPFeatureReply;0x0c;;True;;0;0x0;12850;0x3232;32 32 00 00;64
+604;605;230;20;Profile -> Reading Def;2026-09-29T08:25:52.471Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;62
+606;607;231;20;Profile -> Reading Def;2026-09-29T08:25:52.533Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+608;609;232;20;Profile -> Reading Def;2026-09-29T08:25:52.595Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+610;611;233;20;Profile -> Reading Def;2026-09-29T08:25:52.659Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;11565;0x2d2d;11565;0x2d2d;2d 2d 2d 2d;62
+612;613;234;20;Profile -> Reading Def;2026-09-29T08:25:52.721Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;11565;0x2d2d;2d 2d 32 32;64
+614;615;235;20;Profile -> Reading Def;2026-09-29T08:25:52.785Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+616;617;236;20;Profile -> Reading Def;2026-09-29T08:25:52.847Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;257;0x101;01 01 00 06;62
+618;619;237;20;Profile -> Reading Def;2026-09-29T08:25:52.909Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;62
+620;621;238;20;Profile -> Reading Def;2026-09-29T08:25:52.971Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+622;623;239;20;Profile -> Reading Def;2026-09-29T08:25:53.034Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+624;625;240;20;Profile -> Reading Def;2026-09-29T08:25:53.097Z;SetVCPFeature;0x99;12;True;;;;;;;57
+626;627;241;20;Profile -> Reading Def;2026-09-29T08:25:53.154Z;SetVCPFeature;0x22;12;True;;;;;;;63
+628;629;242;20;Profile -> Reading Def;2026-09-29T08:25:53.221Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+630;631;243;20;Profile -> Reading Def;2026-09-29T08:25:53.283Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+632;633;244;20;Profile -> Reading Def;2026-09-29T08:25:53.607Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+634;635;245;20;Profile -> Reading Def;2026-09-29T08:25:53.676Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;63
+636;637;246;20;Profile -> Reading Def;2026-09-29T08:25:53.739Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+638;639;247;20;Profile -> Reading Def;2026-09-29T08:25:53.801Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;63
+641;642;248;;;2026-09-29T08:26:04.016Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+643;644;249;;;2026-09-29T08:26:04.078Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;12;0xc;38;0x26;00 26 00 0c;63
+645;646;250;;;2026-09-29T08:26:04.141Z;GetVCPFeatureAndVCPFeatureReply;0x0a;;True;;0;0x0;25660;0x643c;64 3c 00 00;62
+647;648;251;;;2026-09-29T08:26:04.204Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;562;0x232;02 32 05 32;63
+649;650;252;;;2026-09-29T08:26:04.267Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+651;652;253;;;2026-09-29T08:26:04.329Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+653;654;254;;;2026-09-29T08:26:04.392Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+655;656;255;;;2026-09-29T08:26:04.454Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;12850;0x3232;32 32 37 37;63
+657;658;256;;;2026-09-29T08:26:04.516Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;14135;0x3737;14135;0x3737;37 37 37 37;65
+659;661;257;;;2026-09-29T08:26:04.581Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;61
+660;663;258;;;2026-09-29T08:26:04.622Z;SetVCPFeature;0x99;9;True;;;;;;;78
+662;665;259;;;2026-09-29T08:26:04.642Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;126
+664;667;260;;;2026-09-29T08:26:04.700Z;SetVCPFeature;0x22;9;True;;;;;;;124
+666;668;261;;;2026-09-29T08:26:04.768Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;False;0xc0262589;;;;;;124
+669;670;262;;;2026-09-29T08:26:05.153Z;GetVCPFeatureAndVCPFeatureReply;0xff;;True;;0;0x0;0;0x0;00 00 00 00;68
+671;672;263;;;2026-09-29T08:26:05.221Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;63
+673;674;264;;;2026-09-29T08:26:05.284Z;SetVCPFeature;0x99;9;True;;;;;;;57
+675;676;265;;;2026-09-29T08:26:05.341Z;SetVCPFeature;0x22;9;True;;;;;;;63
+677;678;266;;;2026-09-29T08:26:05.407Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+679;680;267;;;2026-09-29T08:26:05.474Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+681;682;268;;;2026-09-29T08:26:05.800Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+683;684;269;;;2026-09-29T08:26:05.869Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+685;686;270;;;2026-09-29T08:26:05.933Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+687;688;271;;;2026-09-29T08:26:05.996Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;62
+689;690;272;;;2026-09-29T08:26:06.066Z;SetVCPFeature;0x99;9;True;;;;;;;67
+691;692;273;;;2026-09-29T08:26:06.132Z;SetVCPFeature;0x22;9;True;;;;;;;64
+694;695;274;21;Profile -> Reading Def;2026-09-29T08:26:15.230Z;SetVCPFeature;0x99;11;True;;;;;;;58
+696;697;275;21;Profile -> Reading Def;2026-09-29T08:26:15.288Z;SetVCPFeature;0x22;11;True;;;;;;;64
+698;699;276;21;Profile -> Reading Def;2026-09-29T08:26:15.355Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+700;701;277;21;Profile -> Reading Def;2026-09-29T08:26:15.422Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+702;703;278;21;Profile -> Reading Def;2026-09-29T08:26:15.746Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+704;705;279;21;Profile -> Reading Def;2026-09-29T08:26:15.815Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;63
+706;707;280;21;Profile -> Reading Def;2026-09-29T08:26:15.878Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+708;709;281;21;Profile -> Reading Def;2026-09-29T08:26:15.940Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;62
+712;713;282;22;Profile -> Reading Cus;2026-09-29T08:26:27.411Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;75
+714;715;283;22;Profile -> Reading Cus;2026-09-29T08:26:27.486Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;11;0xb;38;0x26;00 26 00 0b;74
+716;717;284;22;Profile -> Reading Cus;2026-09-29T08:26:27.560Z;GetVCPFeatureAndVCPFeatureReply;0x0c;;True;;0;0x0;12850;0x3232;32 32 00 00;63
+718;719;285;22;Profile -> Reading Cus;2026-09-29T08:26:27.623Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;63
+720;721;286;22;Profile -> Reading Cus;2026-09-29T08:26:27.687Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+722;723;287;22;Profile -> Reading Cus;2026-09-29T08:26:27.748Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+724;725;288;22;Profile -> Reading Cus;2026-09-29T08:26:27.811Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;11565;0x2d2d;11565;0x2d2d;2d 2d 2d 2d;63
+726;727;289;22;Profile -> Reading Cus;2026-09-29T08:26:27.874Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;11565;0x2d2d;2d 2d 32 32;62
+728;729;290;22;Profile -> Reading Cus;2026-09-29T08:26:27.936Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+730;731;291;22;Profile -> Reading Cus;2026-09-29T08:26:27.998Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;257;0x101;01 01 00 06;62
+732;733;292;22;Profile -> Reading Cus;2026-09-29T08:26:28.061Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;63
+734;735;293;22;Profile -> Reading Cus;2026-09-29T08:26:28.124Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+736;737;294;22;Profile -> Reading Cus;2026-09-29T08:26:28.187Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;60
+738;739;295;22;Profile -> Reading Cus;2026-09-29T08:26:28.248Z;SetVCPFeature;0x99;12;True;;;;;;;58
+740;741;296;22;Profile -> Reading Cus;2026-09-29T08:26:28.305Z;SetVCPFeature;0x22;12;True;;;;;;;62
+744;745;297;23;Profile -> Night Def;2026-09-29T08:26:40.061Z;SetVCPFeature;0x99;13;True;;;;;;;68
+746;747;298;23;Profile -> Night Def;2026-09-29T08:26:40.129Z;SetVCPFeature;0x22;13;True;;;;;;;62
+748;749;299;23;Profile -> Night Def;2026-09-29T08:26:40.194Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+750;751;300;23;Profile -> Night Def;2026-09-29T08:26:40.259Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+752;753;301;23;Profile -> Night Def;2026-09-29T08:26:40.582Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+754;755;302;23;Profile -> Night Def;2026-09-29T08:26:40.650Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;63
+756;757;303;23;Profile -> Night Def;2026-09-29T08:26:40.713Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+758;759;304;23;Profile -> Night Def;2026-09-29T08:26:40.776Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;61
+762;763;305;24;Profile -> Night Cus;2026-09-29T08:26:47.782Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+764;765;306;24;Profile -> Night Cus;2026-09-29T08:26:47.848Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;13;0xd;38;0x26;00 26 00 0d;62
+766;767;307;24;Profile -> Night Cus;2026-09-29T08:26:47.910Z;GetVCPFeatureAndVCPFeatureReply;0x0e;;True;;0;0x0;7730;0x1e32;1e 32 00 00;65
+768;769;308;24;Profile -> Night Cus;2026-09-29T08:26:47.975Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;61
+770;771;309;24;Profile -> Night Cus;2026-09-29T08:26:48.036Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+772;773;310;24;Profile -> Night Cus;2026-09-29T08:26:48.099Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+774;775;311;24;Profile -> Night Cus;2026-09-29T08:26:48.162Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+776;777;312;24;Profile -> Night Cus;2026-09-29T08:26:48.225Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+778;779;313;24;Profile -> Night Cus;2026-09-29T08:26:48.287Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+780;781;314;24;Profile -> Night Cus;2026-09-29T08:26:48.351Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;62
+782;783;315;24;Profile -> Night Cus;2026-09-29T08:26:48.413Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+784;785;316;24;Profile -> Night Cus;2026-09-29T08:26:48.475Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+786;787;317;24;Profile -> Night Cus;2026-09-29T08:26:48.537Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+788;789;318;24;Profile -> Night Cus;2026-09-29T08:26:48.605Z;SetVCPFeature;0x99;14;True;;;;;;;69
+790;791;319;24;Profile -> Night Cus;2026-09-29T08:26:48.674Z;SetVCPFeature;0x22;14;True;;;;;;;62
+794;795;320;25;Profile -> Eye Care Def;2026-09-29T08:27:01.772Z;SetVCPFeature;0x99;15;True;;;;;;;70
+796;797;321;25;Profile -> Eye Care Def;2026-09-29T08:27:01.841Z;SetVCPFeature;0x22;15;True;;;;;;;63
+798;799;322;25;Profile -> Eye Care Def;2026-09-29T08:27:01.909Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+800;801;323;25;Profile -> Eye Care Def;2026-09-29T08:27:01.973Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+802;803;324;25;Profile -> Eye Care Def;2026-09-29T08:27:02.299Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+804;805;325;25;Profile -> Eye Care Def;2026-09-29T08:27:02.368Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;62
+806;807;326;25;Profile -> Eye Care Def;2026-09-29T08:27:02.430Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;63
+808;809;327;25;Profile -> Eye Care Def;2026-09-29T08:27:02.493Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;63
+812;813;328;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.529Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;61
+814;815;329;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.590Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;15;0xf;38;0x26;00 26 00 0f;63
+816;817;330;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.654Z;GetVCPFeatureAndVCPFeatureReply;0x10;;True;;0;0x0;7730;0x1e32;1e 32 00 00;63
+818;819;331;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.717Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;50;0x32;00 32 06 32;62
+820;821;332;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.779Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+822;823;333;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.841Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+824;825;334;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.903Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+826;827;335;26;Profile -> Eye Care Cus;2026-09-29T08:27:13.966Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+828;829;336;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.029Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+830;831;337;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.093Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;513;0x201;02 01 00 06;63
+832;833;338;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.156Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+834;835;339;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.218Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+836;837;340;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.280Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;65
+838;839;341;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.345Z;SetVCPFeature;0x99;16;True;;;;;;;55
+840;841;342;26;Profile -> Eye Care Cus;2026-09-29T08:27:14.400Z;SetVCPFeature;0x22;16;True;;;;;;;62
+844;845;343;27;Profile -> MacView Def;2026-09-29T08:27:30.003Z;SetVCPFeature;0x99;17;True;;;;;;;66
+846;847;344;27;Profile -> MacView Def;2026-09-29T08:27:30.069Z;SetVCPFeature;0x22;17;True;;;;;;;63
+848;849;345;27;Profile -> MacView Def;2026-09-29T08:27:30.135Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+850;851;346;27;Profile -> MacView Def;2026-09-29T08:27:30.202Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+852;853;347;27;Profile -> MacView Def;2026-09-29T08:27:30.529Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+854;855;348;27;Profile -> MacView Def;2026-09-29T08:27:30.597Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;63
+856;857;349;27;Profile -> MacView Def;2026-09-29T08:27:30.660Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;61
+858;859;350;27;Profile -> MacView Def;2026-09-29T08:27:30.722Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;64
+862;863;351;28;Profile -> MacView Cus;2026-09-29T08:27:39.538Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+864;865;352;28;Profile -> MacView Cus;2026-09-29T08:27:39.600Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;17;0x11;38;0x26;00 26 00 11;63
+866;867;353;28;Profile -> MacView Cus;2026-09-29T08:27:39.663Z;GetVCPFeatureAndVCPFeatureReply;0x12;;True;;1;0x1;23090;0x5a32;5a 32 00 01;61
+868;869;354;28;Profile -> MacView Cus;2026-09-29T08:27:39.725Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1586;0x632;306;0x132;01 32 06 32;63
+870;871;355;28;Profile -> MacView Cus;2026-09-29T08:27:39.788Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+872;873;356;28;Profile -> MacView Cus;2026-09-29T08:27:39.850Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+874;875;357;28;Profile -> MacView Cus;2026-09-29T08:27:39.913Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+876;877;358;28;Profile -> MacView Cus;2026-09-29T08:27:39.976Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+878;879;359;28;Profile -> MacView Cus;2026-09-29T08:27:40.039Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+880;881;360;28;Profile -> MacView Cus;2026-09-29T08:27:40.103Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;62
+882;883;361;28;Profile -> MacView Cus;2026-09-29T08:27:40.165Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+884;885;362;28;Profile -> MacView Cus;2026-09-29T08:27:40.228Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+886;887;363;28;Profile -> MacView Cus;2026-09-29T08:27:40.290Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+888;889;364;28;Profile -> MacView Cus;2026-09-29T08:27:40.353Z;SetVCPFeature;0x99;18;True;;;;;;;56
+890;891;365;28;Profile -> MacView Cus;2026-09-29T08:27:40.409Z;SetVCPFeature;0x22;18;True;;;;;;;62
+894;895;366;29;Profile -> E-Book Def;2026-09-29T08:27:51.978Z;SetVCPFeature;0x99;19;True;;;;;;;64
+896;897;367;29;Profile -> E-Book Def;2026-09-29T08:27:52.042Z;SetVCPFeature;0x22;19;True;;;;;;;62
+898;899;368;29;Profile -> E-Book Def;2026-09-29T08:27:52.107Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+900;901;369;29;Profile -> E-Book Def;2026-09-29T08:27:52.172Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+902;903;370;29;Profile -> E-Book Def;2026-09-29T08:27:52.496Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+904;905;371;29;Profile -> E-Book Def;2026-09-29T08:27:52.564Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;6;0x6;65286;0xff06;ff 06 00 06;64
+906;907;372;29;Profile -> E-Book Def;2026-09-29T08:27:52.628Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;61
+908;909;373;29;Profile -> E-Book Def;2026-09-29T08:27:52.689Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;64
+912;913;374;30;Profile -> E-Book Cus;2026-09-29T08:28:02.819Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;71
+914;915;375;30;Profile -> E-Book Cus;2026-09-29T08:28:02.890Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;19;0x13;38;0x26;00 26 00 13;63
+916;917;376;30;Profile -> E-Book Cus;2026-09-29T08:28:02.953Z;GetVCPFeatureAndVCPFeatureReply;0x14;;True;;0;0x0;17970;0x4632;46 32 00 00;63
+918;919;377;30;Profile -> E-Book Cus;2026-09-29T08:28:03.016Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;306;0x132;01 32 05 32;62
+920;921;378;30;Profile -> E-Book Cus;2026-09-29T08:28:03.078Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+922;923;379;30;Profile -> E-Book Cus;2026-09-29T08:28:03.139Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+924;925;380;30;Profile -> E-Book Cus;2026-09-29T08:28:03.202Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+926;927;381;30;Profile -> E-Book Cus;2026-09-29T08:28:03.266Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;12850;0x3232;32 32 00 00;62
+928;929;382;30;Profile -> E-Book Cus;2026-09-29T08:28:03.328Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;63
+930;931;383;30;Profile -> E-Book Cus;2026-09-29T08:28:03.391Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;62
+932;933;384;30;Profile -> E-Book Cus;2026-09-29T08:28:03.453Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;256;0x100;01 00 00 00;63
+934;935;385;30;Profile -> E-Book Cus;2026-09-29T08:28:03.517Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;64
+936;937;386;30;Profile -> E-Book Cus;2026-09-29T08:28:03.580Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+938;939;387;30;Profile -> E-Book Cus;2026-09-29T08:28:03.642Z;SetVCPFeature;0x99;20;True;;;;;;;57
+940;941;388;30;Profile -> E-Book Cus;2026-09-29T08:28:03.699Z;SetVCPFeature;0x22;20;True;;;;;;;64
+944;945;389;31;Profile -> sRGB Def;2026-09-29T08:28:19.448Z;SetVCPFeature;0x99;21;True;;;;;;;60
+946;947;390;31;Profile -> sRGB Def;2026-09-29T08:28:19.508Z;SetVCPFeature;0x22;21;True;;;;;;;63
+948;949;391;31;Profile -> sRGB Def;2026-09-29T08:28:19.575Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+950;951;392;31;Profile -> sRGB Def;2026-09-29T08:28:19.640Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+952;953;393;31;Profile -> sRGB Def;2026-09-29T08:28:19.965Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;84
+954;955;394;31;Profile -> sRGB Def;2026-09-29T08:28:20.049Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;62
+956;957;395;31;Profile -> sRGB Def;2026-09-29T08:28:20.111Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+958;959;396;31;Profile -> sRGB Def;2026-09-29T08:28:20.173Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;61
+962;963;397;32;Profile -> sRGB Cus;2026-09-29T08:28:29.105Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;74
+964;965;398;32;Profile -> sRGB Cus;2026-09-29T08:28:29.179Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;21;0x15;38;0x26;00 26 00 15;62
+966;967;399;32;Profile -> sRGB Cus;2026-09-29T08:28:29.241Z;GetVCPFeatureAndVCPFeatureReply;0x16;;True;;0;0x0;23090;0x5a32;5a 32 00 00;62
+968;969;400;32;Profile -> sRGB Cus;2026-09-29T08:28:29.304Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;50;0x32;00 32 05 32;61
+970;971;401;32;Profile -> sRGB Cus;2026-09-29T08:28:29.365Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+972;973;402;32;Profile -> sRGB Cus;2026-09-29T08:28:29.429Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+974;975;403;32;Profile -> sRGB Cus;2026-09-29T08:28:29.491Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+976;977;404;32;Profile -> sRGB Cus;2026-09-29T08:28:29.555Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+978;979;405;32;Profile -> sRGB Cus;2026-09-29T08:28:29.617Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+980;981;406;32;Profile -> sRGB Cus;2026-09-29T08:28:29.680Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;61
+982;983;407;32;Profile -> sRGB Cus;2026-09-29T08:28:29.742Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+984;985;408;32;Profile -> sRGB Cus;2026-09-29T08:28:29.804Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+986;987;409;32;Profile -> sRGB Cus;2026-09-29T08:28:29.865Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;63
+988;989;410;32;Profile -> sRGB Cus;2026-09-29T08:28:29.929Z;SetVCPFeature;0x99;22;True;;;;;;;56
+990;991;411;32;Profile -> sRGB Cus;2026-09-29T08:28:29.985Z;SetVCPFeature;0x22;22;True;;;;;;;63
+994;995;412;33;Profile -> Adobe Def;2026-09-29T08:28:49.663Z;SetVCPFeature;0x99;23;True;;;;;;;67
+996;997;413;33;Profile -> Adobe Def;2026-09-29T08:28:49.729Z;SetVCPFeature;0x22;23;True;;;;;;;63
+998;999;414;33;Profile -> Adobe Def;2026-09-29T08:28:49.795Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;66
+1000;1001;415;33;Profile -> Adobe Def;2026-09-29T08:28:49.861Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;61
+1002;1003;416;33;Profile -> Adobe Def;2026-09-29T08:28:50.182Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;68
+1004;1005;417;33;Profile -> Adobe Def;2026-09-29T08:28:50.250Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;63
+1006;1007;418;33;Profile -> Adobe Def;2026-09-29T08:28:50.314Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+1008;1009;419;33;Profile -> Adobe Def;2026-09-29T08:28:50.376Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;64
+1012;1013;420;34;Profile -> Adobe Cus;2026-09-29T08:28:58.208Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+1014;1015;421;34;Profile -> Adobe Cus;2026-09-29T08:28:58.273Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;23;0x17;38;0x26;00 26 00 17;63
+1016;1017;422;34;Profile -> Adobe Cus;2026-09-29T08:28:58.336Z;GetVCPFeatureAndVCPFeatureReply;0x18;;True;;0;0x0;23090;0x5a32;5a 32 00 00;62
+1018;1019;423;34;Profile -> Adobe Cus;2026-09-29T08:28:58.398Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;50;0x32;00 32 05 32;63
+1020;1021;424;34;Profile -> Adobe Cus;2026-09-29T08:28:58.461Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+1022;1023;425;34;Profile -> Adobe Cus;2026-09-29T08:28:58.525Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1024;1025;426;34;Profile -> Adobe Cus;2026-09-29T08:28:58.588Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+1026;1027;427;34;Profile -> Adobe Cus;2026-09-29T08:28:58.652Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1028;1029;428;34;Profile -> Adobe Cus;2026-09-29T08:28:58.715Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+1030;1031;429;34;Profile -> Adobe Cus;2026-09-29T08:28:58.777Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;64
+1032;1033;430;34;Profile -> Adobe Cus;2026-09-29T08:28:58.841Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+1034;1035;431;34;Profile -> Adobe Cus;2026-09-29T08:28:58.904Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+1036;1037;432;34;Profile -> Adobe Cus;2026-09-29T08:28:58.965Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+1038;1039;433;34;Profile -> Adobe Cus;2026-09-29T08:28:59.028Z;SetVCPFeature;0x99;24;True;;;;;;;57
+1040;1041;434;34;Profile -> Adobe Cus;2026-09-29T08:28:59.085Z;SetVCPFeature;0x22;24;True;;;;;;;63
+1044;1045;435;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.262Z;SetVCPFeature;0x99;25;True;;;;;;;60
+1046;1047;436;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.322Z;SetVCPFeature;0x22;25;True;;;;;;;62
+1048;1049;437;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.389Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+1050;1051;438;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.454Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;63
+1052;1053;439;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.779Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;69
+1054;1055;440;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.848Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;62
+1056;1057;441;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.910Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;65
+1058;1059;442;35;Profile -> DCI-P3 Def;2026-09-29T08:29:14.975Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;63
+1062;1063;443;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:22.803Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;62
+1064;1065;444;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:22.865Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;25;0x19;38;0x26;00 26 00 19;61
+1066;1067;445;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:22.926Z;GetVCPFeatureAndVCPFeatureReply;0x1a;;True;;0;0x0;23090;0x5a32;5a 32 00 00;63
+1068;1069;446;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:22.989Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;50;0x32;00 32 05 32;61
+1070;1071;447;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.050Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;61
+1072;1073;448;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.112Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+1074;1075;449;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.175Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;64
+1076;1077;450;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.239Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+1078;1079;451;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.302Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+1080;1081;452;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.364Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;64
+1082;1083;453;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.428Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;62
+1084;1085;454;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.491Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;61
+1086;1087;455;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.553Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;62
+1088;1089;456;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.615Z;SetVCPFeature;0x99;26;True;;;;;;;56
+1090;1091;457;36;Profile -> DCI-P3 Cus;2026-09-29T08:29:23.671Z;SetVCPFeature;0x22;26;True;;;;;;;63
+1093;1094;458;;;2026-09-29T08:29:29.528Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;61
+1095;1096;459;;;2026-09-29T08:29:29.589Z;GetVCPFeatureAndVCPFeatureReply;0x22;;True;;26;0x1a;38;0x26;00 26 00 1a;64
+1097;1098;460;;;2026-09-29T08:29:29.653Z;GetVCPFeatureAndVCPFeatureReply;0x02;;True;;0;0x0;10290;0x2832;28 32 00 00;64
+1099;1100;461;;;2026-09-29T08:29:29.717Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;1330;0x532;50;0x32;00 32 05 32;63
+1101;1102;462;;;2026-09-29T08:29:29.780Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1103;1104;463;;;2026-09-29T08:29:29.844Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1105;1106;464;;;2026-09-29T08:29:29.906Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1107;1108;465;;;2026-09-29T08:29:29.969Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;62
+1109;1110;466;;;2026-09-29T08:29:30.031Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;12850;0x3232;12850;0x3232;32 32 32 32;63
+1111;1112;467;;;2026-09-29T08:29:30.094Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;6;0x6;1;0x1;00 01 00 06;64
+1113;1114;468;;;2026-09-29T08:29:30.158Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;64
+1115;1116;469;;;2026-09-29T08:29:30.223Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;0;0x0;0;0x0;00 00 00 00;68
+1117;1118;470;;;2026-09-29T08:29:30.292Z;GetVCPFeatureAndVCPFeatureReply;0xfe;;True;;20737;0x5101;0;0x0;00 00 51 01;75
+1119;1120;471;;;2026-09-29T08:29:30.366Z;SetVCPFeature;0x99;2;True;;;;;;;57
+1121;1122;472;;;2026-09-29T08:29:30.423Z;SetVCPFeature;0x22;2;True;;;;;;;64
+1123;1124;473;;;2026-09-29T08:29:30.491Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+1125;1126;474;;;2026-09-29T08:29:30.555Z;GetVCPFeatureAndVCPFeatureReply;0x47;;False;0xc0262589;;;;;;62
+1127;1128;475;;;2026-09-29T08:29:30.880Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;67
+1129;1130;476;;;2026-09-29T08:29:30.947Z;GetVCPFeatureAndVCPFeatureReply;0x47;;True;;2;0x2;65286;0xff06;ff 06 00 02;63
+1131;1132;477;;;2026-09-29T08:29:31.010Z;GetVCPFeatureAndVCPFeatureReply;0x99;;True;;64250;0xfafa;64250;0xfafa;fa fa fa fa;64
+1133;1134;478;;;2026-09-29T08:29:31.074Z;GetVCPFeatureAndVCPFeatureReply;0x48;;True;;2;0x2;65288;0xff08;ff 08 00 02;64
+1136;1137;479;37;StandardCusSet -> ColorTemperature -> Natural;2026-09-29T08:30:39.061Z;SetVCPFeature;0x99;6;True;;;;;;;65
+1138;1139;480;37;StandardCusSet -> ColorTemperature -> Natural;2026-09-29T08:30:39.126Z;SetVCPFeature;0x14;6;True;;;;;;;63
+1142;1143;481;38;StandardCusSet -> ColorTemperature -> Warm;2026-09-29T08:30:51.684Z;SetVCPFeature;0x99;5;True;;;;;;;64
+1144;1145;482;38;StandardCusSet -> ColorTemperature -> Warm;2026-09-29T08:30:51.748Z;SetVCPFeature;0x14;5;True;;;;;;;62
+1148;1149;483;39;StandardCusSet -> ColorTemperature -> User1 -> R;2026-09-29T08:31:11.004Z;SetVCPFeature;0x99;11;True;;;;;;;66
+1150;1151;484;39;StandardCusSet -> ColorTemperature -> User1 -> R;2026-09-29T08:31:11.070Z;SetVCPFeature;0x14;11;True;;;;;;;64
+1152;1153;485;39;StandardCusSet -> ColorTemperature -> User1 -> R;2026-09-29T08:31:12.686Z;SetVCPFeature;0x99;40;True;;;;;;;60
+1154;1155;486;39;StandardCusSet -> ColorTemperature -> User1 -> R;2026-09-29T08:31:12.746Z;SetVCPFeature;0x16;40;True;;;;;;;63
+1158;1159;487;40;StandardCusSet -> ColorTemperature -> User1 -> G;2026-09-29T08:31:28.451Z;SetVCPFeature;0x99;40;True;;;;;;;62
+1160;1161;488;40;StandardCusSet -> ColorTemperature -> User1 -> G;2026-09-29T08:31:28.513Z;SetVCPFeature;0x17;40;True;;;;;;;64
+1164;1165;489;41;StandardCusSet -> ColorTemperature -> User1 -> B;2026-09-29T08:31:34.644Z;SetVCPFeature;0x99;40;True;;;;;;;61
+1166;1167;490;41;StandardCusSet -> ColorTemperature -> User1 -> B;2026-09-29T08:31:34.705Z;SetVCPFeature;0x18;40;True;;;;;;;64
+1169;1170;491;;;2026-09-29T08:31:37.839Z;SetVCPFeature;0x99;6;True;;;;;;;66
+1171;1172;492;;;2026-09-29T08:31:37.904Z;SetVCPFeature;0x14;6;True;;;;;;;63
+1174;1175;493;42;StandardCusSet -> Brightness;2026-09-29T08:31:59.024Z;SetVCPFeature;0x99;50;True;;;;;;;56
+1176;1177;494;42;StandardCusSet -> Brightness;2026-09-29T08:31:59.080Z;SetVCPFeature;0x10;50;True;;;;;;;61
+1180;1181;495;43;StandardCusSet -> Contrast;2026-09-29T08:32:09.681Z;SetVCPFeature;0x99;60;True;;;;;;;68
+1182;1183;496;43;StandardCusSet -> Contrast;2026-09-29T08:32:09.749Z;SetVCPFeature;0x12;60;True;;;;;;;62
+1186;1187;497;44;StandardCusSet -> Sharpness;2026-09-29T08:32:20.432Z;SetVCPFeature;0x99;1;True;;;;;;;68
+1188;1189;498;44;StandardCusSet -> Sharpness;2026-09-29T08:32:20.500Z;SetVCPFeature;0x87;1;True;;;;;;;63
+1192;1193;499;45;StandardCusSet -> CR Enchance;2026-09-29T08:32:31.180Z;SetVCPFeature;0x99;1;True;;;;;;;56
+1194;1195;500;45;StandardCusSet -> CR Enchance;2026-09-29T08:32:31.236Z;SetVCPFeature;0x41;1;True;;;;;;;63
+1198;1199;501;46;StandardCusSet -> Color Enchance;2026-09-29T08:32:40.868Z;SetVCPFeature;0x99;1;True;;;;;;;71
+1200;1201;502;46;StandardCusSet -> Color Enchance;2026-09-29T08:32:40.938Z;SetVCPFeature;0x40;1;True;;;;;;;62
+1204;1205;503;47;StandardCusSet -> Super Resolution;2026-09-29T08:32:57.333Z;SetVCPFeature;0x99;1;True;;;;;;;56
+1206;1207;504;47;StandardCusSet -> Super Resolution;2026-09-29T08:32:57.389Z;SetVCPFeature;0x44;1;True;;;;;;;61
+1210;1211;505;48;StandardCusSet -> HDR;2026-09-29T08:33:10.075Z;SetVCPFeature;0x99;0;True;;;;;;;56
+1212;1213;506;48;StandardCusSet -> HDR;2026-09-29T08:33:10.131Z;SetVCPFeature;0x4a;0;True;;;;;;;63
+1216;1217;507;49;StandardCusSet -> HDR -> Auto;2026-09-29T08:33:24.464Z;SetVCPFeature;0x99;1;True;;;;;;;63
+1218;1219;508;49;StandardCusSet -> HDR -> Auto;2026-09-29T08:33:24.527Z;SetVCPFeature;0x4a;1;True;;;;;;;63
+1222;1223;509;50;StandardCusSet -> HDR -> Off;2026-09-29T08:33:32.425Z;SetVCPFeature;0x99;0;True;;;;;;;60
+1224;1225;510;50;StandardCusSet -> HDR -> Off;2026-09-29T08:33:32.485Z;SetVCPFeature;0x4a;0;True;;;;;;;62
+1228;1229;511;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:36.252Z;SetVCPFeature;0x99;2;True;;;;;;;58
+1230;1231;512;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:36.310Z;SetVCPFeature;0x26;2;True;;;;;;;63
+1232;1233;513;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:37.068Z;SetVCPFeature;0x99;4;True;;;;;;;58
+1234;1235;514;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:37.126Z;SetVCPFeature;0x26;4;True;;;;;;;64
+1236;1237;515;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:37.599Z;SetVCPFeature;0x99;6;True;;;;;;;64
+1238;1239;516;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:37.663Z;SetVCPFeature;0x26;6;True;;;;;;;63
+1240;1241;517;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:38.071Z;SetVCPFeature;0x99;8;True;;;;;;;60
+1242;1243;518;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:38.131Z;SetVCPFeature;0x26;8;True;;;;;;;61
+1244;1245;519;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:38.610Z;SetVCPFeature;0x99;10;True;;;;;;;68
+1246;1247;520;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:38.678Z;SetVCPFeature;0x26;10;True;;;;;;;63
+1248;1249;521;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:39.110Z;SetVCPFeature;0x99;12;True;;;;;;;70
+1250;1251;522;51;StandardCusSet -> Gamma -> 1.8, 2.0, 2.2, 2.4, 2.6, S.curve;2026-09-29T08:34:39.180Z;SetVCPFeature;0x26;12;True;;;;;;;63
+1253;1254;523;;;2026-09-29T08:34:41.987Z;SetVCPFeature;0x99;8;True;;;;;;;62
+1255;1256;524;;;2026-09-29T08:34:42.049Z;SetVCPFeature;0x26;8;True;;;;;;;62
+1257;1258;525;;;2026-09-29T08:34:42.442Z;SetVCPFeature;0x99;6;True;;;;;;;62
+1259;1260;526;;;2026-09-29T08:34:42.504Z;SetVCPFeature;0x26;6;True;;;;;;;63
+1261;1262;527;;;2026-09-29T08:35:35.843Z;SetVCPFeature;0x99;1;True;;;;;;;69
+1263;1264;528;;;2026-09-29T08:35:35.912Z;SetVCPFeature;0x45;1;True;;;;;;;64
+1266;1267;529;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:00.359Z;SetVCPFeature;0x99;0;True;;;;;;;64
+1268;1269;530;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:00.423Z;SetVCPFeature;0x45;0;True;;;;;;;63
+1270;1271;531;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:01.053Z;SetVCPFeature;0x99;1;True;;;;;;;61
+1272;1273;532;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:01.114Z;SetVCPFeature;0x45;1;True;;;;;;;64
+1274;1275;533;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:01.767Z;SetVCPFeature;0x99;2;True;;;;;;;68
+1276;1277;534;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:01.835Z;SetVCPFeature;0x45;2;True;;;;;;;62
+1278;1279;535;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:02.214Z;SetVCPFeature;0x99;3;True;;;;;;;59
+1280;1281;536;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:02.273Z;SetVCPFeature;0x45;3;True;;;;;;;62
+1282;1283;537;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:02.702Z;SetVCPFeature;0x99;4;True;;;;;;;70
+1284;1285;538;52;StandardCusSet -> Night Vision -> Off, Lvl1, Lvl2, Auto-lvl1, Auto-lvl2;2026-09-29T08:36:02.772Z;SetVCPFeature;0x45;4;True;;;;;;;63
+1287;1288;539;;;2026-09-29T08:36:17.140Z;SetVCPFeature;0x99;1;True;;;;;;;57
+1289;1290;540;;;2026-09-29T08:36:17.197Z;SetVCPFeature;0x49;1;True;;;;;;;63
+1292;1293;541;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:35.420Z;SetVCPFeature;0x99;0;True;;;;;;;56
+1294;1295;542;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:35.476Z;SetVCPFeature;0x49;0;True;;;;;;;64
+1296;1297;543;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:35.957Z;SetVCPFeature;0x99;1;True;;;;;;;67
+1298;1299;544;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:36.024Z;SetVCPFeature;0x49;1;True;;;;;;;63
+1300;1301;545;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:36.392Z;SetVCPFeature;0x99;2;True;;;;;;;59
+1302;1303;546;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:36.451Z;SetVCPFeature;0x49;2;True;;;;;;;62
+1304;1305;547;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:36.791Z;SetVCPFeature;0x99;3;True;;;;;;;67
+1306;1307;548;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:36.858Z;SetVCPFeature;0x49;3;True;;;;;;;62
+1308;1309;549;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:37.258Z;SetVCPFeature;0x99;4;True;;;;;;;70
+1310;1311;550;53;StandardCusSet -> Dynamic OD -> Off, Lvl1, Lvl2, Lvl3, Topspeed;2026-09-29T08:36:37.328Z;SetVCPFeature;0x49;4;True;;;;;;;62
+1314;1315;551;54;StandardCusSet -> Low Blue Light;2026-09-29T08:36:55.642Z;SetVCPFeature;0x99;1;True;;;;;;;57
+1316;1317;552;54;StandardCusSet -> Low Blue Light;2026-09-29T08:36:55.699Z;SetVCPFeature;0xd8;1;True;;;;;;;63
+1320;1321;553;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:04.300Z;SetVCPFeature;0x99;40;True;;;;;;;57
+1322;1323;554;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:04.357Z;SetVCPFeature;0x42;40;True;;;;;;;63
+1324;1325;555;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:04.770Z;SetVCPFeature;0x99;50;True;;;;;;;70
+1326;1327;556;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:04.840Z;SetVCPFeature;0x42;50;True;;;;;;;63
+1328;1329;557;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:06.454Z;SetVCPFeature;0x99;40;True;;;;;;;67
+1330;1331;558;55;StandardCusSet -> Shadow Balance;2026-09-29T08:37:06.521Z;SetVCPFeature;0x42;40;True;;;;;;;63
+1334;1335;559;56;StandardCusSet -> Shadow Balance;2026-09-29T08:37:11.012Z;SetVCPFeature;0x99;30;True;;;;;;;68
+1336;1337;560;56;StandardCusSet -> Shadow Balance;2026-09-29T08:37:11.080Z;SetVCPFeature;0x42;30;True;;;;;;;62
+1339;1340;561;;;2026-09-29T08:37:21.560Z;SetVCPFeature;0x99;1;True;;;;;;;58
+1341;1342;562;;;2026-09-29T08:37:21.618Z;SetVCPFeature;0x22;1;True;;;;;;;62
+1343;1344;563;;;2026-09-29T08:37:22.273Z;SetVCPFeature;0x99;2;True;;;;;;;67
+1345;1346;564;;;2026-09-29T08:37:22.340Z;SetVCPFeature;0x22;2;True;;;;;;;63
+1347;1348;565;;;2026-09-29T08:37:24.140Z;SetVCPFeature;0x99;60;True;;;;;;;64
+1349;1350;566;;;2026-09-29T08:37:24.204Z;SetVCPFeature;0x10;60;True;;;;;;;62
+1351;1352;567;;;2026-09-29T08:37:24.321Z;SetVCPFeature;0x99;70;True;;;;;;;70
+1353;1354;568;;;2026-09-29T08:37:24.391Z;SetVCPFeature;0x10;70;True;;;;;;;78
+1355;1356;569;;;2026-09-29T08:37:24.476Z;SetVCPFeature;0x99;80;True;;;;;;;70
+1357;1358;570;;;2026-09-29T08:37:24.546Z;SetVCPFeature;0x10;80;True;;;;;;;62
+1359;1360;571;;;2026-09-29T08:37:24.654Z;SetVCPFeature;0x99;90;True;;;;;;;63
+1361;1362;572;;;2026-09-29T08:37:24.717Z;SetVCPFeature;0x10;90;True;;;;;;;62
+1363;1364;573;;;2026-09-29T08:37:24.827Z;SetVCPFeature;0x99;100;True;;;;;;;61
+1365;1366;574;;;2026-09-29T08:37:24.888Z;SetVCPFeature;0x10;100;True;;;;;;;62
+1367;1368;575;;;2026-09-29T08:37:25.030Z;SetVCPFeature;0x99;100;True;;;;;;;64
+1369;1370;576;;;2026-09-29T08:37:25.094Z;SetVCPFeature;0x10;100;True;;;;;;;62
+1371;1372;577;;;2026-09-29T08:37:25.169Z;SetVCPFeature;0x99;100;True;;;;;;;66
+1373;1374;578;;;2026-09-29T08:37:25.235Z;SetVCPFeature;0x10;100;True;;;;;;;63
+1375;1376;579;;;2026-09-29T08:37:25.523Z;SetVCPFeature;0x99;50;True;;;;;;;56
+1377;1378;580;;;2026-09-29T08:37:25.579Z;SetVCPFeature;0x12;50;True;;;;;;;63
+1379;1380;581;;;2026-09-29T08:37:25.849Z;SetVCPFeature;0x99;40;True;;;;;;;60
+1381;1382;582;;;2026-09-29T08:37:25.909Z;SetVCPFeature;0x12;40;True;;;;;;;62
+1383;1384;583;;;2026-09-29T08:37:26.357Z;SetVCPFeature;0x99;50;True;;;;;;;56
+1385;1386;584;;;2026-09-29T08:37:26.413Z;SetVCPFeature;0x12;50;True;;;;;;;79
+1387;1388;585;;;2026-09-29T08:37:27.195Z;SetVCPFeature;0x99;0;True;;;;;;;61
+1389;1390;586;;;2026-09-29T08:37:27.256Z;SetVCPFeature;0x87;0;True;;;;;;;62
+1391;1392;587;;;2026-09-29T08:37:27.561Z;SetVCPFeature;0x99;0;True;;;;;;;55
+1393;1394;588;;;2026-09-29T08:37:27.616Z;SetVCPFeature;0x41;0;True;;;;;;;62
+1395;1396;589;;;2026-09-29T08:37:28.219Z;SetVCPFeature;0x99;0;True;;;;;;;70
+1397;1398;590;;;2026-09-29T08:37:28.289Z;SetVCPFeature;0x40;0;True;;;;;;;62
+1399;1400;591;;;2026-09-29T08:37:30.828Z;SetVCPFeature;0x99;0;True;;;;;;;66
+1401;1402;592;;;2026-09-29T08:37:30.894Z;SetVCPFeature;0x4a;0;True;;;;;;;62
+1403;1404;593;;;2026-09-29T08:37:32.102Z;SetVCPFeature;0x99;0;True;;;;;;;60
+1405;1406;594;;;2026-09-29T08:37:32.162Z;SetVCPFeature;0x45;0;True;;;;;;;62
+1407;1408;595;;;2026-09-29T08:37:32.465Z;SetVCPFeature;0x99;0;True;;;;;;;56
+1409;1410;596;;;2026-09-29T08:37:32.521Z;SetVCPFeature;0x49;0;True;;;;;;;62
+1411;1412;597;;;2026-09-29T08:37:33.173Z;SetVCPFeature;0x99;0;True;;;;;;;67
+1413;1414;598;;;2026-09-29T08:37:33.240Z;SetVCPFeature;0xd8;0;True;;;;;;;63
+1415;1416;599;;;2026-09-29T08:37:33.956Z;SetVCPFeature;0x99;20;True;;;;;;;70
+1417;1418;600;;;2026-09-29T08:37:34.026Z;SetVCPFeature;0x42;20;True;;;;;;;61
+1419;1420;601;;;2026-09-29T08:37:34.268Z;SetVCPFeature;0x99;10;True;;;;;;;56
+1421;1422;602;;;2026-09-29T08:37:34.324Z;SetVCPFeature;0x42;10;True;;;;;;;63
+1423;1424;603;;;2026-09-29T08:37:34.413Z;SetVCPFeature;0x99;0;True;;;;;;;68
+1425;1426;604;;;2026-09-29T08:37:34.481Z;SetVCPFeature;0x42;0;True;;;;;;;62
+1427;1428;605;;;2026-09-29T08:37:34.724Z;SetVCPFeature;0x99;10;True;;;;;;;69
+1429;1430;606;;;2026-09-29T08:37:34.793Z;SetVCPFeature;0x42;10;True;;;;;;;62
+1431;1432;607;;;2026-09-29T08:37:34.888Z;SetVCPFeature;0x99;20;True;;;;;;;61
+1433;1434;608;;;2026-09-29T08:37:34.949Z;SetVCPFeature;0x42;20;True;;;;;;;63
+1435;1436;609;;;2026-09-29T08:37:35.383Z;SetVCPFeature;0x99;30;True;;;;;;;56
+1437;1438;610;;;2026-09-29T08:37:35.439Z;SetVCPFeature;0x42;30;True;;;;;;;61
+1439;1440;611;;;2026-09-29T08:37:35.559Z;SetVCPFeature;0x99;40;True;;;;;;;67
+1441;1442;612;;;2026-09-29T08:37:35.626Z;SetVCPFeature;0x42;40;True;;;;;;;63
+1443;1444;613;;;2026-09-29T08:37:35.719Z;SetVCPFeature;0x99;50;True;;;;;;;63
+1445;1446;614;;;2026-09-29T08:37:35.782Z;SetVCPFeature;0x42;50;True;;;;;;;63
+1448;1449;615;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:02.092Z;SetVCPFeature;0x99;60;True;;;;;;;67
+1450;1451;616;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:02.159Z;SetVCPFeature;0x9b;60;True;;;;;;;63
+1452;1453;617;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:02.771Z;SetVCPFeature;0x99;60;True;;;;;;;61
+1454;1455;618;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:02.832Z;SetVCPFeature;0x9d;60;True;;;;;;;62
+1456;1457;619;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:03.408Z;SetVCPFeature;0x99;60;True;;;;;;;65
+1458;1459;620;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:03.473Z;SetVCPFeature;0x9f;60;True;;;;;;;63
+1460;1461;621;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:04.555Z;SetVCPFeature;0x99;60;True;;;;;;;64
+1462;1463;622;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:04.619Z;SetVCPFeature;0x9e;60;True;;;;;;;62
+1464;1465;623;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:05.168Z;SetVCPFeature;0x99;60;True;;;;;;;64
+1466;1467;624;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:05.232Z;SetVCPFeature;0xa0;60;True;;;;;;;63
+1468;1469;625;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:06.359Z;SetVCPFeature;0x99;60;True;;;;;;;67
+1470;1471;626;57;StandardCusSet -> Hue -> R, G, B, C, M, Y;2026-09-29T08:38:06.426Z;SetVCPFeature;0x9c;60;True;;;;;;;63
+1473;1474;627;;;2026-09-29T08:38:11.072Z;SetVCPFeature;0x99;50;True;;;;;;;55
+1475;1476;628;;;2026-09-29T08:38:11.127Z;SetVCPFeature;0x9b;50;True;;;;;;;63
+1477;1478;629;;;2026-09-29T08:38:11.768Z;SetVCPFeature;0x99;50;True;;;;;;;67
+1479;1480;630;;;2026-09-29T08:38:11.835Z;SetVCPFeature;0x9d;50;True;;;;;;;61
+1481;1482;631;;;2026-09-29T08:38:12.231Z;SetVCPFeature;0x99;50;True;;;;;;;56
+1483;1484;632;;;2026-09-29T08:38:12.287Z;SetVCPFeature;0x9f;50;True;;;;;;;62
+1485;1486;633;;;2026-09-29T08:38:12.662Z;SetVCPFeature;0x99;50;True;;;;;;;61
+1487;1488;634;;;2026-09-29T08:38:12.724Z;SetVCPFeature;0x9e;50;True;;;;;;;63
+1489;1490;635;;;2026-09-29T08:38:13.558Z;SetVCPFeature;0x99;59;True;;;;;;;58
+1491;1492;636;;;2026-09-29T08:38:13.616Z;SetVCPFeature;0xa0;59;True;;;;;;;64
+1493;1494;637;;;2026-09-29T08:38:13.682Z;SetVCPFeature;0x99;55;True;;;;;;;61
+1495;1496;638;;;2026-09-29T08:38:13.742Z;SetVCPFeature;0xa0;55;True;;;;;;;63
+1497;1498;639;;;2026-09-29T08:38:13.807Z;SetVCPFeature;0x99;52;True;;;;;;;61
+1499;1500;640;;;2026-09-29T08:38:13.868Z;SetVCPFeature;0xa0;52;True;;;;;;;63
+1501;1502;641;;;2026-09-29T08:38:14.141Z;SetVCPFeature;0x99;50;True;;;;;;;70
+1503;1504;642;;;2026-09-29T08:38:14.211Z;SetVCPFeature;0xa0;50;True;;;;;;;62
+1505;1506;643;;;2026-09-29T08:38:14.274Z;SetVCPFeature;0x99;48;True;;;;;;;61
+1507;1508;644;;;2026-09-29T08:38:14.335Z;SetVCPFeature;0xa0;48;True;;;;;;;64
+1509;1510;645;;;2026-09-29T08:38:14.710Z;SetVCPFeature;0x99;49;True;;;;;;;63
+1511;1512;646;;;2026-09-29T08:38:14.773Z;SetVCPFeature;0xa0;49;True;;;;;;;63
+1513;1514;647;;;2026-09-29T08:38:14.838Z;SetVCPFeature;0x99;50;True;;;;;;;62
+1515;1516;648;;;2026-09-29T08:38:14.900Z;SetVCPFeature;0xa0;50;True;;;;;;;62
+1517;1518;649;;;2026-09-29T08:38:15.336Z;SetVCPFeature;0x99;50;True;;;;;;;65
+1519;1520;650;;;2026-09-29T08:38:15.401Z;SetVCPFeature;0xa0;50;True;;;;;;;62
+1521;1522;651;;;2026-09-29T08:38:15.848Z;SetVCPFeature;0x99;70;True;;;;;;;71
+1523;1524;652;;;2026-09-29T08:38:15.919Z;SetVCPFeature;0x9c;70;True;;;;;;;62
+1525;1526;653;;;2026-09-29T08:38:16.289Z;SetVCPFeature;0x99;60;True;;;;;;;67
+1527;1528;654;;;2026-09-29T08:38:16.356Z;SetVCPFeature;0x9c;60;True;;;;;;;62
+1529;1530;655;;;2026-09-29T08:38:16.846Z;SetVCPFeature;0x99;50;True;;;;;;;57
+1531;1532;656;;;2026-09-29T08:38:16.903Z;SetVCPFeature;0x9c;50;True;;;;;;;64
+1534;1535;657;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:33.482Z;SetVCPFeature;0x99;60;True;;;;;;;59
+1536;1537;658;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:33.541Z;SetVCPFeature;0x59;60;True;;;;;;;62
+1538;1539;659;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:34.112Z;SetVCPFeature;0x99;60;True;;;;;;;69
+1540;1541;660;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:34.181Z;SetVCPFeature;0x5b;60;True;;;;;;;63
+1542;1543;661;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:34.539Z;SetVCPFeature;0x99;60;True;;;;;;;63
+1544;1545;662;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:34.602Z;SetVCPFeature;0x5d;60;True;;;;;;;63
+1546;1547;663;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:35.677Z;SetVCPFeature;0x99;60;True;;;;;;;67
+1548;1549;664;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:35.744Z;SetVCPFeature;0x5c;60;True;;;;;;;63
+1550;1551;665;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:36.160Z;SetVCPFeature;0x99;60;True;;;;;;;65
+1552;1553;666;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:36.225Z;SetVCPFeature;0x5e;60;True;;;;;;;62
+1554;1555;667;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:36.693Z;SetVCPFeature;0x99;60;True;;;;;;;65
+1556;1557;668;58;StandardCusSet -> Color Saturation -> R, G, B, C, M, Y;2026-09-29T08:38:36.758Z;SetVCPFeature;0x5a;60;True;;;;;;;64
+1559;1560;669;;;2026-09-29T08:38:41.674Z;SetVCPFeature;0x99;50;True;;;;;;;70
+1561;1562;670;;;2026-09-29T08:38:41.744Z;SetVCPFeature;0x59;50;True;;;;;;;78
+1563;1564;671;;;2026-09-29T08:38:42.428Z;SetVCPFeature;0x99;50;True;;;;;;;67
+1565;1566;672;;;2026-09-29T08:38:42.495Z;SetVCPFeature;0x5b;50;True;;;;;;;62
+1567;1568;673;;;2026-09-29T08:38:42.750Z;SetVCPFeature;0x99;50;True;;;;;;;57
+1569;1570;674;;;2026-09-29T08:38:42.807Z;SetVCPFeature;0x5d;50;True;;;;;;;63
+1571;1572;675;;;2026-09-29T08:38:43.155Z;SetVCPFeature;0x99;50;True;;;;;;;61
+1573;1574;676;;;2026-09-29T08:38:43.216Z;SetVCPFeature;0x5c;50;True;;;;;;;64
+1575;1576;677;;;2026-09-29T08:38:43.542Z;SetVCPFeature;0x99;50;True;;;;;;;69
+1577;1578;678;;;2026-09-29T08:38:43.611Z;SetVCPFeature;0x5e;50;True;;;;;;;62
+1579;1580;679;;;2026-09-29T08:38:44.060Z;SetVCPFeature;0x99;50;True;;;;;;;67
+1581;1582;680;;;2026-09-29T08:38:44.127Z;SetVCPFeature;0x5a;50;True;;;;;;;62

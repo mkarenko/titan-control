@@ -1,0 +1,170 @@
+TODO:
+Output Range                0x      rgb auto | rgb limit | rgb full                                                   default: auto
+
+InputSource                 0x60    dp, usbc, hdmi1, hdmi2
+Quick Boot                  0x61    enabled/disabled                                                                  default: off
+Resolution Y                0x69
+WorkTime                    0xf3
+Refresh Rate X              0xac    25220
+Refresh Rate Y              0xae    16005
+Barcode                     0xf7    NBZL  
+Controller                  0xc8    Mstar
+MCCS Version                0xdf    2.1
+Language                    0xcc    English
+Manufacturer Specific       0xfd    116
+Manufacturer Specific       0xfe    811
+Manufacturer Specific       0xff    20
+Power Off                   0xf0    wyłączenie
+Audio Mute                  0x8d    disabled/enabled                                                                  default: enabled
+Audio Volume        0x62    0xf6    0-100                                                                             default: 50
+smth with sb                0x6e
+smth with sb                0x6c
+smth with sb                0x70
+
+OSD Show Time               0xc0    od 5 do 60                                                                        default: 10
+OSD H-Position              0xc1    od 0 do 100                                                                       default: 50
+OSD V-Position              0xc2    od 0 do 100                                                                       default: 50
+OSD Transparency            0xc3    od 0 do 100                                                                       default: 0
+
+Power Saving                0xc6    0 off | 1 lvl1 | 2 lvl2 | 3 lvl3                                                  default: off
+Power LED                   0xc5    disabled 01 | lvl1 02 | lvl2 03 | lvl3 04                                         default: lvl2
+Read LED                    0x39    0 on | 1 off                                                                      default: on
+
+Reset Factory ALL           0x04
+Reset Factory br/cr         0x05
+Reset Factory               0xc7    nie dziala
+Reset Colors                0x08
+Reset Brightness/CR         0x05
+
+Profiles:                   0x22    od 0x01 do 0x1e (!!!NIGDY NIE PROBUJ USTAWIC 22 0!!!) (ddcutil e0 0-14 1,2 not working)
+    Standard                0x02 | 0x03 - 02 default | 03 custom
+    RTS                     0x04 | 0x05 - 04 default | 05 custom
+    FPS                     0x06 | 0x   - 06 default |    custom
+    MOBA                    0x07 | 0x08 - 07 default | 08 custom
+    Movie                   0x09 | 0x0a - 09 default | 0a custom
+    Reading                 0x0b | 0x0c - 0b default | 0c custom
+    Night                   0x0d | 0x0e - 0d default | 0e custom
+    Eye Care                0x0f | 0x10 - 0f default | 10 custom
+    MacView                 0x11 | 0x12 - 11 default | 12 custom
+    E-book                  0x13 | 0x14 - 13 default | 14 custom
+    sRGB                    0x15 | 0x16 - 15 default | 16 custom
+    AdobeRGB                0x17 | 0x18 - 17 default | 18 custom
+    DCI-P3                  0x19 | 0x1a - 19 default | 1a custom
+    DyDs/ULL FPS            0x1b | 0x1c - 1b default | 1c custom
+    DyDs/LD                 0x1d | 0x1e - 1d default | 1e custom
+
+Color Profiles:
+    Color Temperature       0x14        warm | cold | natural | User 1 | User 2 | User 3                              default: warm
+        U1  
+            Red             0x16        0-100                                                                         default: 50
+            Green           0x17        0-100                                                                         default: 50
+            Blue            0x18        0-100                                                                         default: 50
+        U2  
+            Red             0x19        0-100                                                                         default: 50
+            Green           0x1a        0-100                                                                         default: 50
+            Blue            0x1b        0-100                                                                         default: 50
+        U3  
+            Red             0x1c        0-100                                                                         default: 50
+            Green           0x1d        0-100                                                                         default: 50
+            Blue            0x1e        0-100                                                                         default: 50
+    Hue 
+        Red                 0x9b        0-100                                                                         default: 50
+        Green               0x9d        0-100                                                                         default: 50
+        Blue                0x9f        0-100                                                                         default: 50
+        Cyan                0x9e        0-100                                                                         default: 50
+        Magenta             0xa0        0-100                                                                         default: 50
+        Yello               0x9c        0-100                                                                         default: 50
+    Saturation  
+        Red                 0x59        0-100                                                                         default: 50
+        Green               0x5b        0-100                                                                         default: 50
+        Blue                0x5d        0-100                                                                         default: 50
+        Cyan                0x5c        0-100                                                                         default: 50
+        Magenta             0x5e        0-100                                                                         default: 50
+        Yellow              0x5a        0-100                                                                         default: 50
+
+Picture Enchancer
+    Brightness              0x10        0-100                                                                         default: 25
+    Contrast                0x12        0-100                                                                         default: 50
+    Sharpness               0x87        0-5                                                                           default: 0
+    Color Enchance          0x40        0-10                                                                          default: 0
+    CR Enchance             0x41        0-5                                                                           default: 0
+    Shadow Balance          0x42        0-100                                                                         default: 50
+    Super Resolution        0x44        0-5                                                                           default: 0
+    Halo Control            0x46        0-100                                                                         default: 25
+    Low Blue Light          0xd8 (0xe1) 0-4                                                                           default: 0
+    DCR                     0xe1        off | on                                                                      default: off
+
+    Adaptive-Sync           0xe2        off | on                                                                      default: off
+    HDR                     0x4a        off | auto | game | movie                                                     default: off
+    Gamma                   0x26        1.8 | 2.0 | 2.2 | 2.4 | 2.6 | S Curve                                         default: 2.2
+    Local dimming           0x47        off | low | smooth | medium | high                                            default: high
+    DyDs                    0x48        off | low | medium | high | ULL Level 1 | ULL Level 2 | ULL Level 3           default: off
+    Night Vision            0x45        off | Level 1 | Level 2 | Auto-Level 1 | Auto-Level 2                         default: off
+    Dynamic OD              0x49        off | Level 1 | Level 2 | Level 3 | Topspeed                                  default: off
+    Game Rush               0x43        off | on                                                                      default: off
+
+Game Aid:
+    Full Game(DM)           3a          Wide | 25' | sPX                                                              default: wide
+    Refresh Rate            30          off | on                                                                      default: off
+        Position                31          Top Right | Top Left | Bottom Right | Bottom Left                         default: top right
+    Game Crosshair          3d          off | on                                                                      default: off
+        Shape                   34          type1 | type2 | type3 | type4 | type5 | type6                             default: type 1
+        Color                   32          red | yellow | green | cyan | blue | purple | white | auto                default: auto
+    Stopwatch               3e          off | on                                                                      default: off
+        Time(min)               33          15 | 30 | 45 | 60                                                         default: 15
+        Position                35          Top Right | Top Left | Bottom Right | Bottom Left                         default: top right
+    Game Time               3f          off | on                                                                      default: off
+        Time(min)               36          15 | 30 | 45 | 60                                                         default: 15
+        Position                37          Top Right | Top Left | Bottom Right | Bottom Left                         default: top right
+    Magnifier Mode          4b          off | on                                                                      default: off
+        Night Vision            39          off | on                                                                  default: off
+        Magnification           4d          x1.5 | x2 | x4                                                            default: x2
+        Size                    4c          small | medium | large                                                    default: medium
+        Position                38          Top Right | Top Left | Central | Bottom Right | Bottom Left               default: top right
+    Alignment Aid           3b          off | on                                                                      default: off
+    HawkEye Vision          63          off | on - zakładam 01/02                                                     default: off
+        Size                    64          small | medium | large                                                    default: off
+        Position                65          Top Right | Top Left | Central | Bottom Right | Bottom Left               default: top right
+        Level                   66          Level 1 | Level 2 | Level 3 | Level 4 | Level 5                           default: levl 1
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// local dimming, dyds i halo control jest globalne nie powiazane z profilami
+
+00
+01
+02 - brightness (0-100)
+03 - contrast (0-100)
+04 - sharpness (0-5 co 1 stopien)
+05 - color enchancement level (0-10 co jeden stopien)                                                                                
+06 - cr ecnhancement (0-5)                                                                                                          
+07 - shadow balance (0-100)                                                                                                         
+08 - color temperature - 8 = cool | 6 = natural | 5 = warm | 11 = user1 | 12 = user2 | 13 = user3                                   
+09 - color temp Red User 1 (0-100)                                                                                                  
+10 - color temp Blue User 1 (0-100)                                                                                                 
+11 - color temp Yellow User 1 (0-100)                                                                                               
+12 - color temp Red User 2 (0-100)                                                                                                  
+13 - color temp Blue User 2 (0-100)                                                                                                 
+14 - color temp Yellow User 2 (0-100)                                                                                               
+15 - color temp Red User 3 (0-100)                                                                                                  
+16 - color temp Blue User 3 (0-100)                                                                                                 
+17 - color temp Yellow User 3 (0-100)                                                                                               
+18 - hue r (0-100)                                                                                                                  
+19 - hue g (0-100)                                                                                                                  
+20 - hue b (0-100)                                                                                                                  
+21 - hue y (0-100)                                                                                                                  
+22 - hue c (0-100)                                                                                                                  
+23 - hue m (0-100)                                                                                                                  
+24 - saturation r (0-100)                                                                                                           
+25 - saturation g (0-100)                                                                                                           
+26 - saturation b (0-100)                                                                                                           
+27 - saturation y (0-100)                                                                                                           
+28 - saturation c (0-100)                                                                                                           
+29 - saturation m (0-100)                                                                                                           
+30 - low blue light (0-100, 4 stopnie co 25)                                                                                        
+31 - hdr - 0 off, 1 auto, 2 game, 3 movie
+32
+33 - gamma - 2 = 1.8 | 4 = 2.0 | 6 = 2.2 |  8 = 2.4 | 10 = 2.6 | 12 = S Curve
+34 - super resolution - (0-5) off, od lvl1 - do lvl5
+35 - night vision - 0 = off | 1 = Lvl1 | 2 = Lvl2 | 3 = Auto-Lvl1 | 4 = Auto-Lvl2
+36 - dynamic od - 0 off | 1 = Lvl1 | 2 = Lvl2 | 3 = Lvl3 | 4 = Topspeed

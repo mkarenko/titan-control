@@ -1,0 +1,257 @@
+﻿VCP HEX;VCP DEC;Min z logu;Max z logu DEC (HEX);Current z logu DEC (HEX);Opis ddcutil (PL / oryginał);Twój opis z p275mv_plus.md;Status odczytu;Interpretacja ddcutil — oryginał
+0x00;0;—;—;—;Brak wpisu w logu;—;Brak odczytu w logu;
+0x01;1;—;—;—;Rozmagnesowanie (Degauss);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x02;2;—;2 (0x0002);2 (0x0002);Informacja o nowych wartościach ustawień (New control value);—;Odczytano;One or more new control values have been saved (0x02)
+0x03;3;—;—;—;Przyciski sterowania programowego (Soft controls);—;Odczyt nieobsługiwany;
+0x04;4;—;—;—;Przywrócenie ustawień fabrycznych (Restore factory defaults);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x05;5;—;—;—;Przywrócenie fabrycznej jasności i kontrastu (Restore factory brightness/contrast defaults);Reset Brightness/CR;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x06;6;—;—;—;Przywrócenie fabrycznej geometrii (Restore factory geometry defaults);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x07;7;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x08;8;—;—;—;Przywrócenie ustawień kolorów (Restore color defaults);Reset Colors;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x09;9;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x0A;10;—;—;—;Przywrócenie fabrycznych ustawień TV (Restore factory TV defaults);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x0B;11;—;24028 (0x5DDC);0 (0x0000);Krok temperatury barwowej (Color temperature increment);—;"Odczytano; ddcutil: nieprawidłowa wartość";Invalid value: 0
+0x0C;12;—;255 (0x00FF);2 (0x0002);Żądana temperatura barwowa (Color temperature request);—;Odczytano;3000 + 2 * (feature 0B color temp increment) degree(s) Kelvin
+0x0D;13;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x0E;14;—;100 (0x0064);50 (0x0032);Zegar obrazu (Clock);—;Odczytano;current value =    50, max value =   100
+0x0F;15;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x10;16;—;100 (0x0064);100 (0x0064);Jasność (Brightness);"Brightness; wartości z MD: 0-100";Odczytano;current value =   100, max value =   100
+0x11;17;—;—;—;Uwydatnianie odcieni skóry (Flesh tone enhancement);—;Odczyt nieobsługiwany;
+0x12;18;—;100 (0x0064);50 (0x0032);Kontrast (Contrast);"Contrast; wartości z MD: 0-100";Odczytano;current value =    50, max value =   100
+0x13;19;—;100 (0x0064);25619 (0x6413);Sterowanie podświetleniem (Backlight control);—;Odczytano;mh=0x00, ml=0x64, sh=0x64, sl=0x13
+0x14;20;—;12 (0x000C);6 (0x0006);Wybór ustawienia kolorów (Select color preset);"Color Temperature; wartości z MD: Warm, Cold, Natural, User 1, User 2, User 3";Odczytano;7500 K (sl=0x06)
+0x15;21;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x16;22;—;100 (0x0064);48 (0x0030);Wzmocnienie czerwieni (Video gain: Red);"User 1 Red; wartości z MD: 0-100";Odczytano;current value =    48, max value =   100
+0x17;23;—;—;—;Kompensacja widzenia kolorów użytkownika (User color vision compensation);"User 1 Green; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x18;24;—;100 (0x0064);50 (0x0032);Wzmocnienie zieleni (Video gain: Green);"User 1 Blue; wartości z MD: 0-100";Odczytano;current value =    50, max value =   100
+0x19;25;—;—;—;Nieznana funkcja (Unknown feature);"User 2 Red; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x1A;26;—;100 (0x0064);48 (0x0030);Wzmocnienie niebieskiego (Video gain: Blue);"User 2 Green; wartości z MD: 0-100";Odczytano;current value =    48, max value =   100
+0x1B;27;—;—;—;Nieznana funkcja (Unknown feature);"User 2 Blue; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x1C;28;—;—;—;Ostrość ogniskowania (Focus);"User 3 Red; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x1D;29;—;—;—;Nieznana funkcja (Unknown feature);"User 3 Green; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x1E;30;—;2 (0x0002);0 (0x0000);Automatyczna konfiguracja (Auto setup);"User 3 Blue; wartości z MD: 0-100";Odczytano;Auto setup not active (sl=0x00)
+0x1F;31;—;—;—;Automatyczna konfiguracja kolorów (Auto color setup);—;Odczyt nieobsługiwany;
+0x20;32;—;100 (0x0064);0 (0x0000);Pozycja pozioma / faza (Horizontal Position (Phase));—;Odczytano;current value =     0, max value =   100
+0x21;33;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x22;34;—;65535 (0xFFFF);1 (0x0001);Szerokość obrazu (Horizontal Size);"Wybór profilu obrazu: wariant domyślny / własny; kody wariantów w sekcji Profiles";Odczytano;current value =     1, max value = 65535
+0x23;35;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x24;36;—;65535 (0xFFFF);4 (0x0004);Pozioma korekcja poduszkowa (Horizontal Pincushion);"ratio z opcjami (zakladam od 0 do 4); wartości z MD: wide screen, 4:3, 1:1, 21:9, auto";Odczytano;current value =     4, max value = 65535
+0x25;37;—;65535 (0xFFFF);6 (0x0006);Nieznana funkcja (Unknown feature);—;Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x06
+0x26;38;—;65535 (0xFFFF);6 (0x0006);Balans poziomej korekcji poduszkowej (Horizontal Pincushion Balance);"Gamma; wartości z MD: 1.8, 2.0, 2.2, 2.4, 2.6, S-Curve";Odczytano;current value =     6, max value = 65535
+0x27;39;—;65535 (0xFFFF);7 (0x0007);Nieznana funkcja (Unknown feature);—;Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x07
+0x28;40;—;—;—;Pozioma zbieżność czerwony/niebieski (Horizontal Convergence R/B);—;Odczyt nieobsługiwany;
+0x29;41;—;65535 (0xFFFF);0 (0x0000);Pozioma zbieżność magenta/zielony (Horizontal Convergence M/G);—;Odczytano;current value =     0, max value = 65535
+0x2A;42;—;—;—;Liniowość pozioma (Horizontal Linearity);—;Odczyt nieobsługiwany;
+0x2B;43;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x2C;44;—;—;—;Balans liniowości poziomej (Horizontal Linearity Balance);—;Odczyt nieobsługiwany;
+0x2D;45;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x2E;46;—;—;—;Rozszerzenie skali szarości (Gray scale expansion);—;Odczyt nieobsługiwany;
+0x2F;47;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x30;48;—;100 (0x0064);0 (0x0000);Pozycja pionowa / faza (Vertical Position (Phase));"Refresh Rate Enable; wartości z MD: Off, On";Odczytano;current value =     0, max value =   100
+0x31;49;—;65535 (0xFFFF);16 (0x0010);Nieznana funkcja (Unknown feature);"Refresh Rate Position; wartości z MD: Top Right, Top Left, Bottom Right, Bottom Left";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x10
+0x32;50;—;—;—;Wysokość obrazu (Vertical Size);"Game Crosshair Color; wartości z MD: Red, Yellow, Green, Cyan, Blue, Purple, White, Auto";Odczyt nieobsługiwany;
+0x33;51;—;65535 (0xFFFF);0 (0x0000);Nieznana funkcja (Unknown feature);"Stopwatch Time; wartości z MD: 15, 30, 45, 60";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0x34;52;—;—;—;Pionowa korekcja poduszkowa (Vertical Pincushion);"Game Crosshair Shape; wartości z MD: Type1, Type2, Type3, Type4, Type5, Type6";Odczyt nieobsługiwany;
+0x35;53;—;65535 (0xFFFF);0 (0x0000);Nieznana funkcja (Unknown feature);"Stopwatch Position; wartości z MD: Top Right, Top Left, Bottom Right, Bottom Left";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0x36;54;—;65535 (0xFFFF);7 (0x0007);Balans pionowej korekcji poduszkowej (Vertical Pincushion Balance);"Game Time; wartości z MD: 15, 30, 45, 60";Odczytano;current value =     7, max value = 65535
+0x37;55;—;65535 (0xFFFF);0 (0x0000);Nieznana funkcja (Unknown feature);"Game Time Position; wartości z MD: Top Right, Top Left, Bottom Right, Bottom Left";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0x38;56;—;65535 (0xFFFF);1 (0x0001);Pionowa zbieżność czerwony/niebieski (Vertical Convergence R/B);"Magnifier Position; wartości z MD: Top Right, Top Left, Central, Bottom Right, Bottom Left";Odczytano;current value =     1, max value = 65535
+0x39;57;—;65535 (0xFFFF);0 (0x0000);Pionowa zbieżność magenta/zielony (Vertical Convergence M/G);"Read LED; wartości z MD: 0=on, 1=off; Magnifier Night Vision; wartości z MD: Off, On";Odczytano;current value =     0, max value = 65535
+0x3A;58;—;—;—;Liniowość pionowa (Vertical Linearity);"Full Game (DM); wartości z MD: Wide, 25"", sPX";Odczyt nieobsługiwany;
+0x3B;59;—;—;—;Nieznana funkcja (Unknown feature);"Alignment Aid; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x3C;60;—;—;—;Balans liniowości pionowej (Vertical Linearity Balance);—;Odczyt nieobsługiwany;
+0x3D;61;—;—;—;Nieznana funkcja (Unknown feature);"Game Crosshair Enable; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x3E;62;—;100 (0x0064);50 (0x0032);Faza zegara (Clock phase);"Stopwatch Enable; wartości z MD: Off, On";Odczytano;current value =    50, max value =   100
+0x3F;63;—;—;—;Nieznana funkcja (Unknown feature);"Game Time Enable; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x40;64;—;—;—;Korekcja pozioma równoległoboku (Horizontal Parallelogram);"Color Enhance; wartości z MD: 0-10";Odczyt nieobsługiwany;
+0x41;65;—;—;—;Korekcja pionowa równoległoboku (Vertical Parallelogram);"CR Enhance; wartości z MD: 0-5";Odczyt nieobsługiwany;
+0x42;66;—;—;—;Pozioma korekcja trapezowa (Horizontal Keystone);"Shadow Balance; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x43;67;—;—;—;Pionowa korekcja trapezowa (Vertical Keystone);"Game Rush; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x44;68;—;—;—;Obrót obrazu (Rotation);"Super Resolution; wartości z MD: 0-5";Odczyt nieobsługiwany;
+0x45;69;—;—;—;Nieznana funkcja (Unknown feature);"Night Vision; wartości z MD: Off, Lvl1, Lvl2, Auto-Lvl1, Auto-Lvl2";Odczyt nieobsługiwany;
+0x46;70;—;—;—;Rozchylenie górnych narożników (Top Corner Flare);"Halo Control; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x47;71;—;—;—;Nieznana funkcja (Unknown feature);"Local Dimming; wartości z MD: Off, Low, Smooth, Medium, High";Odczyt nieobsługiwany;
+0x48;72;—;—;—;Zakrzywienie górnych narożników (Top Corner Hook);"DyDs; wartości z MD: Off, Low, Medium, High, ULL1, ULL2, ULL3";Odczyt nieobsługiwany;
+0x49;73;—;—;—;Nieznana funkcja (Unknown feature);"Dynamic OD; wartości z MD: Off, Lvl1, Lvl2, Lvl3, Topspeed";Odczyt nieobsługiwany;
+0x4A;74;—;—;—;Rozchylenie dolnych narożników (Bottom Corner Flare);"HDR; wartości z MD: Off, Auto, Game, Movie";Odczyt nieobsługiwany;
+0x4B;75;—;—;—;Nieznana funkcja (Unknown feature);"Magnifier Mode Enable; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x4C;76;—;—;—;Zakrzywienie dolnych narożników (Bottom Corner Hook);"Magnifier Size; wartości z MD: Small, Medium, Large";Odczyt nieobsługiwany;
+0x4D;77;—;—;—;Nieznana funkcja (Unknown feature);"Magnification; wartości z MD: x1.5, x2, x4";Odczyt nieobsługiwany;
+0x4E;78;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x4F;79;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x50;80;—;—;—;Nieznana funkcja (Unknown feature);"pip; wartości z MD: 0 = off, 1 = pip mode, 2 = pbp 2 win 1:1, 3 = pbp 2win 2:1, 4 = 2win 1:2; pbp = picture by picture";Odczyt nieobsługiwany;
+0x51;81;—;65535 (0xFFFF);0 (0x0000);Nieznana funkcja (Unknown feature);"sub-signal source; wartości z MD: 0 = dp, 3 = usb-c , 4 = hdmi-1 , 5 = hdmi-2";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0x52;82;—;255 (0x00FF);20 (0x0014);Aktywne ustawienie (Active control);"audio source; wartości z MD: 0 = auto, 3 = usb-c, 4 = hdmi-1, 5 = hdmi-2; tylko podlaczone kable";Odczytano;Value: 0x14
+0x53;83;—;—;—;Nieznana funkcja (Unknown feature);"PIP Position; wartości z MD: 0 = Top Right, 1 = Top Left, 2 = Bottom Right, 3 = Bottom Left";Odczyt nieobsługiwany;
+0x54;84;—;—;—;Zachowanie parametrów działania (Performance Preservation);"PIP Size; wartości z MD: 0 = Small , 1 = Medium, 2 = Large";Odczyt nieobsługiwany;
+0x55;85;—;65535 (0xFFFF);0 (0x0000);Nieznana funkcja (Unknown feature);"Swap Inputs; wartości z MD: 1 = True";Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0x56;86;—;—;—;Pozioma korekcja mory (Horizontal Moire);"Reset PIP Settings; wartości z MD: 1 = True";Odczyt nieobsługiwany;
+0x57;87;—;—;—;Nieznana funkcja (Unknown feature);"wybor inputu; wartości z MD: 0 to auto,1 to dp,2 to dp,3 to usb-c,5 to hdmi-1,6 to hdmi-2";Odczyt nieobsługiwany;
+0x58;88;—;—;—;Pionowa korekcja mory (Vertical Moire);—;Odczyt nieobsługiwany;
+0x59;89;—;—;—;Nasycenie czerwieni (6 axis saturation: Red);"Saturation Red; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5A;90;—;—;—;Nasycenie żółtego (6 axis saturation: Yellow);"Saturation Yellow; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5B;91;—;—;—;Nasycenie zieleni (6 axis saturation: Green);"Saturation Green; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5C;92;—;—;—;Nasycenie cyjanu (6 axis saturation: Cyan);"Saturation Cyan; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5D;93;—;—;—;Nasycenie niebieskiego (6 axis saturation: Blue);"Saturation Blue; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5E;94;—;—;—;Nasycenie magenty (6 axis saturation: Magenta);"Saturation Magenta; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x5F;95;—;—;—;Nieznana funkcja (Unknown feature);"wybor gdzie ma dzialac hub usb; wartości z MD: 0 to po usb-c, 1 to po usb-b";Odczyt nieobsługiwany;
+0x60;96;—;18 (0x0012);15 (0x000F);Źródło sygnału (Input Source);"Output Range; wartości z MD: rgb auto  /  rgb limit  /  rgb full";Odczytano;DisplayPort-1 (sl=0x0f)
+0x61;97;—;—;—;Nieznana funkcja (Unknown feature);"Quick Boot; wartości z MD: enabled / disabled; Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0x62;98;—;100 (0x0064);0 (0x0000);Głośność głośników (Audio speaker volume);—;Odczytano;current value =     0, max value =   100
+0x63;99;—;—;—;Wybór głośnika (Speaker Select);"HawkEye Vision Enable; wartości z MD: Off, On";Odczyt nieobsługiwany;
+0x64;100;—;—;—;Głośność mikrofonu (Audio: Microphone Volume);"HawkEye Vision Size; wartości z MD: Small, Medium, Large";Odczyt nieobsługiwany;
+0x65;101;—;—;—;Nieznana funkcja (Unknown feature);"HawkEye Vision Position; wartości z MD: Top Right, Top Left, Central, Bottom Right, Bottom Left";Odczyt nieobsługiwany;
+0x66;102;—;—;—;Czujnik światła otoczenia (Ambient light sensor);"HawkEye Vision Level; wartości z MD: Level 1, Level 2, Level 3, Level 4, Level 5";Odczyt nieobsługiwany;
+0x67;103;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x68;104;—;5 (0x0005);0 (0x0000);Nieznana funkcja (Unknown feature);—;Odczytano;mh=0x00, ml=0x05, sh=0x00, sl=0x00
+0x69;105;—;65535 (0xFFFF);2160 (0x0870);Nieznana funkcja (Unknown feature);—;Odczytano;mh=0xff, ml=0xff, sh=0x08, sl=0x70
+0x6A;106;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x6B;107;—;—;—;Poziom białego podświetlenia (Backlight Level: White);"Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0x6C;108;—;255 (0x00FF);50 (0x0032);Poziom czerni — czerwony (Video black level: Red);—;Odczytano;current value =    50, max value =   255
+0x6D;109;—;—;—;Poziom czerwonego podświetlenia (Backlight Level: Red);—;Odczyt nieobsługiwany;
+0x6E;110;—;255 (0x00FF);50 (0x0032);Poziom czerni — zielony (Video black level: Green);—;Odczytano;current value =    50, max value =   255
+0x6F;111;—;—;—;Poziom zielonego podświetlenia (Backlight Level: Green);—;Odczyt nieobsługiwany;
+0x70;112;—;255 (0x00FF);50 (0x0032);Poziom czerni — niebieski (Video black level: Blue);—;Odczytano;current value =    50, max value =   255
+0x71;113;—;—;—;Poziom niebieskiego podświetlenia (Backlight Level: Blue);—;Odczyt nieobsługiwany;
+0x72;114;—;—;—;Gamma (Gamma);"Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0x73;115;—;—;—;Rozmiar tablicy LUT (LUT Size);—;Odczyt nieobsługiwany (NULL);
+0x74;116;—;—;—;Operacja na pojedynczym punkcie LUT (Single point LUT operation);—;Odczyt nieobsługiwany (NULL);
+0x75;117;—;—;—;Operacja na bloku LUT (Block LUT operation);—;Odczyt nieobsługiwany (NULL);
+0x76;118;—;—;—;Zdalne wywołanie procedury (Remote Procedure Call);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x77;119;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x78;120;—;—;—;Operacja EDID (EDID operation);—;Odczyt nieobsługiwany (NULL);
+0x79;121;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x7A;122;—;—;—;Regulacja płaszczyzny ogniskowania (Adjust Focal Plane);—;Odczyt nieobsługiwany;
+0x7B;123;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x7C;124;—;—;—;Regulacja powiększenia (Adjust Zoom);—;Odczyt nieobsługiwany;
+0x7D;125;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x7E;126;—;—;—;Korekcja trapezu (Trapezoid);—;Odczyt nieobsługiwany;
+0x7F;127;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x80;128;—;—;—;Korekcja trapezowa (Keystone);—;Odczyt nieobsługiwany;
+0x81;129;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x82;130;—;—;—;Odbicie poziome (Horizontal Mirror (Flip));—;Odczyt nieobsługiwany;
+0x83;131;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x84;132;—;—;—;Odbicie pionowe (Vertical Mirror (Flip));—;Odczyt nieobsługiwany;
+0x85;133;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x86;134;—;—;—;Skalowanie obrazu (Display Scaling);—;Odczyt nieobsługiwany;
+0x87;135;—;—;—;Ostrość (Sharpness);"Sharpness; wartości z MD: 0-5";Odczyt nieobsługiwany;
+0x88;136;—;—;—;Modulacja prędkości skanowania (Velocity Scan Modulation);—;Odczyt nieobsługiwany;
+0x89;137;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0x8A;138;—;—;—;Nasycenie kolorów (Color Saturation);—;Odczyt nieobsługiwany;
+0x8B;139;—;—;—;Zmiana kanału TV w górę / w dół (TV Channel Up/Down);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0x8C;140;—;—;—;Ostrość obrazu TV (TV Sharpness);—;Odczyt nieobsługiwany;
+0x8D;141;—;65535 (0xFFFF);1 (0x0001);Wyciszenie dźwięku (Audio Mute);—;Odczytano;Mute the audio (sl=0x01)
+0x8E;142;—;—;—;Kontrast TV (TV Contrast);—;Odczyt nieobsługiwany;
+0x8F;143;—;—;—;Tony wysokie dźwięku (Audio Treble);—;Odczyt nieobsługiwany;
+0x90;144;—;—;—;Odcień kolorów (Hue);—;Odczyt nieobsługiwany;
+0x91;145;—;—;—;Basy (Audio Bass);—;Odczyt nieobsługiwany;
+0x92;146;—;—;—;Poziom czerni / luminancja TV (TV Black level/Luminesence);—;Odczyt nieobsługiwany;
+0x93;147;—;—;—;Balans dźwięku lewy/prawy (Audio Balance L/R);—;Odczyt nieobsługiwany;
+0x94;148;—;—;—;Tryb przetwarzania dźwięku (Audio Processor Mode);—;Odczyt nieobsługiwany;
+0x95;149;—;—;—;Pozycja X lewego górnego narożnika okna (Window Position(TL_X));—;Odczyt nieobsługiwany;
+0x96;150;—;—;—;Pozycja Y lewego górnego narożnika okna (Window Position(TL_Y));—;Odczyt nieobsługiwany;
+0x97;151;—;—;—;Pozycja X prawego dolnego narożnika okna (Window Position(BR_X));—;Odczyt nieobsługiwany;
+0x98;152;—;—;—;Pozycja Y prawego dolnego narożnika okna (Window Position(BR_Y));—;Odczyt nieobsługiwany;
+0x99;153;—;64250 (0xFAFA);64250 (0xFAFA);Włączenie/wyłączenie sterowania oknem (Window control on/off);—;"Odczytano; ddcutil: nieprawidłowa wartość";Invalid value (sl=0xfa)
+0x9A;154;—;255 (0x00FF);0 (0x0000);Tło okna (Window background);—;Odczytano;current value =     0, max value =   255
+0x9B;155;—;—;—;Odcień czerwieni (6 axis hue control: Red);"Hue Red; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x9C;156;—;—;—;Odcień żółtego (6 axis hue control: Yellow);"Hue Yellow; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x9D;157;—;—;—;Odcień zieleni (6 axis hue control: Green);"Hue Green; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x9E;158;—;—;—;Odcień cyjanu (6 axis hue control: Cyan);"Hue Cyan; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0x9F;159;—;—;—;Odcień niebieskiego (6 axis hue control: Blue);"Hue Blue; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0xA0;160;—;—;—;Odcień magenty (6 axis hue control: Magenta);"Hue Magenta; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0xA1;161;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xA2;162;—;—;—;Włączenie/wyłączenie automatycznej konfiguracji (Auto setup on/off);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0xA3;163;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xA4;164;—;—;—;Włączenie/wyłączenie operacji wybranego okna (Turn the selected window operation on/off);—;Odczyt nieobsługiwany;
+0xA5;165;—;—;—;Zmiana wybranego okna (Change the selected window);"Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0xA6;166;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xA7;167;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xA8;168;—;3 (0x0003);0 (0x0000);Nieznana funkcja (Unknown feature);—;Odczytano;mh=0x00, ml=0x03, sh=0x00, sl=0x00
+0xA9;169;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xAA;170;—;—;—;Orientacja ekranu (Screen Orientation);—;Odczyt nieobsługiwany;
+0xAB;171;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xAC;172;—;5 (0x0005);25220 (0x6284);Częstotliwość pozioma (Horizontal frequency);—;Odczytano;25220 hz
+0xAD;173;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xAE;174;—;0 (0x0000);16005 (0x3E85);Częstotliwość pionowa / odświeżanie (Vertical frequency);"Vertical Frequency — częstotliwość pionowa / odświeżanie; Przypisanie odświeżania; odczyt informacyjny.";Odczytano;160.05 hz
+0xAF;175;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xB0;176;—;—;—;Ustawienia (Settings);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0xB1;177;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xB2;178;—;8 (0x0008);1 (0x0001);Układ subpikseli panelu (Flat panel sub-pixel layout);—;Odczytano;Red/Green/Blue vertical stripe (sl=0x01)
+0xB3;179;—;—;—;Nieznana funkcja (Unknown feature);"Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0xB4;180;—;2 (0x0002);1 (0x0001);Tryb taktowania sygnału źródłowego (Source Timing Mode);—;Odczytano;mh=0x00, ml=0x02, sh=0x00, sl=0x01
+0xB5;181;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xB6;182;—;5 (0x0005);3 (0x0003);Technologia wyświetlacza (Display technology type);—;Odczytano;LCD (active matrix) (sl=0x03)
+0xB7;183;—;—;—;Stan monitora (Monitor status);—;Odczyt nieobsługiwany;
+0xB8;184;—;—;—;Licznik pakietów (Packet count);—;Odczyt nieobsługiwany;
+0xB9;185;—;—;—;Początek monitora w osi X (Monitor X origin);—;Odczyt nieobsługiwany;
+0xBA;186;—;—;—;Początek monitora w osi Y (Monitor Y origin);—;Odczyt nieobsługiwany;
+0xBB;187;—;—;—;Licznik błędów nagłówka (Header error count);—;Odczyt nieobsługiwany;
+0xBC;188;—;—;—;Licznik błędów CRC danych (Body CRC error count);—;Odczyt nieobsługiwany;
+0xBD;189;—;—;—;Identyfikator klienta (Client ID);—;Odczyt nieobsługiwany;
+0xBE;190;—;—;—;Sterowanie połączeniem (Link control);—;Odczyt nieobsługiwany;
+0xBF;191;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xC0;192;—;65535 (0xFFFF);4322 (0x10E2);Czas użytkowania wyświetlacza (Display usage time);"OSD Show Time; wartości z MD: 5-60";Odczytano;Usage time (hours) = 4322 (0x0010e2) mh=0xff, ml=0xff, sh=0x10, sl=0xe2
+0xC1;193;—;—;—;Nieznana funkcja (Unknown feature);"OSD H-Position; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0xC2;194;—;—;—;Długość deskryptora wyświetlacza (Display descriptor length);"OSD V-Position; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0xC3;195;—;—;—;Przesyłanie deskryptora wyświetlacza (Transmit display descriptor);"OSD Transparency; wartości z MD: 0-100";Odczyt nieobsługiwany (NULL);
+0xC4;196;—;—;—;Włączenie wyświetlania deskryptora (Enable display of 'display descriptor');"blokada osd; wartości z MD: 0 = off, 1 = on";Odczyt nieobsługiwany;
+0xC5;197;—;—;—;Nieznana funkcja (Unknown feature);"Power LED; wartości z MD: 01=disabled, 02=lvl1, 03=lvl2, 04=lvl3";Odczyt nieobsługiwany;
+0xC6;198;—;65535 (0xFFFF);17868 (0x45CC);Klucz aktywacji aplikacji (Application enable key);"Power Saving; wartości z MD: 0=off, 1=lvl1, 2=lvl2, 3=lvl3";Odczytano;0x45cc
+0xC7;199;—;—;—;Nieznana funkcja (Unknown feature);Reset Factory;Odczyt nieobsługiwany;
+0xC8;200;—;0 (0x0000);22021 (0x5605);Typ kontrolera wyświetlacza (Display controller type);—;Odczytano;Mfg: Mstar (sl=0x05), controller number: mh=0x00, ml=0x00, sh=0x56
+0xC9;201;—;65535 (0xFFFF);0 (0x0000);Wersja firmware wyświetlacza (Display firmware level);—;Odczytano;0.0
+0xCA;202;—;2 (0x0002);2 (0x0002);Menu OSD (OSD);—;Odczytano;OSD Enabled (sl=0x02)
+0xCB;203;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xCC;204;—;255 (0x00FF);2 (0x0002);Język OSD (OSD Language);Change Language;Odczytano;English (sl=0x02)
+0xCD;205;—;—;—;Wskaźniki stanu (Status Indicators);—;Odczyt nieobsługiwany;
+0xCE;206;—;—;—;Rozmiar pomocniczego wyświetlacza (Auxiliary display size);—;Odczyt nieobsługiwany;
+0xCF;207;—;—;—;Dane pomocniczego wyświetlacza (Auxiliary display data);—;"Pominięty w scan; wg wcześniejszego logu tylko do zapisu";
+0xD0;208;—;—;—;Wybór wyjścia (Output select);—;Odczyt nieobsługiwany;
+0xD1;209;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xD2;210;—;—;—;Etykieta identyfikacyjna urządzenia (Asset Tag);—;Odczyt nieobsługiwany (NULL);
+0xD3;211;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xD4;212;—;—;—;Tryb obrazu stereoskopowego (Stereo video mode);—;Odczyt nieobsługiwany;
+0xD5;213;—;—;—;Nieznana funkcja (Unknown feature);"usb power sleep; wartości z MD: 0 = off, 1 = on";Odczyt nieobsługiwany;
+0xD6;214;—;255 (0x00FF);1 (0x0001);Tryb zasilania (Power mode);—;Odczytano;DPM: On,  DPMS: Off (sl=0x01)
+0xD7;215;—;—;—;Pomocnicze wyjście zasilania (Auxiliary power output);—;Odczyt nieobsługiwany;
+0xD8;216;—;—;—;Nieznana funkcja (Unknown feature);"Low Blue Light; wartości z MD: 0-4";Odczyt nieobsługiwany;
+0xD9;217;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xDA;218;—;—;—;Tryb skanowania (Scan mode);—;Odczyt nieobsługiwany;
+0xDB;219;—;—;—;Tryb obrazu (Image Mode);—;Odczyt nieobsługiwany;
+0xDC;220;—;255 (0x00FF);0 (0x0000);Tryb wyświetlania (Display Mode);—;Odczytano;Standard/Default mode (sl=0x00)
+0xDD;221;—;—;—;Nieznana funkcja (Unknown feature);—;Odczyt nieobsługiwany;
+0xDE;222;—;—;—;Pamięć robocza (Scratch Pad);—;Odczyt nieobsługiwany;
+0xDF;223;—;255 (0x00FF);513 (0x0201);Wersja VCP/MCCS (VCP Version);"VCP / MCCS Version; Wersja protokołu, nie firmware.";Odczytano;2.1
+0xE0;224;—;14 (0x000E);0 (0x0000);Funkcja producenta (Manufacturer Specific);"Zmiana profilu obrazu; wartości z MD: 0–14 dziesiętnie (`0x00–0x0E`), 15 profili";Odczytano;mh=0x00, ml=0x0e, sh=0x00, sl=0x00
+0xE1;225;—;4 (0x0004);0 (0x0000);Funkcja producenta (Manufacturer Specific);"Low Blue Light; wartości z MD: 0-4; DCR; wartości z MD: Off, On";Odczytano;mh=0x00, ml=0x04, sh=0x00, sl=0x00
+0xE2;226;—;1 (0x0001);0 (0x0000);Funkcja producenta (Manufacturer Specific);"Adaptive-Sync; wartości z MD: Off, On; e4 tez wlacza/wylacza";Odczytano;mh=0x00, ml=0x01, sh=0x00, sl=0x00
+0xE3;227;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xE4;228;—;—;—;Funkcja producenta (Manufacturer Specific);Adaptive-Sync — według uwagi w MD także włącza/wyłącza;Odczyt nieobsługiwany;
+0xE5;229;—;—;—;Funkcja producenta (Manufacturer Specific);"Led - Color; wartości z MD: 1 = Red, 2 = Green, 3 = Blue, 4 = Yellow , 5 = Purple, 6 = Cyan";Odczyt nieobsługiwany;
+0xE6;230;—;—;—;Funkcja producenta (Manufacturer Specific);"Led - Strength; wartości z MD: 1 = Highlist, 2 = Standard, 3 = Soft";Odczyt nieobsługiwany;
+0xE7;231;—;—;—;Funkcja producenta (Manufacturer Specific);"Led - Mode; wartości z MD: 1 = Normal, 2 = Breathe, 3 = Flicker, 4 = Plain Water, 5 = Star, 6 = Colorful Pearls, 7 = Colorful Water; 5 tylko kolor, 6 reszta ustawien zablokowana";Odczyt nieobsługiwany;
+0xE8;232;—;—;—;Funkcja producenta (Manufacturer Specific);"Led - Front Color; wartości z MD: 1 = Red, 2 = Green, 3 = Blue, 4 = Yellow , 5 = Purple, 6 = Cyan; ustawienie dostepne tylko dla 7 = Colorful Water";Odczyt nieobsługiwany;
+0xE9;233;—;—;—;Funkcja producenta (Manufacturer Specific);"Led - Rear Color; wartości z MD: 1 = Red, 2 = Green, 3 = Blue, 4 = Yellow , 5 = Purple, 6 = Cyan; ustawienie dostepne tylko dla 7 = Colorful Water";Odczyt nieobsługiwany;
+0xEA;234;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xEB;235;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xEC;236;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xED;237;—;—;—;Funkcja producenta (Manufacturer Specific);"Notatka: wygasza OSD; dokładna funkcja nieustalona";Odczyt nieobsługiwany;
+0xEE;238;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xEF;239;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF0;240;—;1 (0x0001);1 (0x0001);Funkcja producenta (Manufacturer Specific);—;Odczytano;mh=0x00, ml=0x01, sh=0x00, sl=0x01
+0xF1;241;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF2;242;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF3;243;—;3 (0x0003);62738 (0xF512);Funkcja producenta (Manufacturer Specific);"Czas pracy monitora; Przypisanie czasu pracy z notatek; jednostka i pole maximum wymagają potwierdzenia.";Odczytano;mh=0x00, ml=0x03, sh=0xf5, sl=0x12
+0xF4;244;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF5;245;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF6;246;—;—;—;Funkcja producenta (Manufacturer Specific);"Audio Volume; wartości z MD: 0-100";Odczyt nieobsługiwany;
+0xF7;247;—;20034 (0x4E42);23116 (0x5A4C);Funkcja producenta (Manufacturer Specific);"Audio Mute; wartości z MD: disabled / enabled";Odczytano;mh=0x4e, ml=0x42, sh=0x5a, sl=0x4c
+0xF8;248;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xF9;249;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xFA;250;—;65535 (0xFFFF);0 (0x0000);Funkcja producenta (Manufacturer Specific);—;Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x00
+0xFB;251;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xFC;252;—;—;—;Funkcja producenta (Manufacturer Specific);—;Odczyt nieobsługiwany;
+0xFD;253;—;65535 (0xFFFF);116 (0x0074);Funkcja producenta (Manufacturer Specific);—;Odczytano;mh=0xff, ml=0xff, sh=0x00, sl=0x74
+0xFE;254;—;0 (0x0000);20737 (0x5101);Funkcja producenta (Manufacturer Specific);"Firmware / dane producenta; Format wersji niepotwierdzony; zachować surowe bajty.";Odczytano;mh=0x00, ml=0x00, sh=0x51, sl=0x01
+0xFF;255;—;0 (0x0000);512 (0x0200);Funkcja producenta (Manufacturer Specific);"Dane producenta — znaczenie nieustalone; Nie interpretować automatycznie jako wersji 2.0.";Odczytano;mh=0x00, ml=0x00, sh=0x02, sl=0x00

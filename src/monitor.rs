@@ -53,6 +53,7 @@ pub const VCP_GAME_TIME_VAL: u8 = 0x36;
 pub const VCP_GAME_TIME_POS: u8 = 0x37;
 pub const VCP_MAGNIFIER_POS: u8 = 0x38;
 pub const VCP_MAGNIFIER_NV: u8 = 0x39;
+pub const VCP_REAR_LED: u8 = 0x03;
 pub const VCP_SCREEN_SIZE: u8 = 0x3A;
 pub const VCP_ALIGNMENT: u8 = 0x3B;
 pub const VCP_CROSSHAIR: u8 = 0x3D;
@@ -80,13 +81,9 @@ pub const VCP_SATURATION_CYAN: u8 = 0x5C;
 pub const VCP_SATURATION_BLUE: u8 = 0x5D;
 pub const VCP_SATURATION_MAGENTA: u8 = 0x5E;
 
-#[allow(dead_code)]
-pub const VCP_SCENE_MODE: u8 = 0xDC;
-#[allow(dead_code)]
-pub const VCP_SHADOW_BALANCE_LEGACY: u8 = 0x0E;
-
 pub const VCP_OUTPUT_RANGE: u8 = 0x60;
 pub const VCP_QUICK_BOOT: u8 = 0x61;
+pub const VCP_DCR: u8 = 0xE1;
 pub const VCP_ADAPTIVE_SYNC: u8 = 0xE2;
 pub const VCP_HAWKEYE: u8 = 0x63;
 pub const VCP_HAWKEYE_SIZE: u8 = 0x64;
@@ -112,6 +109,64 @@ const VCP_CONTROLLER_TYPE: u8 = 0xC8;
 const VCP_USAGE_TIME: u8 = 0xF3;
 const VCP_FIRMWARE: u8 = 0xFE;
 const VCP_DDCCI_INIT: u8 = 0x99;
+const PROFILE_TABLE_LEN: usize = 38;
+const PROFILE_TABLE_FE_READS: usize = 8;
+const PROFILE_TABLE_RETRIES: usize = 5;
+
+#[derive(Clone, Copy, Debug)]
+pub struct VcpReply {
+    pub maximum: u16,
+    pub current: u16,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProfileTable {
+    pub scene_id: u8,
+    pub bytes: [u8; PROFILE_TABLE_LEN],
+}
+
+impl ProfileTable {
+    pub fn settings(&self) -> HashMap<u8, u16> {
+        let mut settings = HashMap::new();
+
+        settings.insert(VCP_BRIGHTNESS, self.bytes[2] as u16);
+        settings.insert(VCP_CONTRAST, self.bytes[3] as u16);
+        settings.insert(VCP_SHARPNESS, self.bytes[4] as u16);
+        settings.insert(VCP_COLOR_ENHANCE, self.bytes[5] as u16);
+        settings.insert(VCP_CR_ENHANCE, self.bytes[6] as u16);
+        settings.insert(VCP_SHADOW_BALANCE, self.bytes[7] as u16);
+        settings.insert(VCP_COLOR_TEMP, self.bytes[8] as u16);
+        settings.insert(VCP_USER1_RED, self.bytes[9] as u16);
+        settings.insert(VCP_USER1_GREEN, self.bytes[10] as u16);
+        settings.insert(VCP_USER1_BLUE, self.bytes[11] as u16);
+        settings.insert(VCP_USER2_RED, self.bytes[12] as u16);
+        settings.insert(VCP_USER2_GREEN, self.bytes[13] as u16);
+        settings.insert(VCP_USER2_BLUE, self.bytes[14] as u16);
+        settings.insert(VCP_USER3_RED, self.bytes[15] as u16);
+        settings.insert(VCP_USER3_GREEN, self.bytes[16] as u16);
+        settings.insert(VCP_USER3_BLUE, self.bytes[17] as u16);
+        settings.insert(VCP_HUE_RED, self.bytes[18] as u16);
+        settings.insert(VCP_HUE_GREEN, self.bytes[19] as u16);
+        settings.insert(VCP_HUE_BLUE, self.bytes[20] as u16);
+        settings.insert(VCP_HUE_YELLOW, self.bytes[21] as u16);
+        settings.insert(VCP_HUE_CYAN, self.bytes[22] as u16);
+        settings.insert(VCP_HUE_MAGENTA, self.bytes[23] as u16);
+        settings.insert(VCP_SATURATION_RED, self.bytes[24] as u16);
+        settings.insert(VCP_SATURATION_GREEN, self.bytes[25] as u16);
+        settings.insert(VCP_SATURATION_BLUE, self.bytes[26] as u16);
+        settings.insert(VCP_SATURATION_YELLOW, self.bytes[27] as u16);
+        settings.insert(VCP_SATURATION_CYAN, self.bytes[28] as u16);
+        settings.insert(VCP_SATURATION_MAGENTA, self.bytes[29] as u16);
+        settings.insert(VCP_LOW_BLUE, self.bytes[30] as u16);
+        settings.insert(VCP_HDR, self.bytes[31] as u16);
+        settings.insert(VCP_GAMMA, self.bytes[33] as u16);
+        settings.insert(VCP_SUPER_RES, self.bytes[34] as u16);
+        settings.insert(VCP_NIGHT_VISION, self.bytes[35] as u16);
+        settings.insert(VCP_DYNAMIC_OD, self.bytes[36] as u16);
+
+        settings
+    }
+}
 
 pub struct MsiDdc {
     i2c: I2c<File>,
@@ -161,7 +216,7 @@ impl MsiDdc {
         self.set_vcp(code, value)
     }
 
-    pub fn get_vcp(&mut self, code: u8) -> io::Result<u16> {
+    pub fn get_vcp_reply(&mut self, code: u8) -> io::Result<VcpReply> {
         let chk = DDC_DEST ^ DDC_SRC ^ 0x82 ^ 0x01 ^ code;
         let req = [DDC_SRC, 0x82, 0x01, code, chk];
         self.i2c.write_all(&req)?;
@@ -177,13 +232,70 @@ impl MsiDdc {
             ));
         }
         if resp[3] != 0x00 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("VCP 0x{:02X}: unsupported", code),
-            ));
+            return Err(io::Error::other(format!("VCP 0x{:02X}: unsupported", code)));
         }
 
-        Ok(((resp[8] as u16) << 8) | resp[9] as u16)
+        Ok(VcpReply {
+            maximum: ((resp[6] as u16) << 8) | resp[7] as u16,
+            current: ((resp[8] as u16) << 8) | resp[9] as u16,
+        })
+    }
+
+    pub fn get_vcp(&mut self, code: u8) -> io::Result<u16> {
+        self.get_vcp_reply(code).map(|reply| reply.current)
+    }
+
+    pub fn read_profile_table(&mut self, scene_id: u8) -> io::Result<ProfileTable> {
+        let mut last_error = None;
+
+        for attempt in 0..PROFILE_TABLE_RETRIES {
+            match self.read_profile_table_once(scene_id) {
+                Ok(table) => return Ok(table),
+                Err(error) => {
+                    last_error = Some(error);
+                    let _ = self.get_vcp_reply(VCP_DDCCI_INIT);
+                    let _ = self.get_vcp_reply(VCP_FIRMWARE);
+                    if attempt + 1 < PROFILE_TABLE_RETRIES {
+                        thread::sleep(Duration::from_millis(500));
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| io::Error::other("profile table read failed")))
+    }
+
+    fn read_profile_table_once(&mut self, scene_id: u8) -> io::Result<ProfileTable> {
+        let mut bytes = [0u8; PROFILE_TABLE_LEN];
+
+        self.get_vcp_reply(VCP_DDCCI_INIT)?;
+        self.get_vcp_reply(VCP_MODE)?;
+
+        let scene = self.get_vcp_reply(scene_id)?;
+        write_reply_to_profile_bytes(&mut bytes, 2, scene);
+
+        for index in 0..PROFILE_TABLE_FE_READS {
+            let reply = self.get_vcp_reply(VCP_FIRMWARE)?;
+            write_reply_to_profile_bytes(&mut bytes, 6 + (index * 4), reply);
+        }
+
+        let _ = self.get_vcp_reply(VCP_FIRMWARE);
+        Ok(ProfileTable { scene_id, bytes })
+    }
+}
+
+fn write_reply_to_profile_bytes(bytes: &mut [u8; PROFILE_TABLE_LEN], offset: usize, reply: VcpReply) {
+    let raw = [
+        (reply.maximum >> 8) as u8,
+        (reply.maximum & 0xFF) as u8,
+        (reply.current >> 8) as u8,
+        (reply.current & 0xFF) as u8,
+    ];
+
+    for (index, value) in raw.into_iter().enumerate() {
+        if let Some(slot) = bytes.get_mut(offset + index) {
+            *slot = value;
+        }
     }
 }
 
@@ -256,18 +368,21 @@ struct DrmMonitorInfo {
 pub enum WorkerCmd {
     Set(u8, u16),
     SetSave(u8, u16),
+    ReadStable(Vec<u8>),
 }
 
 pub enum UiCmd {
     MonitorFound(MonitorInfo),
+    Settings(HashMap<u8, u16>),
     Progress(String),
     Error(String),
     Busy(bool),
 }
 
-fn worker_cmd_code(cmd: &WorkerCmd) -> u8 {
+fn worker_cmd_code(cmd: &WorkerCmd) -> Option<u8> {
     match cmd {
-        WorkerCmd::Set(code, _) | WorkerCmd::SetSave(code, _) => *code,
+        WorkerCmd::Set(code, _) | WorkerCmd::SetSave(code, _) => Some(*code),
+        WorkerCmd::ReadStable(_) => None,
     }
 }
 
@@ -276,7 +391,10 @@ fn collapse_worker_cmds(mut batch: Vec<WorkerCmd>) -> Vec<WorkerCmd> {
     let mut collapsed = Vec::with_capacity(batch.len());
 
     while let Some(cmd) = batch.pop() {
-        let code = worker_cmd_code(&cmd);
+        let Some(code) = worker_cmd_code(&cmd) else {
+            collapsed.push(cmd);
+            continue;
+        };
         if seen.insert(code) {
             collapsed.push(cmd);
         }
@@ -295,7 +413,7 @@ pub const NIGHT_VISION_VALUES: [u16; 5] = [0, 1, 2, 3, 4];
 pub const DYNAMIC_OD_VALUES: [u16; 5] = [0, 1, 2, 3, 4];
 pub const LOCAL_DIMMING_VALUES: [u16; 5] = [2, 3, 4, 5, 6];
 pub const DYDS_VALUES: [u16; 7] = [2, 3, 4, 5, 6, 7, 8];
-pub const POWER_SAVING_VALUES: [u16; 4] = [1, 2, 3, 4];
+pub const POWER_SAVING_VALUES: [u16; 4] = [0, 1, 2, 3];
 pub const HUE_CODES: [u8; 6] = [
     VCP_HUE_RED,
     VCP_HUE_GREEN,
@@ -448,7 +566,7 @@ pub fn is_color_temp_rgb_code(code: u8) -> bool {
 fn factory_reset_defaults() -> HashMap<u8, u16> {
     HashMap::from([
         (VCP_MODE, PICTURE_MODE_DEFAULT_VALUES[0]),
-        (VCP_BRIGHTNESS, 100),
+        (VCP_BRIGHTNESS, 25),
         (VCP_CONTRAST, 50),
         (VCP_SHARPNESS, 0),
         (VCP_COLOR_TEMP, 0x05),
@@ -456,7 +574,7 @@ fn factory_reset_defaults() -> HashMap<u8, u16> {
         (VCP_GREEN, 50),
         (VCP_BLUE, 47),
         (VCP_LOW_BLUE, 0),
-        (VCP_GAMMA, 3),
+        (VCP_GAMMA, GAMMA_VALUES[2]),
         (VCP_SHADOW_BALANCE, 50),
         (VCP_CR_ENHANCE, 0),
         (VCP_COLOR_ENHANCE, 0),
@@ -475,14 +593,15 @@ fn factory_reset_defaults() -> HashMap<u8, u16> {
         (VCP_SATURATION_YELLOW, 50),
         (VCP_HALO_CONTROL, 0),
         (VCP_HDR, 0),
+        (VCP_DCR, 0),
         (VCP_NIGHT_VISION, 0),
         (VCP_DYNAMIC_OD, 0),
         (VCP_ADAPTIVE_SYNC, 0),
         (VCP_GAME_RUSH, 1),
-        (VCP_LOCAL_DIMMING, 1),
-        (VCP_DYDS, 1),
+        (VCP_LOCAL_DIMMING, LOCAL_DIMMING_VALUES[4]),
+        (VCP_DYDS, DYDS_VALUES[0]),
         (VCP_FPS_COUNTER, 0),
-        (VCP_CROSSHAIR, 0),
+        (VCP_CROSSHAIR, 1),
         (VCP_STOPWATCH, 0),
         (VCP_GAME_TIME, 0),
         (VCP_MAGNIFIER, 0),
@@ -490,8 +609,8 @@ fn factory_reset_defaults() -> HashMap<u8, u16> {
         (VCP_CROSSHAIR_COLOR, 8),
         (VCP_VOLUME, 50),
         (VCP_MUTE, 1),
-        (VCP_OUTPUT_RANGE, 1),
-        (VCP_QUICK_BOOT, 1),
+        (VCP_OUTPUT_RANGE, OUTPUT_RANGE_VALUES[0]),
+        (VCP_QUICK_BOOT, 0),
         (VCP_OSD_LANG, 0x02),
         (VCP_OSD_TIME, 10),
         (VCP_OSD_H_POS, 50),
@@ -499,6 +618,7 @@ fn factory_reset_defaults() -> HashMap<u8, u16> {
         (VCP_OSD_TRANS, 0),
         (VCP_POWER_SAVING, POWER_SAVING_VALUES[0]),
         (VCP_POWER_LED, 3),
+        (VCP_REAR_LED, 0),
     ])
 }
 
@@ -519,7 +639,7 @@ fn parse_edid_name(data: &[u8]) -> Option<String> {
         if data[o..o + 4] == [0, 0, 0, 0xFC] {
             let n: String = data[o + 5..o + 18]
                 .iter()
-                .filter(|&&c| c >= 32 && c <= 126)
+                .filter(|&&c| (32..=126).contains(&c))
                 .map(|&c| c as char)
                 .collect();
             return Some(normalize_monitor_name(&format!("{} {}", mfg, n.trim())));
@@ -537,7 +657,7 @@ fn parse_edid_serial(data: &[u8]) -> Option<String> {
         if data[o..o + 4] == [0, 0, 0, 0xFF] {
             let serial: String = data[o + 5..o + 18]
                 .iter()
-                .filter(|&&c| c >= 32 && c <= 126)
+                .filter(|&&c| (32..=126).contains(&c))
                 .map(|&c| c as char)
                 .collect();
             let serial = serial.trim().to_string();
@@ -570,10 +690,10 @@ fn get_edid_name(path: &str) -> Option<String> {
 
 fn read_drm_resolution(path: &Path) -> String {
     for file_name in ["mode", "modes"] {
-        if let Ok(contents) = fs::read_to_string(path.join(file_name)) {
-            if let Some(mode) = contents.lines().find(|line| !line.trim().is_empty()) {
-                return mode.trim().to_string();
-            }
+        if let Ok(contents) = fs::read_to_string(path.join(file_name))
+            && let Some(mode) = contents.lines().find(|line| !line.trim().is_empty())
+        {
+            return mode.trim().to_string();
         }
     }
     String::new()
@@ -603,20 +723,20 @@ fn get_drm_monitors() -> Vec<DrmMonitorInfo> {
         }
         let edid_path = path.join("edid");
         let mut edid_data = Vec::new();
-        if let Ok(mut f) = File::open(&edid_path) {
-            if f.read_to_end(&mut edid_data).is_ok() && edid_data.len() >= 128 {
-                if let Some(name) = parse_edid_name(&edid_data) {
-                    let resolution = read_drm_resolution(&path);
-                    let serial_number = parse_edid_serial(&edid_data).unwrap_or_default();
-                    eprintln!("[DRM] {} connected: {} [{}]", dir_str, name, resolution);
-                    monitors.push(DrmMonitorInfo {
-                        name,
-                        resolution,
-                        serial_number,
-                        connector: dir_str.to_string(),
-                    });
-                }
-            }
+        if let Ok(mut f) = File::open(&edid_path)
+            && f.read_to_end(&mut edid_data).is_ok()
+            && edid_data.len() >= 128
+            && let Some(name) = parse_edid_name(&edid_data)
+        {
+            let resolution = read_drm_resolution(&path);
+            let serial_number = parse_edid_serial(&edid_data).unwrap_or_default();
+            eprintln!("[DRM] {} connected: {} [{}]", dir_str, name, resolution);
+            monitors.push(DrmMonitorInfo {
+                name,
+                resolution,
+                serial_number,
+                connector: dir_str.to_string(),
+            });
         }
     }
     monitors
@@ -703,10 +823,10 @@ fn cache_file() -> PathBuf {
 
 fn load_cache_store() -> CacheStore {
     let path = cache_file();
-    if let Ok(data) = fs::read_to_string(&path) {
-        if let Ok(store) = serde_json::from_str(&data) {
-            return store;
-        }
+    if let Ok(data) = fs::read_to_string(&path)
+        && let Ok(store) = serde_json::from_str(&data)
+    {
+        return store;
     }
     CacheStore::default()
 }
@@ -927,6 +1047,16 @@ fn try_connect(
     } else {
         read_vcp(&mut ddc, VCP_OSD_LANG)
     };
+    let rear_led = if cached_snapshot.is_some() {
+        None
+    } else {
+        read_vcp(&mut ddc, VCP_REAR_LED)
+    };
+    let dcr = if cached_snapshot.is_some() {
+        None
+    } else {
+        read_vcp(&mut ddc, VCP_DCR)
+    };
 
     let mut settings = load_cached_settings(name, ui_tx);
     if let Some(value) = input_source {
@@ -935,8 +1065,28 @@ fn try_connect(
     if let Some(value) = picture_mode {
         settings.insert(VCP_MODE, value);
     }
+    if let Some(scene_id) = picture_mode.and_then(|value| u8::try_from(value).ok()) {
+        match ddc.read_profile_table(scene_id) {
+            Ok(table) => {
+                eprintln!("[DDC] Active profile table 0x{:02X} read", table.scene_id);
+                settings.extend(table.settings());
+            }
+            Err(error) => {
+                eprintln!(
+                    "[DDC] Active profile table 0x{:02X} read failed: {}",
+                    scene_id, error
+                );
+            }
+        }
+    }
     if let Some(value) = osd_lang {
         settings.insert(VCP_OSD_LANG, value);
+    }
+    if let Some(value) = rear_led {
+        settings.insert(VCP_REAR_LED, value);
+    }
+    if let Some(value) = dcr {
+        settings.insert(VCP_DCR, value);
     }
     apply_color_temp_cache(name, &mut settings);
     save_cache_for(name, &settings, Some(dev_path));
@@ -1016,18 +1166,18 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
             eprintln!("[DRM] Target monitor: {}", name);
         }
 
-        if let Some(ref cached_path) = cached_i2c_path {
-            if Path::new(&cached_path).exists() {
-                let cached_name = target_name
-                    .clone()
-                    .or_else(|| get_edid_name_retry(&cached_path, 1));
-                if let Some(name) = cached_name {
-                    let drm_info = drm_monitors.iter().find(|monitor| monitor.name == name);
-                    if let Some((ddc, info)) = try_connect(&cached_path, &name, drm_info, &ui_tx) {
-                        let _ = ui_tx.send_blocking(UiCmd::MonitorFound(info));
-                        current_monitor_name = Some(name);
-                        found = Some(ddc);
-                    }
+        if let Some(ref cached_path) = cached_i2c_path
+            && Path::new(cached_path).exists()
+        {
+            let cached_name = target_name
+                .clone()
+                .or_else(|| get_edid_name_retry(cached_path, 1));
+            if let Some(name) = cached_name {
+                let drm_info = drm_monitors.iter().find(|monitor| monitor.name == name);
+                if let Some((ddc, info)) = try_connect(cached_path, &name, drm_info, &ui_tx) {
+                    let _ = ui_tx.send_blocking(UiCmd::MonitorFound(info));
+                    current_monitor_name = Some(name);
+                    found = Some(ddc);
                 }
             }
         }
@@ -1052,11 +1202,12 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
             };
             eprintln!("[I2C] {} EDID: {}", p, name);
 
-            if let Some(ref target) = target_name {
-                if !name.contains("P275MV") && target.contains("P275MV") {
-                    eprintln!("[I2C] {} skipping (not target)", p);
-                    continue;
-                }
+            if let Some(ref target) = target_name
+                && !name.contains("P275MV")
+                && target.contains("P275MV")
+            {
+                eprintln!("[I2C] {} skipping (not target)", p);
+                continue;
             }
 
             let _ = ui_tx.send_blocking(UiCmd::Progress(format!("Found: {}...", name)));
@@ -1093,6 +1244,32 @@ pub fn start_worker(worker_rx: mpsc::Receiver<WorkerCmd>, ui_tx: async_channel::
                 let (code, value, result) = match cmd {
                     WorkerCmd::Set(c, v) => (c, v, ddc.set_vcp(c, v)),
                     WorkerCmd::SetSave(c, v) => (c, v, ddc.set_vcp_save(c, v)),
+                    WorkerCmd::ReadStable(codes) => {
+                        let mut settings = HashMap::new();
+                        for code in codes {
+                            if let Some(value) = read_vcp(&mut ddc, code) {
+                                if matches!(code, VCP_BRIGHTNESS | VCP_CONTRAST)
+                                    && matches!(value, 0 | 100)
+                                    && cache
+                                        .get(&code)
+                                        .is_some_and(|cached| *cached != value)
+                                {
+                                    eprintln!(
+                                        "[DDC] VCP 0x{:02X} suspicious read ignored: {}",
+                                        code, value
+                                    );
+                                    continue;
+                                }
+                                cache.insert(code, value);
+                                settings.insert(code, value);
+                            }
+                        }
+                        if !settings.is_empty() {
+                            save_cache_for(&monitor_name, &cache, None);
+                            let _ = ui_tx.send_blocking(UiCmd::Settings(settings));
+                        }
+                        continue;
+                    }
                 };
                 if result.is_err() {
                     if let Err(e) = result {

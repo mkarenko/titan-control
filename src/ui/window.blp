@@ -1,0 +1,1123 @@
+// Titan Control – main window (sidebar layout).
+// Based on the prototype in ui/main.blp (Workbench). Compiled by build.rs with blueprint-compiler.
+// Source strings are Polish; src/ui/translate.rs translates them at runtime.
+// Every widget used by the code has an id; ranges follow docs/p275mv_plus.md.
+// Requires libadwaita >= 1.7 (Adw.ToggleGroup).
+
+using Gtk 4.0;
+using Adw 1;
+
+Gtk.Adjustment adj_brightness { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_contrast { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_volume { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_lbl { lower: 0; upper: 4; step-increment: 1; page-increment: 1; }
+Gtk.Adjustment adj_sharpness { lower: 0; upper: 5; step-increment: 1; page-increment: 1; }
+Gtk.Adjustment adj_color_enhance { lower: 0; upper: 10; step-increment: 1; page-increment: 1; }
+Gtk.Adjustment adj_cr_enhance { lower: 0; upper: 5; step-increment: 1; page-increment: 1; }
+Gtk.Adjustment adj_shadow_balance { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_super_res { lower: 0; upper: 5; step-increment: 1; page-increment: 1; }
+Gtk.Adjustment adj_halo { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_red { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_green { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_blue { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_red { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_green { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_blue { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_cyan { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_magenta { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_hue_yellow { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_red { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_green { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_blue { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_cyan { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_magenta { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_sat_yellow { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_osd_time { lower: 5; upper: 60; value: 10; step-increment: 1; page-increment: 5; }
+Gtk.Adjustment adj_osd_h { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_osd_v { lower: 0; upper: 100; step-increment: 1; page-increment: 10; }
+Gtk.Adjustment adj_osd_trans { lower: 0; upper: 5; step-increment: 1; page-increment: 1; }
+
+Adw.ApplicationWindow window {
+  title: "Titan Control";
+  default-width: 1020;
+  default-height: 780;
+  width-request: 360;
+  height-request: 400;
+
+  // Narrow window: the sidebar is hidden and the pages become tabs at the top.
+  Adw.Breakpoint {
+    condition ("max-width: 720sp")
+
+    setters {
+      split_view.collapsed: true;
+      split_view.show-sidebar: false;
+      tabs_scroller.visible: true;
+    }
+  }
+
+  content: Adw.OverlaySplitView split_view {
+    min-sidebar-width: 220;
+    max-sidebar-width: 260;
+
+    // ═══════════════════════════════ CONTENT ═══════════════════════════════
+    content: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          show-title: false;
+
+          [end]
+          Gtk.MenuButton menu_button {
+            icon-name: "open-menu-symbolic";
+            menu-model: primary_menu;
+            primary: true;
+            tooltip-text: "Menu główne";
+          }
+
+          [end]
+          Gtk.Button refresh_button {
+            icon-name: "view-refresh-symbolic";
+            tooltip-text: "Odśwież informacje i ustawienia z monitora";
+          }
+        }
+
+        [top]
+        Gtk.ScrolledWindow tabs_scroller {
+          visible: false;
+          vscrollbar-policy: never;
+          hscrollbar-policy: external;
+          propagate-natural-height: true;
+
+          child: Gtk.StackSwitcher tabs {
+            stack: stack;
+            halign: center;
+            margin-start: 6;
+            margin-end: 6;
+            margin-bottom: 6;
+          };
+        }
+
+        content: Gtk.Stack stack {
+          transition-type: crossfade;
+
+          // ─────────────────────────── 1. OVERVIEW ───────────────────────────
+          Gtk.StackPage {
+            name: "overview";
+            title: "Przegląd";
+            icon-name: "go-home-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                Gtk.Box {
+                  orientation: vertical;
+                  spacing: 6;
+                  margin-bottom: 6;
+
+                  Gtk.Image ov_monitor_picture {
+                    pixel-size: 180;
+                  }
+
+                  Gtk.Label ov_monitor_title {
+                    label: "Titan Army P275MV";
+                    styles [ "title-3" ]
+                  }
+
+                  Gtk.Label ov_monitor_subtitle {
+                    label: "Łączenie z monitorem…";
+                    styles [ "dim-label" ]
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup sys_group {
+                title: "Tryb wyświetlania";
+
+                Adw.ComboRow sys_resolution {
+                  title: "Rozdzielczość";
+                }
+
+                Adw.ComboRow sys_refresh {
+                  title: "Odświeżanie";
+                }
+
+                Adw.ComboRow sys_scaling {
+                  title: "Skalowanie";
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Obraz monitora";
+
+                Adw.ComboRow ratio {
+                  title: "Proporcje obrazu";
+                  subtitle: "Skalowanie sygnału wejściowego przez monitor. Proporcja 21:9 wymaga szerokiego trybu ekranu (np. 3K Wide), którego monitor nie przyjmuje przez DDC";
+                  model: Gtk.StringList { strings [ "Panoramiczny", "4:3", "1:1", "21:9", "Auto" ] };
+                }
+              }
+            };
+          }
+
+          // ─────────────────────────── 2. PICTURE MODE (settings saved in the profile) ───────────────────────────
+          Gtk.StackPage {
+            name: "profile";
+            title: "Tryb obrazu";
+            icon-name: "image-x-generic-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                title: "Tryb obrazu";
+
+                Adw.ComboRow picture_mode {
+                  title: "Aktywny tryb";
+                }
+
+                Adw.ActionRow row_profile_variant {
+                  title: "Ustawienia trybu";
+
+                  [suffix]
+                  Adw.ToggleGroup profile_variant {
+                    valign: center;
+
+                    Adw.Toggle { label: "Domyślne"; }
+                    Adw.Toggle { label: "Własne"; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup group_picture_basic {
+                title: "Podstawowe";
+
+                Adw.ActionRow row_brightness {
+                  title: "Jasność";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_brightness; }
+                }
+
+                Adw.ActionRow row_contrast {
+                  title: "Kontrast";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_contrast; }
+                }
+
+                Adw.SwitchRow dcr {
+                  title: "DCR";
+                  subtitle: "Dynamiczny kontrast";
+                }
+
+                Adw.ActionRow row_low_blue_light {
+                  title: "Low Blue Light";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_lbl; }
+                }
+
+                Adw.ActionRow row_sharpness {
+                  title: "Ostrość";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sharpness; }
+                }
+
+                Adw.ActionRow row_gamma {
+                  title: "Gamma";
+
+                  [suffix]
+                  Adw.ToggleGroup gamma {
+                    valign: center;
+
+                    Adw.Toggle { label: "1.8"; }
+                    Adw.Toggle { label: "2.0"; }
+                    Adw.Toggle { label: "2.2"; }
+                    Adw.Toggle { label: "2.4"; }
+                    Adw.Toggle { label: "2.6"; }
+                    Adw.Toggle { label: "S Curve"; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup group_effects {
+                title: "Efekty";
+
+                Adw.ActionRow row_hdr {
+                  title: "HDR";
+                  subtitle: "W KDE Plasma (Wayland) włącza i wyłącza też HDR w systemie. Z firmware 2025-09-20 przy HDR włączonym w monitorze i w systemie zablokowane są: tryb obrazu, jasność, kontrast, DCR, Low Blue Light, Color Enhance, CR Enhance, Shadow Balance, Night Vision, DyDs, wyłączenie lokalnego przyciemniania, zakres RGB i lupa";
+
+                  [suffix]
+                  Adw.ToggleGroup hdr {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Auto"; }
+                    Adw.Toggle { label: "Game"; }
+                    Adw.Toggle { label: "Movie"; }
+                  }
+                }
+
+                Adw.ActionRow row_color_enhance {
+                  title: "Color Enhance";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_color_enhance; }
+                }
+
+                Adw.ActionRow row_cr_enhance {
+                  title: "CR Enhance";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_cr_enhance; }
+                }
+
+                Adw.ActionRow row_shadow_balance {
+                  title: "Shadow Balance";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_shadow_balance; }
+                }
+
+                Adw.ActionRow row_super_res {
+                  title: "Super Res";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_super_res; }
+                }
+
+                Adw.ActionRow row_night_vision {
+                  title: "Night Vision";
+
+                  [suffix]
+                  Adw.ToggleGroup night_vision {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Lvl 1"; }
+                    Adw.Toggle { label: "Lvl 2"; }
+                    Adw.Toggle { label: "Auto 1"; }
+                    Adw.Toggle { label: "Auto 2"; }
+                  }
+                }
+
+                Adw.ActionRow row_dynamic_od {
+                  title: "Dynamic OD";
+
+                  [suffix]
+                  Adw.ToggleGroup dynamic_od {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Lvl 1"; }
+                    Adw.Toggle { label: "Lvl 2"; }
+                    Adw.Toggle { label: "Lvl 3"; }
+                    Adw.Toggle { label: "Top Speed"; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup group_backlight {
+                title: "Podświetlenie";
+
+                Adw.ActionRow row_local_dimming {
+                  title: "Lokalne przyciemnianie";
+
+                  [suffix]
+                  Adw.ToggleGroup local_dimming {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Low"; }
+                    Adw.Toggle { label: "Smooth"; }
+                    Adw.Toggle { label: "Medium"; }
+                    Adw.Toggle { label: "High"; }
+                  }
+                }
+
+                Adw.ActionRow row_halo_control {
+                  title: "Halo Control";
+                  subtitle: "Tylko przy włączonym lokalnym przyciemnianiu";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_halo; }
+                }
+
+                Adw.ActionRow row_dyds {
+                  title: "DyDs";
+
+                  [suffix]
+                  Adw.ToggleGroup dyds {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Low"; }
+                    Adw.Toggle { label: "Med"; }
+                    Adw.Toggle { label: "High"; }
+                    Adw.Toggle { label: "ULL-1"; }
+                    Adw.Toggle { label: "ULL-2"; }
+                    Adw.Toggle { label: "ULL-3"; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup group_color_temp {
+                title: "Kolor";
+
+                Adw.ActionRow row_color_temp {
+                  title: "Temperatura barwowa";
+
+                  [suffix]
+                  Adw.ToggleGroup color_temp {
+                    valign: center;
+
+                    Adw.Toggle { label: "Warm"; }
+                    Adw.Toggle { label: "Natural"; }
+                    Adw.Toggle { label: "Cold"; }
+                    Adw.Toggle { label: "User 1"; }
+                    Adw.Toggle { label: "User 2"; }
+                    Adw.Toggle { label: "User 3"; }
+                  }
+                }
+
+                Adw.ExpanderRow rgb_expander {
+                  title: "RGB";
+                  subtitle: "Edytowalne tylko dla profili User 1–3";
+
+                  Adw.ActionRow row_color_temp_red {
+                    title: "Czerwony (R)";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_red; }
+                  }
+
+                  Adw.ActionRow row_color_temp_green {
+                    title: "Zielony (G)";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_green; }
+                  }
+
+                  Adw.ActionRow row_color_temp_blue {
+                    title: "Niebieski (B)";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_blue; }
+                  }
+                }
+
+                Adw.ExpanderRow hue_expander {
+                  title: "Odcień (Hue)";
+
+                  Adw.ActionRow row_hue_red { title: "Czerwony (R)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_red; } }
+                  Adw.ActionRow row_hue_green { title: "Zielony (G)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_green; } }
+                  Adw.ActionRow row_hue_blue { title: "Niebieski (B)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_blue; } }
+                  Adw.ActionRow row_hue_cyan { title: "Cyjan (C)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_cyan; } }
+                  Adw.ActionRow row_hue_magenta { title: "Magenta (M)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_magenta; } }
+                  Adw.ActionRow row_hue_yellow { title: "Żółty (Y)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_hue_yellow; } }
+                }
+
+                Adw.ExpanderRow saturation_expander {
+                  title: "Nasycenie (Saturation)";
+                  subtitle: "Przy włączonym Color Enhance nasycenie ustawia on sam: suwaki pokazują wartości dla jego poziomu i są zablokowane";
+
+                  Adw.ActionRow row_saturation_red { title: "Czerwony (R)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_red; } }
+                  Adw.ActionRow row_saturation_green { title: "Zielony (G)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_green; } }
+                  Adw.ActionRow row_saturation_blue { title: "Niebieski (B)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_blue; } }
+                  Adw.ActionRow row_saturation_cyan { title: "Cyjan (C)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_cyan; } }
+                  Adw.ActionRow row_saturation_magenta { title: "Magenta (M)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_magenta; } }
+                  Adw.ActionRow row_saturation_yellow { title: "Żółty (Y)"; [suffix] Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_sat_yellow; } }
+                }
+
+              }
+
+            };
+          }
+
+          // ─────────────────────────── 3. GAMING ───────────────────────────
+          Gtk.StackPage {
+            name: "gaming";
+            title: "Gaming";
+            icon-name: "input-gaming-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                title: "Wydajność";
+
+                Adw.SwitchRow adaptive_sync {
+                  title: "Adaptive-Sync";
+                }
+
+                Adw.ActionRow row_screen_size {
+                  title: "Rozmiar ekranu (DualMode)";
+
+                  [suffix]
+                  Adw.ToggleGroup screen_size {
+                    valign: center;
+
+                    Adw.Toggle { label: "Wide"; }
+                    Adw.Toggle { label: "25\""; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Nakładki";
+
+                Adw.ExpanderRow fps_counter {
+                  title: "Licznik FPS/Hz";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Pozycja";
+
+                    [suffix]
+                    Adw.ToggleGroup fps_pos {
+                      valign: center;
+
+                      Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                      Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                      Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                      Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                    }
+                  }
+                }
+
+                Adw.ExpanderRow crosshair {
+                  title: "Celownik";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Kształt";
+
+                    [suffix]
+                    Adw.ToggleGroup crosshair_shape {
+                      valign: center;
+
+                      Adw.Toggle { tooltip: "1"; }
+                      Adw.Toggle { tooltip: "2"; }
+                      Adw.Toggle { tooltip: "3"; }
+                      Adw.Toggle { tooltip: "4"; }
+                      Adw.Toggle { tooltip: "5"; }
+                      Adw.Toggle { tooltip: "6"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Kolor";
+
+                    [suffix]
+                    Gtk.Box {
+                      valign: center;
+                      styles [ "linked" ]
+
+                      Gtk.ToggleButton cross_c0 { active: true; tooltip-text: "Czerwony"; styles [ "color-btn", "color-red" ] }
+                      Gtk.ToggleButton cross_c1 { group: cross_c0; tooltip-text: "Żółty"; styles [ "color-btn", "color-yel" ] }
+                      Gtk.ToggleButton cross_c2 { group: cross_c0; tooltip-text: "Zielony"; styles [ "color-btn", "color-grn" ] }
+                      Gtk.ToggleButton cross_c3 { group: cross_c0; tooltip-text: "Cyjan"; styles [ "color-btn", "color-cya" ] }
+                      Gtk.ToggleButton cross_c4 { group: cross_c0; tooltip-text: "Niebieski"; styles [ "color-btn", "color-blu" ] }
+                      Gtk.ToggleButton cross_c5 { group: cross_c0; tooltip-text: "Fioletowy"; styles [ "color-btn", "color-pur" ] }
+                      Gtk.ToggleButton cross_c6 { group: cross_c0; tooltip-text: "Biały"; styles [ "color-btn", "color-wht" ] }
+                      Gtk.ToggleButton cross_c7 { group: cross_c0; label: "Auto"; }
+                    }
+                  }
+                }
+
+                Adw.ExpanderRow stopwatch {
+                  title: "Stoper";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Czas (min)";
+
+                    [suffix]
+                    Adw.ToggleGroup stopwatch_time {
+                      valign: center;
+
+                      Adw.Toggle { label: "15"; }
+                      Adw.Toggle { label: "30"; }
+                      Adw.Toggle { label: "45"; }
+                      Adw.Toggle { label: "60"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Pozycja";
+
+                    [suffix]
+                    Adw.ToggleGroup stopwatch_pos {
+                      valign: center;
+
+                      Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                      Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                      Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                      Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                    }
+                  }
+                }
+
+                Adw.ExpanderRow game_time {
+                  title: "Czas gry";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Czas (min)";
+
+                    [suffix]
+                    Adw.ToggleGroup game_time_val {
+                      valign: center;
+
+                      Adw.Toggle { label: "15"; }
+                      Adw.Toggle { label: "30"; }
+                      Adw.Toggle { label: "45"; }
+                      Adw.Toggle { label: "60"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Pozycja";
+
+                    [suffix]
+                    Adw.ToggleGroup game_time_pos {
+                      valign: center;
+
+                      Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                      Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                      Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                      Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                    }
+                  }
+                }
+
+                Adw.ExpanderRow magnifier {
+                  title: "Lupa";
+                  subtitle: "Niedostępna przy włączonym Adaptive-Sync";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Powiększenie";
+
+                    [suffix]
+                    Adw.ToggleGroup magnifier_zoom {
+                      valign: center;
+
+                      Adw.Toggle { label: "×1.5"; }
+                      Adw.Toggle { label: "×2"; }
+                      Adw.Toggle { label: "×4"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Rozmiar";
+
+                    [suffix]
+                    Adw.ToggleGroup magnifier_size {
+                      valign: center;
+
+                      Adw.Toggle { label: "Mały"; }
+                      Adw.Toggle { label: "Średni"; }
+                      Adw.Toggle { label: "Duży"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Pozycja";
+
+                    [suffix]
+                    Adw.ToggleGroup magnifier_pos {
+                      valign: center;
+
+                      Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                      Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                      Adw.Toggle { label: "•"; tooltip: "Środek"; }
+                      Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                      Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                    }
+                  }
+                }
+
+                Adw.ExpanderRow hawkeye {
+                  title: "Hawkeye Vision";
+                  show-enable-switch: true;
+
+                  Adw.ActionRow {
+                    title: "Rozmiar";
+
+                    [suffix]
+                    Adw.ToggleGroup hawkeye_size {
+                      valign: center;
+
+                      Adw.Toggle { label: "Mały"; }
+                      Adw.Toggle { label: "Średni"; }
+                      Adw.Toggle { label: "Duży"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Pozycja";
+
+                    [suffix]
+                    Adw.ToggleGroup hawkeye_pos {
+                      valign: center;
+
+                      Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                      Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                      Adw.Toggle { label: "•"; tooltip: "Środek"; }
+                      Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                      Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                    }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Poziom";
+
+                    [suffix]
+                    Adw.ToggleGroup hawkeye_level {
+                      valign: center;
+
+                      Adw.Toggle { label: "1"; }
+                      Adw.Toggle { label: "2"; }
+                      Adw.Toggle { label: "3"; }
+                      Adw.Toggle { label: "4"; }
+                      Adw.Toggle { label: "5"; }
+                    }
+                  }
+                }
+
+                Adw.SwitchRow eyeshield {
+                  title: "Przypomnienie o przerwie";
+                  subtitle: "Eyeshield Reminder. Przez DDC można je tylko włączyć (co 30 min) lub wyłączyć; inny odstęp ustawisz w OSD";
+                }
+              }
+
+            };
+          }
+
+          // ─────────────────────────── 4. INPUTS, AUDIO AND PIP ───────────────────────────
+          Gtk.StackPage {
+            name: "inputs";
+            title: "Wejścia i dźwięk";
+            icon-name: "video-joined-displays-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                title: "Sygnał";
+
+                Adw.ComboRow input_select {
+                  title: "Źródło sygnału";
+                  model: Gtk.StringList { strings [ "Auto", "DisplayPort", "USB-C", "HDMI 1", "HDMI 2" ] };
+                }
+
+                Adw.ComboRow output_range {
+                  title: "Zakres RGB (Output Range)";
+                  model: Gtk.StringList { strings [ "Auto", "Ograniczony", "Pełny" ] };
+                }
+
+                Adw.ActionRow row_usb_hub {
+                  title: "Hub USB";
+                  subtitle: "Który port upstream obsługuje porty USB monitora";
+
+                  [suffix]
+                  Adw.ToggleGroup usb_hub {
+                    valign: center;
+
+                    Adw.Toggle { label: "USB-C"; }
+                    Adw.Toggle { label: "USB-B"; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Dźwięk";
+
+                Adw.ActionRow {
+                  title: "Głośność";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_volume; }
+
+                  [suffix]
+                  Gtk.ToggleButton mute {
+                    icon-name: "audio-volume-high-symbolic";
+                    valign: center;
+                    tooltip-text: "Wycisz";
+                    styles [ "flat" ]
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Obraz w obrazie";
+                description: "Przy włączonym PIP/PBP monitor wyłącza m.in. DCR, HDR, Adaptive-Sync, DyDs i nakładki gamingowe";
+
+                Adw.ComboRow pip_mode {
+                  title: "Tryb";
+                  model: Gtk.StringList { strings [ "Wyłączony", "PIP (obraz w obrazie)", "PBP 1:1", "PBP 2:1", "PBP 1:2" ] };
+                }
+
+                Adw.ComboRow pip_source {
+                  title: "Źródło podrzędne";
+                  model: Gtk.StringList { strings [ "DisplayPort", "USB-C", "HDMI 1", "HDMI 2" ] };
+                }
+
+                Adw.ComboRow audio_source {
+                  title: "Źródło dźwięku";
+                  subtitle: "Dźwięk przy włączonym PIP/PBP; dostępne tylko podłączone wejścia";
+                  model: Gtk.StringList { strings [ "Auto", "USB-C", "HDMI 1", "HDMI 2" ] };
+                }
+
+                Adw.ActionRow row_pip_position {
+                  title: "Pozycja";
+                  subtitle: "Tylko w trybie PIP";
+
+                  [suffix]
+                  Adw.ToggleGroup pip_position {
+                    valign: center;
+
+                    Adw.Toggle { label: "↖"; tooltip: "Lewy górny"; }
+                    Adw.Toggle { label: "↗"; tooltip: "Prawy górny"; }
+                    Adw.Toggle { label: "↙"; tooltip: "Lewy dolny"; }
+                    Adw.Toggle { label: "↘"; tooltip: "Prawy dolny"; }
+                  }
+                }
+
+                Adw.ActionRow row_pip_size {
+                  title: "Rozmiar";
+                  subtitle: "Tylko w trybie PIP";
+
+                  [suffix]
+                  Adw.ToggleGroup pip_size {
+                    valign: center;
+
+                    Adw.Toggle { label: "Mały"; }
+                    Adw.Toggle { label: "Średni"; }
+                    Adw.Toggle { label: "Duży"; }
+                  }
+                }
+
+                Adw.ButtonRow pip_swap {
+                  title: "Zamień obrazy";
+                  start-icon-name: "object-flip-horizontal-symbolic";
+                }
+
+                Adw.ButtonRow pip_reset {
+                  title: "Resetuj ustawienia PIP";
+                  start-icon-name: "edit-undo-symbolic";
+                }
+              }
+            };
+          }
+
+          // ─────────────────────────── 5. LIGHTING ───────────────────────────
+          Gtk.StackPage {
+            name: "lighting";
+            title: "Oświetlenie";
+            icon-name: "display-brightness-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                title: "Podświetlenie LED";
+
+                Adw.SwitchRow led {
+                  title: "Oświetlenie LED";
+                }
+
+                Adw.ComboRow led_mode {
+                  title: "Efekt";
+                  subtitle: "Star – tylko kolor · Colorful Pearls – bez ustawień";
+                  model: Gtk.StringList { strings [ "Normal", "Breathe", "Flicker", "Plain Water", "Star", "Colorful Pearls", "Colorful Water" ] };
+                }
+
+                Adw.ActionRow row_led_color {
+                  title: "Kolor";
+
+                  [suffix]
+                  Gtk.Box {
+                    valign: center;
+                    styles [ "linked" ]
+
+                    Gtk.ToggleButton led_c1 { active: true; tooltip-text: "Czerwony"; styles [ "color-btn", "color-red" ] }
+                    Gtk.ToggleButton led_c2 { group: led_c1; tooltip-text: "Zielony"; styles [ "color-btn", "color-grn" ] }
+                    Gtk.ToggleButton led_c3 { group: led_c1; tooltip-text: "Niebieski"; styles [ "color-btn", "color-blu" ] }
+                    Gtk.ToggleButton led_c4 { group: led_c1; tooltip-text: "Żółty"; styles [ "color-btn", "color-yel" ] }
+                    Gtk.ToggleButton led_c5 { group: led_c1; tooltip-text: "Fioletowy"; styles [ "color-btn", "color-pur" ] }
+                    Gtk.ToggleButton led_c6 { group: led_c1; tooltip-text: "Cyjan"; styles [ "color-btn", "color-cya" ] }
+                    Gtk.ToggleButton led_c7 { group: led_c1; tooltip-text: "Kolorowy (tylko Breathe i Plain Water)"; styles [ "color-btn", "color-rainbow" ] }
+                  }
+                }
+
+                Adw.ActionRow row_led_strength {
+                  title: "Intensywność";
+
+                  [suffix]
+                  Adw.ToggleGroup led_strength {
+                    valign: center;
+
+                    Adw.Toggle { label: "Mocna"; }
+                    Adw.Toggle { label: "Standard"; }
+                    Adw.Toggle { label: "Delikatna"; }
+                  }
+                }
+
+                Adw.ExpanderRow led_sides {
+                  title: "Kolory przód / tył";
+                  subtitle: "Tylko dla efektu Colorful Water";
+
+                  Adw.ComboRow led_front {
+                    title: "Przód";
+                    model: Gtk.StringList { strings [ "Czerwony", "Zielony", "Niebieski", "Żółty", "Fioletowy", "Cyjan" ] };
+                  }
+
+                  Adw.ComboRow led_rear {
+                    title: "Tył";
+                    model: Gtk.StringList { strings [ "Czerwony", "Zielony", "Niebieski", "Żółty", "Fioletowy", "Cyjan" ] };
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Dioda zasilania";
+
+                Adw.ActionRow {
+                  title: "Jasność diody";
+
+                  [suffix]
+                  Adw.ToggleGroup power_led {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Lvl 1"; }
+                    Adw.Toggle { label: "Lvl 2"; }
+                    Adw.Toggle { label: "Lvl 3"; }
+                  }
+                }
+              }
+            };
+          }
+
+          // ─────────────────────────── 6. MONITOR ───────────────────────────
+          Gtk.StackPage {
+            name: "monitor";
+            title: "Monitor";
+            icon-name: "preferences-system-symbolic";
+
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup {
+                title: "Menu OSD";
+
+                Adw.SwitchRow osd_lock {
+                  title: "Blokada OSD";
+                  subtitle: "Blokuje przyciski menu na monitorze";
+                }
+
+                Adw.SwitchRow button_lock {
+                  title: "Blokada przycisków skrótów";
+                  subtitle: "Blokuje przyciski 2 i 3 (Custom 1 / Custom 2)";
+                }
+
+                Adw.ComboRow osd_language {
+                  title: "Język";
+                  model: Gtk.StringList { strings [ "Chiński (uproszczony)", "Angielski", "Francuski", "Niemiecki", "Włoski", "Japoński", "Koreański", "Portugalski", "Rosyjski", "Hiszpański", "Turecki", "Chiński (tradycyjny)", "Portugalski (Brazylia)", "Arabski", "Holenderski", "Fiński", "Grecki", "Hindi", "Polski", "Tajski", "Ukraiński", "Wietnamski" ] };
+                }
+
+                Adw.ActionRow {
+                  title: "Czas wyświetlania (s)";
+
+                  [suffix]
+                  Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_osd_time; }
+                }
+
+                Adw.ExpanderRow {
+                  title: "Położenie i przezroczystość";
+
+                  Adw.ActionRow {
+                    title: "Pozycja pozioma";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_osd_h; }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Pozycja pionowa";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_osd_v; }
+                  }
+
+                  Adw.ActionRow {
+                    title: "Przezroczystość";
+
+                    [suffix]
+                    Gtk.Scale { hexpand: false; width-request: 340; valign: center; draw-value: true; value-pos: left; digits: 0; adjustment: adj_osd_trans; }
+                  }
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Zasilanie";
+
+                Adw.ActionRow {
+                  title: "Oszczędzanie energii";
+
+                  [suffix]
+                  Adw.ToggleGroup power_saving {
+                    valign: center;
+
+                    Adw.Toggle { label: "Off"; }
+                    Adw.Toggle { label: "Lvl 1"; }
+                    Adw.Toggle { label: "Lvl 2"; }
+                  }
+                }
+
+                Adw.SwitchRow usb_power_sleep {
+                  title: "Zasilanie USB w uśpieniu";
+                  subtitle: "Porty USB monitora ładują, gdy monitor śpi";
+                }
+
+                Adw.SwitchRow quick_boot {
+                  title: "Quick Boot";
+                }
+
+                Adw.ButtonRow power_off {
+                  title: "Wyłącz monitor";
+                  start-icon-name: "system-shutdown-symbolic";
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Informacje";
+
+                Adw.ActionRow info_model {
+                  title: "Model";
+                  subtitle: "—";
+                  styles [ "property" ]
+                }
+
+                Adw.ComboRow firmware_package {
+                  title: "Wgrany pakiet firmware";
+                  subtitle: "Monitor nie zgłasza pakietu, wybierz ręcznie. Z pakietem 2025-09-20 DyDs działa razem z Adaptive-Sync";
+                  model: Gtk.StringList { strings [ "2024-12-11", "2025-09-20" ] };
+                }
+
+                Adw.ActionRow info_usage {
+                  title: "Czas pracy";
+                  subtitle: "—";
+                  styles [ "property" ]
+                }
+              }
+
+              Adw.PreferencesGroup {
+                title: "Przywracanie";
+                description: "Każda akcja wymaga potwierdzenia";
+
+                Adw.ButtonRow reset_colors {
+                  title: "Resetuj kolory";
+                  styles [ "destructive-action" ]
+                }
+
+                Adw.ButtonRow reset_brightness {
+                  title: "Resetuj jasność i kontrast";
+                  styles [ "destructive-action" ]
+                }
+
+                Adw.ButtonRow reset_factory {
+                  title: "Przywróć ustawienia fabryczne";
+                  styles [ "destructive-action" ]
+                }
+              }
+            };
+          }
+        };
+    };
+
+    // ═══════════════════════════════ SIDEBAR ═══════════════════════════════
+    sidebar: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          decoration-layout: "";
+          title-widget: Adw.WindowTitle sidebar_title {
+            title: "Titan Control";
+            subtitle: "";
+          };
+        }
+
+        content: Gtk.StackSidebar sidebar {
+          stack: stack;
+          vexpand: true;
+        };
+
+        [bottom]
+        Gtk.DropDown monitor_select {
+          visible: false;
+          margin-start: 12;
+          margin-end: 12;
+          margin-top: 6;
+          margin-bottom: 12;
+          tooltip-text: "Wybór monitora";
+          model: Gtk.StringList { strings [ "—" ] };
+        }
+    };
+  };
+}
+
+Adw.PreferencesDialog prefs_dialog {
+  title: "Preferencje";
+  search-enabled: false;
+
+  Adw.PreferencesPage {
+    title: "Ogólne";
+    icon-name: "preferences-system-symbolic";
+
+    Adw.PreferencesGroup {
+      title: "Wygląd";
+
+      Adw.ComboRow pref_language {
+        title: "Język aplikacji";
+        model: Gtk.StringList { strings [ "Systemowy", "English", "Polski" ] };
+      }
+
+      Adw.ComboRow pref_theme {
+        title: "Motyw";
+        model: Gtk.StringList { strings [ "Systemowy", "Jasny", "Ciemny" ] };
+      }
+
+      Adw.ComboRow pref_tray_icon {
+        title: "Ikona w zasobniku";
+        model: Gtk.StringList { strings [ "Kolory motywu", "Jasna", "Ciemna" ] };
+      }
+
+    }
+
+    Adw.PreferencesGroup {
+      title: "Uruchamianie";
+
+      Adw.SwitchRow pref_autostart {
+        title: "Uruchamiaj z systemem";
+      }
+
+      Adw.SwitchRow pref_start_minimized {
+        title: "Uruchamiaj zminimalizowany";
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: "Zasobnik";
+      description: "Przytrzymaj klawisz, aby pokazać gwiazdki przy ustawieniach i dodać je do menu w zasobniku (do 5)";
+
+      Adw.ComboRow pref_favorite_modifier {
+        title: "Klawisz ulubionych";
+        model: Gtk.StringList { strings [ "Ctrl", "Shift", "Alt", "Super" ] };
+      }
+    }
+  }
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: "Preferencje";
+      action: "app.preferences";
+    }
+
+    item {
+      label: "O programie";
+      action: "app.about";
+    }
+  }
+}

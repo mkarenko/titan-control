@@ -2,14 +2,71 @@
 name = "titan_control"
 version = "1.0.0"
 edition = "2024"
+description = "Control the Titan Army P275MV PLUS monitor over DDC/CI"
+license = "MIT"
+repository = "https://github.com/mkarenko/titan-control"
+readme = "README.md"
 
 [dependencies]
-gtk4 = "0.11.1"
-libadwaita = "0.9.1"
+gtk4 = { version = "0.11.3", features = ["v4_14"] }
+libadwaita = { version = "0.9.1", features = ["v1_7"] }
 async-channel = "2.5.0"
 ksni = { version = "0.3", features = ["blocking"] }
 image = "0.25.10"
 i2c-linux = "0.1.2"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.150"
 dirs = "6.0.0"
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = { version = "0.24.1", default-features = false }
+
+[package.metadata.deb]
+name = "titan-control"
+maintainer = "mkarenko <mkarenko@users.noreply.github.com>"
+copyright = "2026, mkarenko"
+license-file = ["LICENSE", "0"]
+section = "utils"
+priority = "optional"
+depends = "$auto, libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.7)"
+recommends = "adwaita-icon-theme"
+extended-description = """\
+Control the Titan Army P275MV PLUS monitor from Linux over DDC/CI: picture modes, HDR, local dimming, PIP, LED \
+lighting, game overlays and more."""
+assets = [
+    ["target/release/titan_control", "usr/bin/", "755"],
+    ["assets/titan_control.svg", "usr/share/titan_control/assets/", "644"],
+    ["assets/p275mv_plus.png", "usr/share/titan_control/assets/", "644"],
+    ["assets/crosshairs/*", "usr/share/titan_control/assets/crosshairs/", "644"],
+    ["assets/icons/*", "usr/share/titan_control/assets/icons/", "644"],
+    ["assets/titan_control.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["packaging/titan_control.desktop", "usr/share/applications/", "644"],
+    ["packaging/60-titan-control-i2c.rules", "usr/lib/udev/rules.d/", "644"],
+    ["packaging/titan-control-modules.conf", "usr/lib/modules-load.d/titan-control.conf", "644"],
+    ["README.md", "usr/share/doc/titan-control/", "644"],
+    ["FAQ.md", "usr/share/doc/titan-control/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "titan-control"
+license = "MIT"
+summary = "Control the Titan Army P275MV PLUS monitor over DDC/CI"
+url = "https://github.com/mkarenko/titan-control"
+assets = [
+    { source = "target/release/titan_control", dest = "/usr/bin/titan_control", mode = "755" },
+    { source = "assets/titan_control.svg", dest = "/usr/share/titan_control/assets/titan_control.svg", mode = "644" },
+    { source = "assets/p275mv_plus.png", dest = "/usr/share/titan_control/assets/p275mv_plus.png", mode = "644" },
+    { source = "assets/crosshairs/*", dest = "/usr/share/titan_control/assets/crosshairs/", mode = "644" },
+    { source = "assets/icons/*", dest = "/usr/share/titan_control/assets/icons/", mode = "644" },
+    { source = "assets/titan_control.svg", dest = "/usr/share/icons/hicolor/scalable/apps/titan_control.svg", mode = "644" },
+    { source = "packaging/titan_control.desktop", dest = "/usr/share/applications/titan_control.desktop", mode = "644" },
+    { source = "packaging/60-titan-control-i2c.rules", dest = "/usr/lib/udev/rules.d/60-titan-control-i2c.rules", mode = "644" },
+    { source = "packaging/titan-control-modules.conf", dest = "/usr/lib/modules-load.d/titan-control.conf", mode = "644" },
+    { source = "LICENSE", dest = "/usr/share/licenses/titan-control/LICENSE", mode = "644", doc = true },
+    { source = "README.md", dest = "/usr/share/doc/titan-control/README.md", mode = "644", doc = true },
+    { source = "FAQ.md", dest = "/usr/share/doc/titan-control/FAQ.md", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+gtk4 = ">= 4.14"
+libadwaita = ">= 1.7"

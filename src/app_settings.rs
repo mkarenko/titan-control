@@ -1,147 +1,110 @@
 use crate::monitor;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
 };
 
-pub const APP_ID: &str = "pl.mkarenko.titan_control";
+/// Application ID (D-Bus name and window class): reverse-DNS, as GTK requires at least one dot.
+pub const APP_ID: &str = "io.github.mkarenko.titan_control";
 pub const APP_DISPLAY_NAME: &str = "Titan Control";
-pub const APP_ICON_NAME: &str = APP_ID;
+pub const APP_ICON_NAME: &str = "titan_control";
+pub const APP_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (Alpha)");
 
-const AUTOSTART_FILE_NAME: &str = "pl.mkarenko.titan_control.desktop";
+const AUTOSTART_FILE_NAME: &str = "titan_control.desktop";
+/// Older versions named the entry after the application ID.
+const LEGACY_DESKTOP_FILE_NAME: &str = "pl.mkarenko.titan_control.desktop";
 
-pub fn basic_profile_values() -> HashMap<u8, u16> {
-    HashMap::from([
-        (monitor::VCP_BRIGHTNESS, 100),
-        (monitor::VCP_CONTRAST, 50),
-        (monitor::VCP_DCR, 0),
-        (monitor::VCP_SHARPNESS, 0),
-        (monitor::VCP_SHADOW_BALANCE, 50),
-        (monitor::VCP_CR_ENHANCE, 0),
-        (monitor::VCP_COLOR_ENHANCE, 0),
-        (monitor::VCP_SUPER_RES, 0),
-        (monitor::VCP_LOW_BLUE, 0),
-        (monitor::VCP_COLOR_TEMP, monitor::COLOR_TEMP_VALUES[0]),
-        (monitor::VCP_RED, 48),
-        (monitor::VCP_GREEN, 50),
-        (monitor::VCP_BLUE, 47),
-        (monitor::VCP_HDR, monitor::HDR_VALUES[0]),
-        (monitor::VCP_GAMMA, monitor::GAMMA_VALUES[2]),
-        (monitor::VCP_NIGHT_VISION, monitor::NIGHT_VISION_VALUES[0]),
-        (monitor::VCP_DYNAMIC_OD, monitor::DYNAMIC_OD_VALUES[0]),
-        (monitor::VCP_DYDS, monitor::DYDS_VALUES[0]),
-        (monitor::VCP_HUE_RED, 50),
-        (monitor::VCP_HUE_GREEN, 50),
-        (monitor::VCP_HUE_BLUE, 50),
-        (monitor::VCP_HUE_CYAN, 50),
-        (monitor::VCP_HUE_MAGENTA, 50),
-        (monitor::VCP_HUE_YELLOW, 50),
-        (monitor::VCP_SATURATION_RED, 50),
-        (monitor::VCP_SATURATION_GREEN, 50),
-        (monitor::VCP_SATURATION_BLUE, 50),
-        (monitor::VCP_SATURATION_CYAN, 50),
-        (monitor::VCP_SATURATION_MAGENTA, 50),
-        (monitor::VCP_SATURATION_YELLOW, 50),
-    ])
-}
-
-pub fn basic_profile_values_for_mode(_mode_index: u16) -> HashMap<u8, u16> {
-    basic_profile_values()
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CustomProfileSettings {
-    #[serde(default)]
-    pub active: bool,
-    #[serde(default)]
-    pub values: HashMap<u8, u16>,
-}
-
-impl Default for CustomProfileSettings {
-    fn default() -> Self {
-        Self {
-            active: false,
-            values: basic_profile_values(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+/// App preferences. Monitor settings are not stored here: the monitor is read on every start
+/// (Custom profile values come from its profile table).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
-    #[serde(default)]
     pub auto_start: bool,
-    #[serde(default)]
     pub start_minimized: bool,
-    #[serde(default)]
-    pub last_picture_mode: Option<u16>,
-    #[serde(default)]
-    pub custom_profiles: HashMap<u16, CustomProfileSettings>,
+    pub favorite_modifier: StepModifier,
+    pub favorite_picture_modes: Vec<u16>,
+    pub favorite_tray_controls: Vec<String>,
+    pub tray_icon_style: TrayIconStyle,
+    pub firmware_package: FirmwarePackage,
+    /// Index of the app language (see `i18n::lang_from_index`); `None` = system language.
+    pub language: Option<u32>,
+    /// 0 = system, 1 = light, 2 = dark.
+    pub theme: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-struct UiState {
-    #[serde(default)]
-    collapsible_sections: HashMap<String, bool>,
+/// Look of the tray icon.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum TrayIconStyle {
+    /// Colored by the desktop theme (`ColorScheme-Text`).
+    #[default]
+    Theme,
+    /// Monochrome light (white) icon, for dark panels.
+    #[serde(alias = "DarkPanel")]
+    Light,
+    /// Monochrome dark (black) icon, for light panels.
+    #[serde(alias = "LightPanel")]
+    Dark,
 }
 
-#[derive(Debug, Deserialize, Default)]
-struct StoredAppSettings {
-    #[serde(default)]
-    auto_start: bool,
-    #[serde(default)]
-    start_minimized: bool,
-    #[serde(default)]
-    last_picture_mode: Option<u16>,
-    #[serde(default)]
-    custom_profiles: HashMap<u16, CustomProfileSettings>,
-    #[serde(default)]
-    profile_custom_active: bool,
-    #[serde(default)]
-    custom_profile_values: HashMap<u8, u16>,
+/// Firmware package installed on the monitor. Both report 5.1.1 over DDC, so the user picks it.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum FirmwarePackage {
+    /// "P275MV PLUS Firmware Update (M001 20241211 5.1.1)" - the original, public package.
+    #[default]
+    M001_20241211,
+    /// "P275MV PLUS (增强版) 固件补丁升级包 (M001 20250920 5.1.1)" - newer, for the Chinese Enhanced version;
+    /// removed from the manufacturer's site. DyDs works together with Adaptive-Sync (VRR).
+    M001_20250920,
 }
 
-impl From<StoredAppSettings> for AppSettings {
-    fn from(value: StoredAppSettings) -> Self {
-        let mut custom_profiles = value.custom_profiles;
+impl FirmwarePackage {
+    pub const ALL: [FirmwarePackage; 2] = [Self::M001_20241211, Self::M001_20250920];
 
-        for profile in custom_profiles.values_mut() {
-            if profile.values.is_empty() {
-                profile.values = CustomProfileSettings::default().values;
-            }
-        }
-
-        if value.profile_custom_active || !value.custom_profile_values.is_empty() {
-            custom_profiles
-                .entry(0)
-                .or_insert_with(|| CustomProfileSettings {
-                    active: value.profile_custom_active,
-                    values: value.custom_profile_values,
-                });
-        }
-
-        Self {
-            auto_start: value.auto_start,
-            start_minimized: value.start_minimized,
-            last_picture_mode: value.last_picture_mode,
-            custom_profiles,
-        }
+    /// DyDs modes keep Adaptive-Sync on (the older firmware turns DyDs off with Adaptive-Sync).
+    pub fn dyds_with_adaptive_sync(self) -> bool {
+        self == Self::M001_20250920
     }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum StepModifier {
+    #[default]
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+}
+
+impl StepModifier {
+    pub const ALL: [StepModifier; 4] = [Self::Ctrl, Self::Shift, Self::Alt, Self::Super];
 }
 
 impl AppSettings {
-    pub fn custom_profile(&self, mode: u16) -> CustomProfileSettings {
-        self.custom_profiles
-            .get(&mode)
-            .cloned()
-            .map(|mut profile| {
-                if profile.values.is_empty() {
-                    profile.values = CustomProfileSettings::default().values;
-                }
-                profile
-            })
-            .unwrap_or_default()
+    pub fn favorite_picture_mode_set(&self) -> Vec<u16> {
+        let mut favorites = self.favorite_picture_modes.clone();
+        favorites.sort_unstable();
+        favorites.dedup();
+        favorites
+            .into_iter()
+            .filter(|mode| (*mode as usize) < monitor::PICTURE_MODE_NAMES.len())
+            .take(5)
+            .collect()
+    }
+
+    pub fn is_favorite_picture_mode(&self, mode: u16) -> bool {
+        self.favorite_picture_modes.contains(&mode)
+    }
+
+    pub fn favorite_tray_control_set(&self) -> Vec<String> {
+        let mut favorites = self.favorite_tray_controls.clone();
+        favorites.sort_unstable();
+        favorites.dedup();
+        favorites.into_iter().take(5).collect()
+    }
+
+    pub fn is_favorite_tray_control(&self, id: &str) -> bool {
+        self.favorite_tray_controls.iter().any(|favorite| favorite == id)
     }
 }
 
@@ -149,8 +112,7 @@ pub fn load() -> AppSettings {
     let path = settings_file();
     fs::read_to_string(path)
         .ok()
-        .and_then(|data| serde_json::from_str::<StoredAppSettings>(&data).ok())
-        .map(AppSettings::from)
+        .and_then(|data| serde_json::from_str::<AppSettings>(&data).ok())
         .unwrap_or_default()
 }
 
@@ -172,21 +134,19 @@ pub fn sync_autostart(settings: &AppSettings) -> io::Result<()> {
     Ok(())
 }
 
-pub fn collapsible_section_expanded(key: &str) -> bool {
-    load_ui_state()
-        .collapsible_sections
-        .get(key)
-        .copied()
-        .unwrap_or(true)
-}
-
-pub fn set_collapsible_section_expanded(key: &str, expanded: bool) -> io::Result<()> {
-    let mut state = load_ui_state();
-    state.collapsible_sections.insert(key.to_string(), expanded);
-    save_ui_state(&state)
-}
-
 pub fn ensure_desktop_entry() -> io::Result<()> {
+    // A package (installed under /usr) brings its own menu entry; only a build run from elsewhere writes one.
+    if std::env::current_exe().is_ok_and(|exe| exe.starts_with("/usr")) {
+        return Ok(());
+    }
+    // Remove the entries an older version created under the application ID, so the menu shows only one.
+    let _ = fs::remove_file(data_dir().join("applications").join(LEGACY_DESKTOP_FILE_NAME));
+    let _ = fs::remove_file(data_dir().join("icons/hicolor/scalable/apps/pl.mkarenko.titan_control.svg"));
+    let legacy_autostart = config_dir().join("autostart").join(LEGACY_DESKTOP_FILE_NAME);
+    if legacy_autostart.exists() {
+        let _ = fs::remove_file(legacy_autostart);
+        let _ = sync_autostart(&load());
+    }
     let desktop_path = desktop_file();
     ensure_parent_dir(&desktop_path)?;
     fs::write(desktop_path, desktop_entry())
@@ -194,10 +154,6 @@ pub fn ensure_desktop_entry() -> io::Result<()> {
 
 fn settings_file() -> PathBuf {
     config_dir().join("titan_control").join("app_settings.json")
-}
-
-fn ui_state_file() -> PathBuf {
-    config_dir().join("titan_control").join("ui_state.json")
 }
 
 fn autostart_file() -> PathBuf {
@@ -235,25 +191,11 @@ fn ensure_parent_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn load_ui_state() -> UiState {
-    let path = ui_state_file();
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|data| serde_json::from_str::<UiState>(&data).ok())
-        .unwrap_or_default()
-}
-
-fn save_ui_state(state: &UiState) -> io::Result<()> {
-    let path = ui_state_file();
-    ensure_parent_dir(&path)?;
-    let data = serde_json::to_string_pretty(state)?;
-    fs::write(path, data)
-}
-
 fn desktop_entry() -> String {
-    let exec = std::env::current_exe()
+    // An AppImage runs from a temporary mount: its menu entry has to start the AppImage file itself.
+    let exec = std::env::var("APPIMAGE")
         .ok()
-        .map(|p| p.to_string_lossy().into_owned())
+        .or_else(|| std::env::current_exe().ok().map(|p| p.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "titan_control".into());
     let icon = resolve_desktop_icon();
 
@@ -266,7 +208,7 @@ fn desktop_entry() -> String {
 pub fn resolve_assets_dir() -> Option<PathBuf> {
     asset_dir_candidates()
         .into_iter()
-        .find(|candidate| candidate.join("pl.mkarenko.titan_control.svg").exists())
+        .find(|candidate| candidate.join("titan_control.svg").exists())
 }
 
 pub fn icon_search_paths() -> Vec<PathBuf> {
@@ -285,7 +227,7 @@ pub fn icon_search_paths() -> Vec<PathBuf> {
 }
 
 pub fn resolve_logo_path() -> Option<PathBuf> {
-    resolve_assets_dir().map(|assets_dir| assets_dir.join("pl.mkarenko.titan_control.svg"))
+    resolve_assets_dir().map(|assets_dir| assets_dir.join("titan_control.svg"))
 }
 
 fn resolve_desktop_icon() -> String {

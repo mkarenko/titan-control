@@ -1,0 +1,167 @@
+# Builds the release files when a version tag (v1.2.3) is pushed and publishes them as a GitHub release:
+#   tar.gz, deb and AppImage (Debian 13), rpm (Fedora). The tag must match the version in Cargo.toml.
+# Run it by hand from the Actions tab to build the files without publishing them (they are kept as artifacts).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: tar.gz, deb, AppImage
+    runs-on: ubuntu-latest
+    # Debian 13 has libadwaita 1.7, which the app needs; the ubuntu-latest runner image is older.
+    container: debian:13
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config curl ca-certificates git file wget xz-utils patchelf \
+            desktop-file-utils libglib2.0-bin librsvg2-common \
+            libgtk-4-dev libadwaita-1-dev blueprint-compiler
+
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the version in Cargo.toml
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $VERSION in Cargo.toml"
+            exit 1
+          fi
+
+      - name: Install Rust
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-${{ hashFiles('Cargo.lock') }}
+
+      - name: tar.gz
+        run: ./scripts/make_tarball.sh
+
+      - name: deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --locked
+          mkdir -p dist
+          cp target/debian/*.deb dist/
+
+      - name: AppImage
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+          # The app looks for its assets in ../share/titan_control/assets next to the binary.
+          mkdir -p AppDir/usr/share/titan_control
+          cp -r assets AppDir/usr/share/titan_control/assets
+          export PATH="$PWD:$PATH"
+          export DEPLOY_GTK_VERSION=4
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir \
+            --executable target/release/titan_control \
+            --desktop-file packaging/titan_control.desktop \
+            --icon-file assets/titan_control.svg \
+            --plugin gtk
+          # The GTK plugin forces the plain Adwaita GTK theme (libadwaita would lose its styling) and the X11
+          # backend: drop both, the bundled GTK 4 runs fine on Wayland.
+          sed -i '/^export GTK_THEME=/d; /^export GDK_BACKEND=/d' AppDir/apprun-hooks/linuxdeploy-plugin-gtk.sh
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          mv Titan_Control-*.AppImage "dist/Titan_Control-${VERSION}-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.AppImage
+
+  rpm:
+    name: rpm
+    runs-on: ubuntu-latest
+    container: fedora:42
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y gcc pkgconf-pkg-config curl git which \
+            gtk4-devel libadwaita-devel blueprint-compiler
+
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rpm-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build the rpm
+        run: |
+          cargo install cargo-generate-rpm --locked
+          cargo build --release --locked
+          strip -s target/release/titan_control
+          cargo generate-rpm
+          mkdir -p dist
+          cp target/generate-rpm/*.rpm dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: dist/*.rpm
+
+  release:
+    name: Publish the release
+    needs: [linux, rpm]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd files && sha256sum * > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: files/*
+          generate_release_notes: true
+          # A tag such as v1.0.0-beta.1 is a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## Install
+
+            | File | For |
+            | --- | --- |
+            | `titan-control-*-x86_64-linux.tar.gz` | any distribution: unpack and run `./install.sh` |
+            | `titan-control_*_amd64.deb` | Debian 13+, Ubuntu 25.04+ |
+            | `titan-control-*.x86_64.rpm` | Fedora 42+ |
+            | `Titan_Control-*-x86_64.AppImage` | recent distributions (glibc 2.41+); GTK is bundled (`chmod +x`, then run) |
+
+            The tar.gz, deb and rpm need GTK ≥ 4.14 and libadwaita ≥ 1.7 on your system. Set up I2C access as described in the
+            [README](https://github.com/mkarenko/titan-control#installation) (the deb, rpm and tar.gz as root do it for you).
+
+            > Use at your own risk: the software writes settings to your monitor. See the README and the
+            > [firmware notes](https://github.com/mkarenko/titan-control/blob/main/firmware/README.md).

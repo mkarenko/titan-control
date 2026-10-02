@@ -1,3 +1,5 @@
+#[macro_use]
+mod log;
 mod app_settings;
 mod i18n;
 mod monitor;
@@ -5,2864 +7,1598 @@ mod tray;
 mod ui;
 
 use adw::prelude::*;
-use gtk4::{Align, Orientation, ResponseType, Scale, Switch, ToggleButton, glib};
-use i18n::{LangUpdaters, lang_from_index, tr};
-use libadwaita::{self as adw, ExpanderRow};
-use std::collections::HashMap;
+use app_settings::{AppSettings, FirmwarePackage, StepModifier, TrayIconStyle};
+use gtk4::{gio, glib};
+use i18n::{AppLang, tr};
+use libadwaita as adw;
 use monitor::WorkerCmd;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
-
-type ProfileValues = HashMap<u8, u16>;
-type ProfileValuesCallback = Rc<dyn Fn(&ProfileValues)>;
-
-fn confirm_destructive_action<F>(
-    parent: &adw::ApplicationWindow,
-    heading: &str,
-    body: &str,
-    cancel_label: &str,
-    confirm_label: &str,
-    on_confirm: F,
-) where
-    F: Fn() + 'static,
-{
-    let dialog = gtk4::Dialog::builder()
-        .transient_for(parent)
-        .modal(true)
-        .title(heading)
-        .build();
-    dialog.add_button(cancel_label, ResponseType::Cancel);
-    dialog.add_button(confirm_label, ResponseType::Accept);
-    dialog.set_default_response(ResponseType::Cancel);
-
-    let label = gtk4::Label::builder()
-        .label(body)
-        .wrap(true)
-        .width_chars(38)
-        .max_width_chars(38)
-        .xalign(0.0)
-        .margin_top(18)
-        .margin_bottom(18)
-        .margin_start(18)
-        .margin_end(18)
-        .build();
-    let content = dialog.content_area();
-    content.set_margin_top(6);
-    content.set_margin_bottom(12);
-    content.set_margin_start(12);
-    content.set_margin_end(12);
-    content.append(&label);
-
-    dialog.connect_response(move |dialog, response| {
-        if response == ResponseType::Accept {
-            on_confirm();
-        }
-        dialog.close();
-    });
-    dialog.present();
-}
-
-fn worker_cmd(code: u8, value: u16, save: bool) -> WorkerCmd {
-    if save {
-        WorkerCmd::SetSave(code, value)
-    } else {
-        WorkerCmd::Set(code, value)
-    }
-}
-
-fn wire_debounced_scale<F>(
-    scale: &Scale,
-    tx: &mpsc::Sender<WorkerCmd>,
-    init: &Rc<Cell<bool>>,
-    build_cmd: F,
-) where
-    F: Fn(&Scale) -> Option<WorkerCmd> + 'static,
-{
-    let tx = tx.clone();
-    let init = init.clone();
-    let debounce_generation = Rc::new(Cell::new(0u64));
-
-    scale.connect_value_changed(move |s| {
-        if init.get() || !s.is_sensitive() {
-            return;
-        }
-
-        let Some(cmd) = build_cmd(s) else {
-            return;
-        };
-
-        let generation = debounce_generation.get().wrapping_add(1);
-        debounce_generation.set(generation);
-        let tx = tx.clone();
-        let debounce_generation = debounce_generation.clone();
-        let mut cmd = Some(cmd);
-        glib::timeout_add_local(Duration::from_millis(300), move || {
-            if debounce_generation.get() == generation
-                && let Some(cmd) = cmd.take()
-            {
-                let _ = tx.send(cmd);
-            }
-            glib::ControlFlow::Break
-        });
-    });
-}
-
-fn wire_scale(
-    scale: &Scale,
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    wire_debounced_scale(scale, tx, init, move |s| {
-        Some(worker_cmd(code, s.value() as u16, save))
-    });
-}
-
-fn wire_color_temp_rgb_scale(
-    scale: &Scale,
-    tx: &mpsc::Sender<WorkerCmd>,
-    color_temp_buttons: &[ToggleButton],
-    channel_index: usize,
-    init: &Rc<Cell<bool>>,
-) {
-    let color_temp_buttons = color_temp_buttons.to_vec();
-
-    wire_debounced_scale(scale, tx, init, move |s| {
-        let color_temp = selected_toggle_value(&color_temp_buttons, &monitor::COLOR_TEMP_VALUES[..])?;
-        let (red_code, green_code, blue_code) = monitor::color_temp_rgb_codes(color_temp)?;
-        let code = [red_code, green_code, blue_code][channel_index];
-        Some(WorkerCmd::Set(code, s.value() as u16))
-    });
-}
-
-fn wire_switch(
-    sw: &Switch,
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    wire_switch_values(sw, tx, code, 2, 1, save, init);
-}
-
-fn wire_switch_values(
-    sw: &Switch,
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    on_value: u16,
-    off_value: u16,
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    let tx = tx.clone();
-    let init = init.clone();
-    let sw_ref = sw.clone();
-    sw.connect_state_set(move |_, state| {
-        if init.get() || !sw_ref.is_sensitive() {
-            return glib::Propagation::Proceed;
-        }
-        let val = if state { on_value } else { off_value };
-        let _ = tx.send(worker_cmd(code, val, save));
-        glib::Propagation::Proceed
-    });
-}
-
-fn wire_toggles(
-    buttons: &[ToggleButton],
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    save: bool,
-    offset: u16,
-    init: &Rc<Cell<bool>>,
-) {
-    for (i, btn) in buttons.iter().enumerate() {
-        let tx = tx.clone();
-        let init = init.clone();
-        let val = offset + i as u16;
-        btn.connect_toggled(move |b| {
-            if init.get() || !b.is_sensitive() {
-                return;
-            }
-            if b.is_active() {
-                let _ = tx.send(worker_cmd(code, val, save));
-            }
-        });
-    }
-}
-
-fn selected_toggle_index(buttons: &[ToggleButton]) -> Option<usize> {
-    buttons.iter().position(|button| button.is_active())
-}
-
-fn selected_toggle_value(buttons: &[ToggleButton], values: &[u16]) -> Option<u16> {
-    selected_toggle_index(buttons).and_then(|index| values.get(index).copied())
-}
-
-fn activate_toggle_index(buttons: &[ToggleButton], index: usize) {
-    if let Some(button) = buttons.get(index) {
-        button.set_active(true);
-    }
-}
-
-fn activate_toggle_value(buttons: &[ToggleButton], values: &[u16], value: u16) {
-    if let Some(index) = values.iter().position(|&mapped| mapped == value) {
-        activate_toggle_index(buttons, index);
-    }
-}
-
-fn wire_toggle_values(
-    buttons: &[ToggleButton],
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    values: &[u16],
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    for (btn, &val) in buttons.iter().zip(values.iter()) {
-        let tx = tx.clone();
-        let init = init.clone();
-        btn.connect_toggled(move |b| {
-            if init.get() || !b.is_sensitive() {
-                return;
-            }
-            if b.is_active() {
-                let _ = tx.send(worker_cmd(code, val, save));
-            }
-        });
-    }
-}
-
-fn wire_expander(
-    exp: &ExpanderRow,
-    tx: &mpsc::Sender<WorkerCmd>,
-    code: u8,
-    save: bool,
-    init: &Rc<Cell<bool>>,
-) {
-    let tx = tx.clone();
-    let init = init.clone();
-    exp.connect_enable_expansion_notify(move |e| {
-        if init.get() || !e.is_sensitive() {
-            return;
-        }
-        let val = if e.enables_expansion() { 1u16 } else { 0 };
-        let _ = tx.send(worker_cmd(code, val, save));
-    });
-}
-
-fn send_profile_values_to_monitor(
-    tx: &mpsc::Sender<WorkerCmd>,
-    values: &ProfileValues,
-) {
-    let color_temp = values
-        .get(&monitor::VCP_COLOR_TEMP)
-        .copied()
-        .unwrap_or(monitor::COLOR_TEMP_VALUES[0]);
-
-    for (&code, &value) in values {
-        match code {
-            monitor::VCP_RED | monitor::VCP_GREEN | monitor::VCP_BLUE => {
-                if let Some((r_code, g_code, b_code)) = monitor::color_temp_rgb_codes(color_temp) {
-                    let actual_code = match code {
-                        monitor::VCP_RED => r_code,
-                        monitor::VCP_GREEN => g_code,
-                        _ => b_code,
-                    };
-                    let _ = tx.send(WorkerCmd::Set(actual_code, value));
-                }
-            }
-            monitor::VCP_HDR
-            | monitor::VCP_NIGHT_VISION
-            | monitor::VCP_DYNAMIC_OD
-            | monitor::VCP_DYDS
-            | monitor::VCP_GAMMA
-            | monitor::VCP_DCR
-            | monitor::VCP_COLOR_TEMP => {
-                let _ = tx.send(WorkerCmd::SetSave(code, value));
-            }
-            _ => {
-                let _ = tx.send(WorkerCmd::Set(code, value));
-            }
-        }
-    }
-}
+use ui::Ui;
+use ui::bindings::{self, Bindings, Control};
+use ui::translate::tr_pl;
 
 fn main() {
+    log::init();
+    // GTK's own texts (search fields, empty lists) follow the language chosen in the app, not only the system one.
+    if let Some(index) = app_settings::load().language {
+        let language = if i18n::lang_from_index(index) == AppLang::PL { "pl_PL:pl" } else { "en_US:en" };
+        // SAFETY: nothing else runs yet (no other threads exist before GTK starts).
+        unsafe { std::env::set_var("LANGUAGE", language) };
+    }
     glib::set_application_name(app_settings::APP_DISPLAY_NAME);
-
-    let app = adw::Application::builder()
-        .application_id(app_settings::APP_ID)
-        .build();
+    // The UI check must not activate a running instance (single-instance app over D-Bus).
+    let flags = if std::env::var_os("TITAN_CHECK_UI").is_some() {
+        gio::ApplicationFlags::NON_UNIQUE
+    } else {
+        gio::ApplicationFlags::empty()
+    };
+    let app = adw::Application::builder().application_id(app_settings::APP_ID).flags(flags).build();
     app.connect_activate(build_application);
     app.run();
+}
+
+/// Settings that belong to the picture profile table: they can only be changed in a Custom profile.
+const PROFILE_LOCKED: &[u8] = &[
+    monitor::VCP_BRIGHTNESS,
+    monitor::VCP_CONTRAST,
+    monitor::VCP_SHARPNESS,
+    monitor::VCP_COLOR_ENHANCE,
+    monitor::VCP_CR_ENHANCE,
+    monitor::VCP_SHADOW_BALANCE,
+    monitor::VCP_SUPER_RES,
+    monitor::VCP_LOW_BLUE,
+    monitor::VCP_COLOR_TEMP,
+    monitor::VCP_GAMMA,
+    monitor::VCP_HUE_RED,
+    monitor::VCP_HUE_GREEN,
+    monitor::VCP_HUE_BLUE,
+    monitor::VCP_HUE_CYAN,
+    monitor::VCP_HUE_MAGENTA,
+    monitor::VCP_HUE_YELLOW,
+    monitor::VCP_SATURATION_RED,
+    monitor::VCP_SATURATION_GREEN,
+    monitor::VCP_SATURATION_BLUE,
+    monitor::VCP_SATURATION_CYAN,
+    monitor::VCP_SATURATION_MAGENTA,
+    monitor::VCP_SATURATION_YELLOW,
+    monitor::VCP_NIGHT_VISION,
+    monitor::VCP_DYNAMIC_OD,
+    monitor::VCP_LOCAL_DIMMING,
+    monitor::VCP_HALO_CONTROL,
+    monitor::VCP_DYDS,
+];
+
+/// Monitor HDR is mirrored to the system HDR once the value has been stable this long (startup reads and profile
+/// changes can pass through other values first).
+const HDR_SYNC_DELAY: Duration = Duration::from_millis(600);
+
+/// Position of 21:9 in the `ratio` combo.
+const RATIO_21_9_INDEX: u32 = 3;
+
+/// OSD languages in the order of the `osd_language` combo (MCCS language codes).
+const OSD_LANGUAGE_VALUES: [u16; 22] = [
+    0x0D, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0C, 0x01, 0x0E, 0x0F, 0x14, 0x16, 0x17, 0x19, 0x1E,
+    0x23, 0x24, 0x25,
+];
+
+/// Rows whose explanation is shown behind an info button instead of a subtitle.
+const INFO_ROWS: &[&str] = &[
+    "row_hdr",
+    "magnifier",
+    "eyeshield",
+    "dcr",
+    "row_halo_control",
+    "rgb_expander",
+    "saturation_expander",
+    "ratio",
+    "row_usb_hub",
+    "row_pip_position",
+    "row_pip_size",
+    "audio_source",
+    "led_mode",
+    "led_sides",
+    "osd_lock",
+    "button_lock",
+    "usb_power_sleep",
+    "firmware_package",
+];
+
+/// What a tray shortcut acts on.
+#[derive(Clone, Copy)]
+enum Shortcut {
+    /// Slider popup on the adjustment with this id.
+    Slider(&'static str),
+    /// Toggle a switch / an expander of this setting.
+    Toggle(u8),
+    /// Next option of the toggle group of this setting.
+    Choice(u8),
+}
+
+/// Tray shortcuts: id (stored in the config), row with the star, action.
+const SHORTCUTS: &[(&str, &str, Shortcut)] = &[
+    ("brightness", "row_brightness", Shortcut::Slider("adj_brightness")),
+    ("contrast", "row_contrast", Shortcut::Slider("adj_contrast")),
+    ("sharpness", "row_sharpness", Shortcut::Slider("adj_sharpness")),
+    ("low_blue_light", "row_low_blue_light", Shortcut::Slider("adj_lbl")),
+    ("dcr", "dcr", Shortcut::Toggle(monitor::VCP_DCR)),
+    ("hdr", "row_hdr", Shortcut::Choice(monitor::VCP_HDR)),
+    ("local_dimming", "row_local_dimming", Shortcut::Choice(monitor::VCP_LOCAL_DIMMING)),
+    ("color_enhance", "row_color_enhance", Shortcut::Slider("adj_color_enhance")),
+    ("cr_enhance", "row_cr_enhance", Shortcut::Slider("adj_cr_enhance")),
+    ("shadow_balance", "row_shadow_balance", Shortcut::Slider("adj_shadow_balance")),
+    ("super_res", "row_super_res", Shortcut::Slider("adj_super_res")),
+    ("halo_control", "row_halo_control", Shortcut::Slider("adj_halo")),
+    ("color_temp_profile", "row_color_temp", Shortcut::Choice(monitor::VCP_COLOR_TEMP)),
+    ("color_temp_red", "row_color_temp_red", Shortcut::Slider("adj_red")),
+    ("color_temp_green", "row_color_temp_green", Shortcut::Slider("adj_green")),
+    ("color_temp_blue", "row_color_temp_blue", Shortcut::Slider("adj_blue")),
+    ("gamma", "row_gamma", Shortcut::Choice(monitor::VCP_GAMMA)),
+    ("hue_red", "row_hue_red", Shortcut::Slider("adj_hue_red")),
+    ("hue_green", "row_hue_green", Shortcut::Slider("adj_hue_green")),
+    ("hue_blue", "row_hue_blue", Shortcut::Slider("adj_hue_blue")),
+    ("hue_cyan", "row_hue_cyan", Shortcut::Slider("adj_hue_cyan")),
+    ("hue_magenta", "row_hue_magenta", Shortcut::Slider("adj_hue_magenta")),
+    ("hue_yellow", "row_hue_yellow", Shortcut::Slider("adj_hue_yellow")),
+    ("saturation_red", "row_saturation_red", Shortcut::Slider("adj_sat_red")),
+    ("saturation_green", "row_saturation_green", Shortcut::Slider("adj_sat_green")),
+    ("saturation_blue", "row_saturation_blue", Shortcut::Slider("adj_sat_blue")),
+    ("saturation_cyan", "row_saturation_cyan", Shortcut::Slider("adj_sat_cyan")),
+    ("saturation_magenta", "row_saturation_magenta", Shortcut::Slider("adj_sat_magenta")),
+    ("saturation_yellow", "row_saturation_yellow", Shortcut::Slider("adj_sat_yellow")),
+    ("adaptive_sync", "adaptive_sync", Shortcut::Toggle(monitor::VCP_ADAPTIVE_SYNC)),
+    ("dynamic_od", "row_dynamic_od", Shortcut::Choice(monitor::VCP_DYNAMIC_OD)),
+    ("dyds", "row_dyds", Shortcut::Choice(monitor::VCP_DYDS)),
+    ("night_vision", "row_night_vision", Shortcut::Choice(monitor::VCP_NIGHT_VISION)),
+    ("screen_size", "row_screen_size", Shortcut::Choice(monitor::VCP_SCREEN_SIZE)),
+    ("fps_counter", "fps_counter", Shortcut::Toggle(monitor::VCP_FPS_COUNTER)),
+    ("crosshair", "crosshair", Shortcut::Toggle(monitor::VCP_CROSSHAIR)),
+    ("stopwatch", "stopwatch", Shortcut::Toggle(monitor::VCP_STOPWATCH)),
+    ("game_time", "game_time", Shortcut::Toggle(monitor::VCP_GAME_TIME)),
+    ("magnifier", "magnifier", Shortcut::Toggle(monitor::VCP_MAGNIFIER)),
+    ("hawkeye", "hawkeye", Shortcut::Toggle(monitor::VCP_HAWKEYE)),
+];
+
+struct App {
+    ui: Ui,
+    bindings: Rc<Bindings>,
+    cfg: RefCell<AppSettings>,
+    lang: Cell<AppLang>,
+    /// Picture modes shown in the combos (indices into `monitor::PICTURE_MODE_NAMES`).
+    picture_order: RefCell<Vec<u16>>,
+    system_display: RefCell<Option<monitor::SystemDisplayState>>,
+    connector: RefCell<String>,
+    info: RefCell<Option<monitor::MonitorInfo>>,
+    tray_favorites: tray::TrayFavoritesState,
+    tray_shortcuts: tray::TrayShortcutsState,
+    tray_active_mode: tray::TrayActiveModeState,
+    tray_choices: tray::TrayChoiceStateHandle,
+    tray_window_visible: tray::TrayWindowVisibleState,
+    stars: RefCell<HashMap<&'static str, gtk4::ToggleButton>>,
+    picture_star: RefCell<Option<gtk4::ToggleButton>>,
+    tray: RefCell<Option<tray::TrayControl>>,
+    /// Explanations behind info buttons: (button, label, Polish source text).
+    info_texts: Vec<(gtk4::MenuButton, gtk4::Label, String)>,
+    /// HDR of the monitor's output in the system (`None` = unknown or not available).
+    system_hdr: Cell<Option<bool>>,
+    /// Pending system HDR change (a newer change cancels an older one).
+    hdr_sync: Cell<u32>,
+    /// Color Enhance level at the last update, and the saturation the user had set while it was 0.
+    color_enhance_level: Cell<u16>,
+    /// A profile change is in progress (see `start_profile_load`) and a counter for its safety timeout.
+    profile_loading: Cell<bool>,
+    profile_load_generation: Cell<u32>,
+    user_saturation: RefCell<Option<[u16; 6]>>,
+}
+
+impl App {
+    fn save_cfg(&self, change: impl FnOnce(&mut AppSettings)) {
+        let mut cfg = self.cfg.borrow().clone();
+        change(&mut cfg);
+        let _ = app_settings::save(&cfg);
+        *self.cfg.borrow_mut() = cfg;
+    }
+
+    fn tx(&self) -> &mpsc::Sender<WorkerCmd> {
+        self.bindings.tx()
+    }
+
+    fn lang(&self) -> AppLang {
+        self.lang.get()
+    }
+
+    fn update_info_texts(&self) {
+        for (button, label, source) in &self.info_texts {
+            let text = tr_pl(&self.lang(), source);
+            label.set_label(&text);
+            button.set_tooltip_text(Some(&text));
+        }
+    }
+
+    /// Republishes the tray menu after a change it shows.
+    fn refresh_tray(&self) {
+        if let Some(tray) = self.tray.borrow().as_ref() {
+            tray.refresh();
+        }
+    }
 }
 
 fn register_app_icons() {
     if let Some(display) = gtk4::gdk::Display::default() {
         let icon_theme = gtk4::IconTheme::for_display(&display);
-
         for icon_path in app_settings::icon_search_paths() {
             icon_theme.add_search_path(&icon_path);
         }
     }
-
     gtk4::Window::set_default_icon_name(app_settings::APP_ICON_NAME);
 }
 
-fn translate_startup_message(lang: &i18n::AppLang, message: &str) -> String {
-    if let Some(name) = message
-        .strip_prefix("Connecting to ")
-        .and_then(|msg| msg.strip_suffix("..."))
-    {
-        return tr(lang, "splash_connecting").replace("{name}", name);
-    }
-    if let Some(name) = message
-        .strip_prefix("Using cached monitor info: ")
-        .and_then(|msg| msg.strip_suffix("..."))
-    {
-        return tr(lang, "splash_using_cached_info").replace("{name}", name);
-    }
-    if let Some(name) = message
-        .strip_prefix("Reading info: ")
-        .and_then(|msg| msg.strip_suffix("..."))
-    {
-        return tr(lang, "splash_reading_info").replace("{name}", name);
-    }
+fn format_usage_minutes(usage_mins: u16) -> String {
+    format!("{} h {} min", usage_mins / 60, usage_mins % 60)
+}
 
+fn translate_startup_message(lang: &AppLang, message: &str) -> String {
     match message {
         "Searching for monitor..." => tr(lang, "splash_searching"),
         "Detecting monitors..." => tr(lang, "splash_detecting_monitors"),
         "Searching for monitors..." => tr(lang, "splash_searching_monitors"),
         "Loading cached settings..." => tr(lang, "splash_loading_cached"),
+        "Reading picture profile..." => tr(lang, "splash_reading_profile"),
         "Monitor not found" => tr(lang, "splash_monitor_not_found"),
         _ => message.to_string(),
     }
 }
 
 fn build_application(app: &adw::Application) {
+    log::versions();
     register_app_icons();
     let _ = app_settings::ensure_desktop_entry();
 
+    let cfg = app_settings::load();
+    let lang = resolve_lang(cfg.language);
+    apply_theme(cfg.theme);
+    let ui = Ui::new(app);
+
+    // Layout check without a monitor: `TITAN_CHECK_UI=1 titan_control` (`TITAN_CHECK_LANG=en|pl` picks the language).
+    if std::env::var_os("TITAN_CHECK_UI").is_some() {
+        let lang = match std::env::var("TITAN_CHECK_LANG").as_deref() {
+            Ok("en") => AppLang::EN,
+            Ok("pl") => AppLang::PL,
+            _ => lang,
+        };
+        for (button, label, source) in ui.subtitles_to_info(INFO_ROWS) {
+            let text = tr_pl(&lang, &source);
+            label.set_label(&text);
+            button.set_tooltip_text(Some(&text));
+        }
+        ui.translator.apply(&lang);
+        translate_labels(&ui, &lang);
+        for &(_, row, _) in SHORTCUTS {
+            ui.add_favorite_star(row, false);
+        }
+        ui.align_rows();
+        ui.show_favorite_stars(std::env::var_os("TITAN_CHECK_STARS").is_some());
+        ui.show_wallpaper(monitor::query_system_display_state(None).ok().and_then(|state| monitor::system_wallpaper(&state)));
+        println!("UI OK: {} sliders", ui.scales.len());
+        match std::env::var("TITAN_CHECK_UI_SHOTS") {
+            Ok(dir) => save_page_screenshots(app.clone(), ui, std::path::PathBuf::from(dir)),
+            Err(_) => app.quit(),
+        }
+        return;
+    }
+
+    let info_texts = ui.subtitles_to_info(INFO_ROWS);
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerCmd>();
     let (ui_tx, ui_rx) = async_channel::unbounded::<monitor::UiCmd>();
+    let splash = build_splash(app, &lang, !cfg.start_minimized);
+    let _ = worker_tx.send(WorkerCmd::DydsWithAdaptiveSync(cfg.firmware_package.dyds_with_adaptive_sync()));
+    let bindings = Bindings::new(worker_tx, ui.scales.clone());
 
-    let lang = i18n::detect_system_lang();
-    let updaters: LangUpdaters = Rc::new(std::cell::RefCell::new(Vec::new()));
-    let app_cfg = Rc::new(RefCell::new(app_settings::load()));
-    let startup_finished = Rc::new(Cell::new(false));
+    let app_state = Rc::new(App {
+        tray_favorites: Arc::new(Mutex::new(favorite_profile_entries(&cfg))),
+        tray_shortcuts: Arc::new(Mutex::new(favorite_tray_shortcut_entries(&cfg, &lang))),
+        tray_active_mode: Arc::new(Mutex::new(None)),
+        tray_choices: Arc::new(Mutex::new(tray::TrayChoiceState::default())),
+        tray_window_visible: Arc::new(Mutex::new(false)),
+        ui,
+        bindings,
+        cfg: RefCell::new(cfg),
+        lang: Cell::new(lang),
+        picture_order: RefCell::default(),
+        system_display: RefCell::default(),
+        connector: RefCell::default(),
+        info: RefCell::default(),
+        stars: RefCell::default(),
+        picture_star: RefCell::default(),
+        tray: RefCell::default(),
+        info_texts,
+        system_hdr: Cell::new(None),
+        hdr_sync: Cell::new(0),
+        color_enhance_level: Cell::new(0),
+        profile_loading: Cell::new(false),
+        profile_load_generation: Cell::new(0),
+        user_saturation: RefCell::new(None),
+    });
+    let a = &app_state;
 
-    // Splash screen
-    let splash_logo = if let Some(path) = app_settings::resolve_logo_path() {
-        let image = gtk4::Image::from_file(path);
-        image.set_pixel_size(96);
-        image
-    } else {
-        gtk4::Image::from_icon_name(app_settings::APP_ICON_NAME)
-    };
-    splash_logo.set_halign(Align::Center);
-    splash_logo.set_valign(Align::Center);
-    splash_logo.set_opacity(0.85);
-    let splash_logo_phase = Rc::new(Cell::new(0.0f64));
-    glib::timeout_add_local(
-        Duration::from_millis(32),
-        glib::clone!(
-            #[strong]
-            splash_logo,
-            #[strong]
-            splash_logo_phase,
-            move || {
-                let next_phase = splash_logo_phase.get() + 0.09;
-                splash_logo_phase.set(next_phase);
-                let opacity = 0.82 + ((next_phase.sin() + 1.0) * 0.5 * 0.18);
-                splash_logo.set_opacity(opacity);
-                glib::ControlFlow::Continue
+    a.ui.translator.apply(&lang);
+    translate_labels(&a.ui, &lang);
+    a.update_info_texts();
+    rebuild_menu(a);
+    setup_actions(app, a);
+    bind_settings(a);
+    setup_picture_mode(a);
+    setup_color_temp_rgb(a);
+    setup_actions_rows(a);
+    setup_system_display(a);
+    setup_preferences(a);
+    setup_info(a);
+    setup_favorites(a);
+    a.ui.align_rows();
+    {
+        let app_state = a.clone();
+        a.bindings.on_change(move || sync_state(&app_state));
+    }
+    sync_state(a);
+
+    monitor::start_worker(worker_rx, ui_tx);
+    receive_monitor_messages(a, ui_rx, splash, app.clone());
+
+    {
+        let tx = a.tx().clone();
+        glib::timeout_add_local(Duration::from_secs(180), move || {
+            let _ = tx.send(WorkerCmd::ReadUsageTime);
+            glib::ControlFlow::Continue
+        });
+    }
+    {
+        let a2 = a.clone();
+        a.ui.window.connect_visible_notify(move |window| {
+            if let Ok(mut state) = a2.tray_window_visible.lock() {
+                *state = window.is_visible();
             }
-        ),
-    );
-    let splash_label = gtk4::Label::builder()
-        .label(tr(&lang, "splash_searching"))
+            a2.refresh_tray();
+        });
+    }
+    // Closing hides the window to the tray.
+    a.ui.window.connect_close_request(|window| {
+        window.set_visible(false);
+        glib::Propagation::Stop
+    });
+    setup_tray(app, a);
+}
+
+/// Development aid: renders every page of the window and the preferences dialog into `dir` as PNG, then quits.
+fn save_page_screenshots(app: adw::Application, ui: Ui, dir: std::path::PathBuf) {
+    let _ = std::fs::create_dir_all(&dir);
+    let size = |name: &str, default: i32| std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default);
+    ui.window.set_default_size(size("TITAN_CHECK_UI_WIDTH", 1020), size("TITAN_CHECK_UI_HEIGHT", 900));
+    ui.window.present();
+    let stack: gtk4::Stack = ui.get("stack");
+    let mut shots: Vec<String> = (0..stack.pages().n_items())
+        .filter_map(|index| stack.pages().item(index).and_downcast::<gtk4::StackPage>())
+        .filter_map(|page| page.name().map(|name| name.to_string()))
+        .collect();
+    shots.push("preferences".into());
+    let ui = Rc::new(ui);
+    let step = Rc::new(Cell::new(0usize));
+    glib::timeout_add_local(Duration::from_millis(700), move || {
+        let index = step.get();
+        if index > 0 {
+            let window = &ui.window;
+            let paintable = gtk4::WidgetPaintable::new(Some(window));
+            let snapshot = gtk4::Snapshot::new();
+            paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
+            if let (Some(node), Some(renderer)) = (snapshot.to_node(), window.renderer()) {
+                let path = dir.join(format!("{index:02}-{}.png", shots[index - 1]));
+                let _ = renderer.render_texture(node, None).save_to_png(&path);
+                println!("saved {}", path.display());
+            }
+        }
+        match shots.get(index).map(String::as_str) {
+            None => {
+                app.quit();
+                return glib::ControlFlow::Break;
+            }
+            Some("preferences") => ui.prefs.present(Some(&ui.window)),
+            Some(page) => stack.set_visible_child_name(page),
+        }
+        step.set(index + 1);
+        glib::ControlFlow::Continue
+    });
+}
+
+/// Plain labels are not handled by the translator: the status under the monitor picture until it is connected.
+fn translate_labels(ui: &Ui, lang: &AppLang) {
+    ui.get::<gtk4::Label>("ov_monitor_subtitle").set_label(&tr_pl(lang, "Łączenie z monitorem…"));
+}
+
+/// App language: the saved choice, else the system language; only Polish and English are translated.
+fn resolve_lang(saved: Option<u32>) -> AppLang {
+    let lang = saved.map(i18n::lang_from_index).unwrap_or_else(i18n::detect_system_lang);
+    if lang == AppLang::PL { AppLang::PL } else { AppLang::EN }
+}
+
+fn apply_theme(theme: u32) {
+    adw::StyleManager::default().set_color_scheme(match theme {
+        1 => adw::ColorScheme::ForceLight,
+        2 => adw::ColorScheme::ForceDark,
+        _ => adw::ColorScheme::Default,
+    });
+}
+
+/// Startup window while the monitor is searched for: logo, name, spinner and the current step.
+fn build_splash(app: &adw::Application, lang: &AppLang, show: bool) -> (adw::Window, gtk4::Label) {
+    let logo = match app_settings::resolve_logo_path() {
+        Some(path) => gtk4::Image::from_file(path),
+        None => gtk4::Image::from_icon_name(app_settings::APP_ICON_NAME),
+    };
+    logo.set_pixel_size(112);
+    let label = gtk4::Label::builder()
+        .label(tr(lang, "splash_searching"))
         .wrap(true)
         .justify(gtk4::Justification::Center)
+        .css_classes(["dim-label"])
         .build();
-    let splash_box = gtk4::Box::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(16)
-        .halign(Align::Center)
-        .valign(Align::Center)
-        .vexpand(true)
+    let status = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(10)
+        .halign(gtk4::Align::Center)
+        .build();
+    status.append(&adw::Spinner::builder().width_request(18).height_request(18).build());
+    status.append(&label);
+    let content = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(6)
+        .valign(gtk4::Align::Center)
+        .margin_top(36)
+        .margin_bottom(36)
+        .margin_start(32)
+        .margin_end(32)
+        .build();
+    content.append(&logo);
+    content.append(
+        &gtk4::Label::builder()
+            .label(app_settings::APP_DISPLAY_NAME)
+            .margin_top(12)
+            .margin_bottom(18)
+            .css_classes(["title-1"])
+            .build(),
+    );
+    content.append(&status);
+    let handle = gtk4::WindowHandle::builder().child(&content).build();
+    let splash = adw::Window::builder()
+        .title(app_settings::APP_DISPLAY_NAME)
+        .default_width(380)
+        .resizable(false)
+        .content(&handle)
+        .application(app)
+        .build();
+    if show {
+        let splash = splash.clone();
+        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+            if splash.application().is_some() && !splash.is_visible() && splash.content().is_some() {
+                splash.present();
+            }
+        });
+    }
+    (splash, label)
+}
+
+fn rebuild_menu(a: &Rc<App>) {
+    let lang = a.lang();
+    let menu = gio::Menu::new();
+    menu.append(Some(&tr_pl(&lang, "Preferencje")), Some("app.preferences"));
+    menu.append(Some(&tr_pl(&lang, "Pokaż plik logu")), Some("app.logs"));
+    menu.append(Some(&tr_pl(&lang, "O programie")), Some("app.about"));
+    a.ui.get::<gtk4::MenuButton>("menu_button").set_menu_model(Some(&menu));
+}
+
+fn setup_actions(app: &adw::Application, a: &Rc<App>) {
+    let preferences = gio::SimpleAction::new("preferences", None);
+    {
+        let a = a.clone();
+        preferences.connect_activate(move |_, _| a.ui.prefs.present(Some(&a.ui.window)));
+    }
+    app.add_action(&preferences);
+
+    // The log file is what a bug report needs: show it in the file manager.
+    let logs = gio::SimpleAction::new("logs", None);
+    {
+        let a = a.clone();
+        logs.connect_activate(move |_, _| {
+            let file = gio::File::for_path(log::file_path());
+            gtk4::FileLauncher::new(Some(&file)).open_containing_folder(
+                Some(&a.ui.window),
+                gio::Cancellable::NONE,
+                |_| {},
+            );
+        });
+    }
+    app.add_action(&logs);
+
+    let about = gio::SimpleAction::new("about", None);
+    {
+        let a = a.clone();
+        about.connect_activate(move |_, _| show_about(&a));
+    }
+    app.add_action(&about);
+
+    // Refresh: monitor info, system display mode, wallpaper and every setting.
+    let a2 = a.clone();
+    a.ui.get::<gtk4::Button>("refresh_button").connect_clicked(move |_| {
+        start_profile_load(&a2);
+        let _ = a2.tx().send(WorkerCmd::RefreshAll);
+        refresh_system_display(&a2);
+    });
+}
+
+/// About dialog: name, version and the links right away (no "Details" page).
+fn show_about(a: &Rc<App>) {
+    let lang = a.lang();
+    let logo = match app_settings::resolve_logo_path() {
+        Some(path) => gtk4::Image::from_file(path),
+        None => gtk4::Image::from_icon_name(app_settings::APP_ICON_NAME),
+    };
+    logo.set_pixel_size(96);
+    let content = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(12)
         .margin_top(24)
         .margin_bottom(24)
         .margin_start(24)
         .margin_end(24)
         .build();
-    splash_box.append(&splash_logo);
-    splash_box.append(&splash_label);
-    let splash = adw::Window::builder()
-        .title("Titan Control")
-        .icon_name(app_settings::APP_ICON_NAME)
-        .default_width(360)
-        .default_height(260)
-        .content(&splash_box)
-        .application(app)
-        .build();
-    glib::timeout_add_local_once(
-        Duration::from_millis(350),
-        glib::clone!(
-            #[strong]
-            splash,
-            #[strong]
-            startup_finished,
-            move || {
-                if !startup_finished.get() {
-                    splash.present();
-                }
-            }
-        ),
-    );
-
-    let widgets = ui::build_ui(app, &lang, &updaters);
-
-    // Language switching
-    let lang_cell = Rc::new(Cell::new(lang));
-    {
-        let updaters_clone = updaters.clone();
-        let lang_cell_clone = lang_cell.clone();
-        widgets.combo_lang.connect_selected_notify(move |c| {
-            let new_lang = lang_from_index(c.selected());
-            lang_cell_clone.set(new_lang);
-            for cb in updaters_clone.borrow().iter() {
-                cb(&new_lang);
-            }
-        });
-    }
-
-    // Theme switching
-    widgets.combo_theme.connect_selected_notify(|c| {
-        let scheme = match c.selected() {
-            1 => adw::ColorScheme::ForceLight,
-            2 => adw::ColorScheme::ForceDark,
-            _ => adw::ColorScheme::Default,
-        };
-        adw::StyleManager::default().set_color_scheme(scheme);
-    });
-
-    // Destructure ALL widgets
-    let ui::MainWidgets {
-        window,
-        combo_lang: _,
-        combo_theme: _,
-        switch_auto_start,
-        switch_start_minimized,
-        // Display tab
-        row_info_model,
-        row_info_resolution,
-        row_info_hz,
-        row_info_firmware,
-        row_info_usage,
-        scale_audio_volume,
-        switch_audio_mute,
-        button_power_off,
-        switch_rear_led,
-        button_power_save_off,
-        button_power_save_lvl1,
-        button_power_save_lvl2,
-        button_led_off,
-        button_led_lvl1,
-        button_led_lvl2,
-        button_led_lvl3,
-        combo_input_source,
-        combo_output_range,
-        switch_quick_boot,
-        combo_osd_language,
-        scale_osd_time,
-        scale_osd_h_position,
-        scale_osd_v_position,
-        scale_osd_transparency,
-        button_reset_colors,
-        button_reset_settings,
-        button_reset_factory,
-        // Profile tab
-        combo_picture_mode,
-        button_profile_default,
-        button_profile_custom,
-        custom_revealer,
-        scale_custom_brightness,
-        scale_custom_contrast,
-        scale_custom_sharpness,
-        scale_custom_shadow_balance,
-        scale_custom_cr_enhance,
-        scale_custom_color_enhance,
-        scale_custom_super_res,
-        scale_custom_low_blue_light,
-        switch_custom_dcr,
-        combo_custom_color_temp,
-        scale_custom_red_gain,
-        scale_custom_green_gain,
-        scale_custom_blue_gain,
-        combo_custom_hdr,
-        combo_custom_gamma,
-        combo_custom_night_vision,
-        combo_custom_dynamic_od,
-        combo_custom_dyds,
-        hue_scales_vector,
-        saturation_scales_vector,
-        // Gaming tab
-        buttons_screen_size,
-        expander_fps_counter,
-        buttons_fps_pos,
-        expander_crosshair,
-        buttons_crosshair_shape,
-        buttons_crosshair_color,
-        expander_stopwatch,
-        buttons_stopwatch_time,
-        buttons_stopwatch_pos,
-        expander_game_time,
-        buttons_game_time_val,
-        buttons_game_time_pos,
-        expander_magnifier,
-        switch_magnifier_night_vision,
-        buttons_magnifier_zoom,
-        buttons_magnifier_size,
-        buttons_magnifier_pos,
-        switch_alignment,
-        expander_hawkeye,
-        buttons_hawkeye_size,
-        buttons_hawkeye_pos,
-        buttons_hawkeye_lvl,
-        switch_gaming_async,
-        switch_gaming_rush,
-        buttons_gaming_local_dimming,
-        buttons_gaming_dyds,
-        buttons_gaming_night_vision,
-        buttons_gaming_dynamic_od,
-        buttons_gaming_hdr,
-        scale_gaming_color_enhance,
-        scale_gaming_cr_enhance,
-        scale_gaming_shadow_enhance,
-        scale_gaming_super_res,
-        scale_gaming_halo_control,
-    } = widgets;
-
-    switch_auto_start.set_active(app_cfg.borrow().auto_start);
-    switch_start_minimized.set_active(app_cfg.borrow().start_minimized);
-    switch_start_minimized.set_sensitive(app_cfg.borrow().auto_start);
-    if let Some(last_picture_mode) = app_cfg.borrow().last_picture_mode {
-        let max_index = monitor::PICTURE_MODE_NAMES.len().saturating_sub(1) as u16;
-        combo_picture_mode.set_selected(last_picture_mode.min(max_index) as u32);
-    }
-    {
-        let initial_custom_profile = app_cfg
-            .borrow()
-            .custom_profile(combo_picture_mode.selected() as u16);
-        let has_custom = monitor::picture_mode_has_custom(combo_picture_mode.selected() as usize);
-        button_profile_custom.set_sensitive(has_custom);
-        button_profile_custom.set_active(has_custom && initial_custom_profile.active);
-        button_profile_default.set_active(!has_custom || !initial_custom_profile.active);
-        custom_revealer.set_reveal_child(true);
-        custom_revealer.set_sensitive(has_custom && initial_custom_profile.active);
-    }
-
-    monitor::start_worker(worker_rx, ui_tx);
-
-    let init = Rc::new(Cell::new(true)); // block signals during UI init
-
-    // --- LOCAL UI LOGIC ---
-
-    let syncing_custom_profile_ui = Rc::new(Cell::new(false));
-    let active_picture_mode = Rc::new(Cell::new(combo_picture_mode.selected() as u16));
-    let active_picture_mode_has_custom = Rc::new(Cell::new(monitor::picture_mode_has_custom(
-        combo_picture_mode.selected() as usize,
-    )));
-
-    let sync_picture_mode_controls: Rc<dyn Fn(u16, bool)> = Rc::new({
-        let button_profile_custom = button_profile_custom.clone();
-        let button_profile_default = button_profile_default.clone();
-        let custom_revealer = custom_revealer.clone();
-        let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
-        move |mode, custom_active| {
-            let has_custom = monitor::picture_mode_has_custom(mode as usize);
-            syncing_custom_profile_ui.set(true);
-            button_profile_custom.set_sensitive(has_custom);
-            if has_custom {
-                button_profile_custom.set_active(custom_active);
-                button_profile_default.set_active(!custom_active);
-                custom_revealer.set_reveal_child(true);
-                custom_revealer.set_sensitive(custom_active);
-            } else {
-                button_profile_default.set_active(true);
-                button_profile_custom.set_active(false);
-                custom_revealer.set_reveal_child(true);
-                custom_revealer.set_sensitive(false);
-            }
-            syncing_custom_profile_ui.set(false);
-        }
-    });
-
-    let collect_custom_profile_values: Rc<dyn Fn() -> ProfileValues> = Rc::new({
-            let scale_custom_brightness = scale_custom_brightness.clone();
-            let scale_custom_contrast = scale_custom_contrast.clone();
-            let scale_custom_sharpness = scale_custom_sharpness.clone();
-            let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
-            let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
-            let scale_custom_color_enhance = scale_custom_color_enhance.clone();
-            let scale_custom_super_res = scale_custom_super_res.clone();
-            let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
-            let switch_custom_dcr = switch_custom_dcr.clone();
-            let combo_custom_color_temp = combo_custom_color_temp.clone();
-            let scale_custom_red_gain = scale_custom_red_gain.clone();
-            let scale_custom_green_gain = scale_custom_green_gain.clone();
-            let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-            let combo_custom_hdr = combo_custom_hdr.clone();
-            let combo_custom_gamma = combo_custom_gamma.clone();
-            let combo_custom_night_vision = combo_custom_night_vision.clone();
-            let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
-            let combo_custom_dyds = combo_custom_dyds.clone();
-            let hue_scales_vector = hue_scales_vector.clone();
-            let saturation_scales_vector = saturation_scales_vector.clone();
-            move || {
-                let mut values = ProfileValues::new();
-                values.insert(
-                    monitor::VCP_BRIGHTNESS,
-                    scale_custom_brightness.value() as u16,
-                );
-                values.insert(monitor::VCP_CONTRAST, scale_custom_contrast.value() as u16);
-                values.insert(
-                    monitor::VCP_DCR,
-                    if switch_custom_dcr.is_active() { 1 } else { 0 },
-                );
-                values.insert(
-                    monitor::VCP_SHARPNESS,
-                    scale_custom_sharpness.value() as u16,
-                );
-                values.insert(
-                    monitor::VCP_SHADOW_BALANCE,
-                    scale_custom_shadow_balance.value() as u16,
-                );
-                values.insert(
-                    monitor::VCP_CR_ENHANCE,
-                    scale_custom_cr_enhance.value() as u16,
-                );
-                values.insert(
-                    monitor::VCP_COLOR_ENHANCE,
-                    scale_custom_color_enhance.value() as u16,
-                );
-                values.insert(
-                    monitor::VCP_SUPER_RES,
-                    scale_custom_super_res.value() as u16,
-                );
-                values.insert(
-                    monitor::VCP_LOW_BLUE,
-                    scale_custom_low_blue_light.value() as u16,
-                );
-                if let Some(value) =
-                    selected_toggle_value(&combo_custom_color_temp, &monitor::COLOR_TEMP_VALUES[..])
-                {
-                    values.insert(monitor::VCP_COLOR_TEMP, value);
-                }
-                values.insert(monitor::VCP_RED, scale_custom_red_gain.value() as u16);
-                values.insert(monitor::VCP_GREEN, scale_custom_green_gain.value() as u16);
-                values.insert(monitor::VCP_BLUE, scale_custom_blue_gain.value() as u16);
-                if let Some(value) =
-                    selected_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..])
-                {
-                    values.insert(monitor::VCP_HDR, value);
-                }
-                if let Some(value) =
-                    selected_toggle_value(&combo_custom_gamma, &monitor::GAMMA_VALUES[..])
-                {
-                    values.insert(monitor::VCP_GAMMA, value);
-                }
-                if let Some(value) = selected_toggle_value(
-                    &combo_custom_night_vision,
-                    &monitor::NIGHT_VISION_VALUES[..],
-                ) {
-                    values.insert(monitor::VCP_NIGHT_VISION, value);
-                }
-                if let Some(value) =
-                    selected_toggle_value(&combo_custom_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..])
-                {
-                    values.insert(monitor::VCP_DYNAMIC_OD, value);
-                }
-                if let Some(value) =
-                    selected_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..])
-                {
-                    values.insert(monitor::VCP_DYDS, value);
-                }
-                for (scale, code) in hue_scales_vector.iter().zip(monitor::HUE_CODES.iter()) {
-                    values.insert(*code, scale.value() as u16);
-                }
-                for (scale, code) in saturation_scales_vector
-                    .iter()
-                    .zip(monitor::SATURATION_CODES.iter())
-                {
-                    values.insert(*code, scale.value() as u16);
-                }
-                values
-            }
-        });
-
-    let apply_custom_profile_values: ProfileValuesCallback = Rc::new({
-        let scale_custom_brightness = scale_custom_brightness.clone();
-        let scale_custom_contrast = scale_custom_contrast.clone();
-        let scale_custom_sharpness = scale_custom_sharpness.clone();
-        let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
-        let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
-        let scale_custom_color_enhance = scale_custom_color_enhance.clone();
-        let scale_custom_super_res = scale_custom_super_res.clone();
-        let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
-        let switch_custom_dcr = switch_custom_dcr.clone();
-        let combo_custom_color_temp = combo_custom_color_temp.clone();
-        let scale_custom_red_gain = scale_custom_red_gain.clone();
-        let scale_custom_green_gain = scale_custom_green_gain.clone();
-        let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-        let combo_custom_hdr = combo_custom_hdr.clone();
-        let combo_custom_gamma = combo_custom_gamma.clone();
-        let combo_custom_night_vision = combo_custom_night_vision.clone();
-        let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
-        let combo_custom_dyds = combo_custom_dyds.clone();
-        let buttons_gaming_hdr = buttons_gaming_hdr.clone();
-        let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
-        let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
-        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
-        let scale_gaming_shadow_enhance = scale_gaming_shadow_enhance.clone();
-        let scale_gaming_cr_enhance = scale_gaming_cr_enhance.clone();
-        let scale_gaming_color_enhance = scale_gaming_color_enhance.clone();
-        let hue_scales_vector = hue_scales_vector.clone();
-        let saturation_scales_vector = saturation_scales_vector.clone();
-        move |values: &ProfileValues| {
-            if let Some(&v) = values.get(&monitor::VCP_BRIGHTNESS) {
-                scale_custom_brightness.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_CONTRAST) {
-                scale_custom_contrast.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_DCR) {
-                switch_custom_dcr.set_active(v != 0);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_SHARPNESS) {
-                scale_custom_sharpness.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_SHADOW_BALANCE) {
-                scale_custom_shadow_balance.set_value(v as f64);
-                scale_gaming_shadow_enhance.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_CR_ENHANCE) {
-                scale_custom_cr_enhance.set_value(v as f64);
-                scale_gaming_cr_enhance.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_COLOR_ENHANCE) {
-                scale_custom_color_enhance.set_value(v as f64);
-                scale_gaming_color_enhance.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_SUPER_RES) {
-                scale_custom_super_res.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_LOW_BLUE) {
-                scale_custom_low_blue_light.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_COLOR_TEMP) {
-                activate_toggle_value(&combo_custom_color_temp, &monitor::COLOR_TEMP_VALUES[..], v);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_RED) {
-                scale_custom_red_gain.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_GREEN) {
-                scale_custom_green_gain.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_BLUE) {
-                scale_custom_blue_gain.set_value(v as f64);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_HDR) {
-                activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], v);
-                activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], v);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_GAMMA) {
-                activate_toggle_value(&combo_custom_gamma, &monitor::GAMMA_VALUES[..], v);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_NIGHT_VISION) {
-                activate_toggle_value(
-                    &combo_custom_night_vision,
-                    &monitor::NIGHT_VISION_VALUES[..],
-                    v,
-                );
-                activate_toggle_value(
-                    &buttons_gaming_night_vision,
-                    &monitor::NIGHT_VISION_VALUES[..],
-                    v,
-                );
-            }
-            if let Some(&v) = values.get(&monitor::VCP_DYNAMIC_OD) {
-                activate_toggle_value(&combo_custom_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], v);
-                activate_toggle_value(&buttons_gaming_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], v);
-            }
-            if let Some(&v) = values.get(&monitor::VCP_DYDS) {
-                activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], v);
-                activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], v);
-            }
-            for (scale, code) in hue_scales_vector.iter().zip(monitor::HUE_CODES.iter()) {
-                if let Some(&v) = values.get(code) {
-                    scale.set_value(v as f64);
-                }
-            }
-            for (scale, code) in saturation_scales_vector
-                .iter()
-                .zip(monitor::SATURATION_CODES.iter())
-            {
-                if let Some(&v) = values.get(code) {
-                    scale.set_value(v as f64);
-                }
-            }
-        }
-    });
-
-    let apply_profile_values_silently: ProfileValuesCallback = Rc::new({
-        let init = init.clone();
-        let apply_custom_profile_values = apply_custom_profile_values.clone();
-        move |values: &ProfileValues| {
-            let previous_init = init.replace(true);
-            (apply_custom_profile_values)(values);
-            init.set(previous_init);
-        }
-    });
-
-    let persist_current_custom_profile_state: Rc<dyn Fn()> = Rc::new({
-        let active_picture_mode = active_picture_mode.clone();
-        let button_profile_custom = button_profile_custom.clone();
-        let app_cfg = app_cfg.clone();
-        let collect_custom_profile_values = collect_custom_profile_values.clone();
-        move || {
-            let mut cfg = app_cfg.borrow().clone();
-            let profile = cfg
-                .custom_profiles
-                .entry(active_picture_mode.get())
-                .or_default();
-            profile.active = button_profile_custom.is_active();
-            profile.values = (collect_custom_profile_values)();
-            let _ = app_settings::save(&cfg);
-            *app_cfg.borrow_mut() = cfg;
-        }
-    });
-
-    let load_custom_profile_for_mode: Rc<dyn Fn(u16)> = Rc::new({
-        let app_cfg = app_cfg.clone();
-        let apply_profile_values_silently = apply_profile_values_silently.clone();
-        let sync_picture_mode_controls = sync_picture_mode_controls.clone();
-        let active_picture_mode_has_custom = active_picture_mode_has_custom.clone();
-        move |mode| {
-            let profile = app_cfg.borrow().custom_profile(mode);
-            let default_values = app_settings::basic_profile_values_for_mode(mode);
-            let has_custom = monitor::picture_mode_has_custom(mode as usize);
-            active_picture_mode_has_custom.set(has_custom);
-            let custom_active = has_custom && profile.active;
-
-            (sync_picture_mode_controls)(mode, custom_active);
-            let mut values = default_values;
-            if custom_active {
-                values.extend(profile.values);
-            }
-            (apply_profile_values_silently)(&values);
-        }
-    });
-
-    {
-        let worker_tx = worker_tx.clone();
-        button_profile_custom.connect_toggled(glib::clone!(
-            #[strong]
-            custom_revealer,
-            #[strong]
-            app_cfg,
-            #[strong]
-            active_picture_mode,
-            #[strong]
-            active_picture_mode_has_custom,
-            #[strong]
-            syncing_custom_profile_ui,
-            #[strong]
-            apply_profile_values_silently,
-            move |btn| {
-                if syncing_custom_profile_ui.get()
-                    || !btn.is_active()
-                    || !active_picture_mode_has_custom.get()
-                {
-                    return;
-                }
-
-                custom_revealer.set_reveal_child(true);
-                custom_revealer.set_sensitive(true);
-                let mut cfg = app_cfg.borrow().clone();
-                let profile = cfg
-                    .custom_profiles
-                    .entry(active_picture_mode.get())
-                    .or_default();
-                profile.active = true;
-                let mut values_to_apply =
-                    app_settings::basic_profile_values_for_mode(active_picture_mode.get());
-                values_to_apply.extend(profile.values.clone());
-                profile.values = values_to_apply.clone();
-                let _ = app_settings::save(&cfg);
-                *app_cfg.borrow_mut() = cfg;
-
-                // Send VCP_MODE custom variant to monitor
-                if let Some(mode_value) =
-                    monitor::picture_mode_vcp_value(active_picture_mode.get() as usize, true)
-                {
-                    let _ = worker_tx.send(WorkerCmd::Set(monitor::VCP_MODE, mode_value));
-                }
-
-                // Send all custom values to monitor
-                send_profile_values_to_monitor(&worker_tx, &values_to_apply);
-
-                syncing_custom_profile_ui.set(true);
-                (apply_profile_values_silently)(&values_to_apply);
-                syncing_custom_profile_ui.set(false);
-            }
-        ));
-    }
-
-    {
-        let worker_tx = worker_tx.clone();
-        button_profile_default.connect_toggled(glib::clone!(
-            #[strong]
-            app_cfg,
-            #[strong]
-            custom_revealer,
-            #[strong]
-            active_picture_mode,
-            #[strong]
-            syncing_custom_profile_ui,
-            #[strong]
-            apply_profile_values_silently,
-            move |btn| {
-                if syncing_custom_profile_ui.get() || !btn.is_active() {
-                    return;
-                }
-
-                custom_revealer.set_reveal_child(true);
-                custom_revealer.set_sensitive(false);
-                let mut cfg = app_cfg.borrow().clone();
-                let profile = cfg
-                    .custom_profiles
-                    .entry(active_picture_mode.get())
-                    .or_default();
-                profile.active = false;
-                let _ = app_settings::save(&cfg);
-                *app_cfg.borrow_mut() = cfg;
-
-                // Send VCP_MODE default variant to monitor
-                if let Some(mode_value) =
-                    monitor::picture_mode_vcp_value(active_picture_mode.get() as usize, false)
-                {
-                    let _ = worker_tx.send(WorkerCmd::Set(monitor::VCP_MODE, mode_value));
-                }
-
-                let default_values =
-                    app_settings::basic_profile_values_for_mode(active_picture_mode.get());
-                syncing_custom_profile_ui.set(true);
-                (apply_profile_values_silently)(&default_values);
-                syncing_custom_profile_ui.set(false);
-
-                send_profile_values_to_monitor(&worker_tx, &default_values);
-            }
-        ));
-    }
-    for scale in [
-        scale_custom_brightness.clone(),
-        scale_custom_contrast.clone(),
-        scale_custom_sharpness.clone(),
-        scale_custom_shadow_balance.clone(),
-        scale_custom_cr_enhance.clone(),
-        scale_custom_color_enhance.clone(),
-        scale_custom_super_res.clone(),
-        scale_custom_low_blue_light.clone(),
-        scale_custom_red_gain.clone(),
-        scale_custom_green_gain.clone(),
-        scale_custom_blue_gain.clone(),
-    ]
-    .into_iter()
-    .chain(hue_scales_vector.clone())
-    .chain(saturation_scales_vector.clone())
-    {
-        let init = init.clone();
-        let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
-        let persist_current_custom_profile_state = persist_current_custom_profile_state.clone();
-        scale.connect_value_changed(move |_| {
-            if init.get() || syncing_custom_profile_ui.get() {
-                return;
-            }
-            (persist_current_custom_profile_state)();
-        });
-    }
-
-    for buttons in [
-        combo_custom_color_temp.clone(),
-        combo_custom_hdr.clone(),
-        combo_custom_gamma.clone(),
-        combo_custom_night_vision.clone(),
-        combo_custom_dynamic_od.clone(),
-        combo_custom_dyds.clone(),
+    content.append(&logo);
+    content.append(&gtk4::Label::builder().label(app_settings::APP_DISPLAY_NAME).css_classes(["title-1"]).build());
+    content.append(&gtk4::Label::builder().label(app_settings::APP_VERSION).css_classes(["dim-label"]).build());
+    let links = adw::PreferencesGroup::builder().margin_top(12).build();
+    for (icon, title, url) in [
+        ("web-browser-symbolic", tr_pl(&lang, "Strona programu"), "https://github.com/mkarenko/titan-control"),
+        ("titan-bug-symbolic", tr_pl(&lang, "Zgłoś błąd"), "https://github.com/mkarenko/titan-control/issues/new"),
+        ("titan-coffee-symbolic", "Buy me a coffee".to_string(), "https://buymeacoffee.com/mkarenko"),
     ] {
-        for button in buttons {
-            let init = init.clone();
-            let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
-            let persist_current_custom_profile_state = persist_current_custom_profile_state.clone();
-            button.connect_toggled(move |button| {
-                if init.get() || syncing_custom_profile_ui.get() || !button.is_active() {
-                    return;
-                }
-                (persist_current_custom_profile_state)();
-            });
-        }
-    }
-    {
-        let init = init.clone();
-        let syncing_custom_profile_ui = syncing_custom_profile_ui.clone();
-        let persist_current_custom_profile_state = persist_current_custom_profile_state.clone();
-        switch_custom_dcr.connect_active_notify(move |_| {
-            if init.get() || syncing_custom_profile_ui.get() {
-                return;
-            }
-            (persist_current_custom_profile_state)();
+        let row = adw::ActionRow::builder().title(title).activatable(true).build();
+        row.add_suffix(&gtk4::Image::from_icon_name(icon));
+        let window = a.ui.window.clone();
+        row.connect_activated(move |_| {
+            gtk4::UriLauncher::new(url).launch(Some(&window), gio::Cancellable::NONE, |_| {});
         });
+        links.add(&row);
+    }
+    content.append(&links);
+    let view = adw::ToolbarView::new();
+    view.add_top_bar(&adw::HeaderBar::new());
+    view.set_content(Some(&content));
+    let dialog = adw::Dialog::builder()
+        .title(tr_pl(&lang, "O programie"))
+        .content_width(400)
+        .child(&view)
+        .build();
+    dialog.present(Some(&a.ui.window));
+}
+
+/// Connects every simple control with its VCP code.
+fn bind_settings(a: &Rc<App>) {
+    use monitor::*;
+    let ui = &a.ui;
+    let b = &a.bindings;
+    let adj = |id: &str| -> gtk4::Adjustment { ui.get(id) };
+    let toggles = |id: &str, values: &[u16]| Control::Toggles { group: ui.get(id), values: values.to_vec() };
+    let combo = |id: &str, values: &[u16]| Control::Combo { row: ui.get(id), values: values.to_vec() };
+    let switch = |id: &str, on: u16, off: u16| Control::Switch { row: ui.get(id), on, off };
+    let expander = |id: &str| Control::Expander { row: ui.get(id) };
+    let slider = |id: &str| Control::Adjustment { adj: adj(id), factor: 1 };
+
+    // Sliders (shared adjustments show the setting on several pages).
+    for (code, id) in [
+        (VCP_BRIGHTNESS, "adj_brightness"),
+        (VCP_CONTRAST, "adj_contrast"),
+        (VCP_VOLUME, "adj_volume"),
+        (VCP_LOW_BLUE, "adj_lbl"),
+        (VCP_SHARPNESS, "adj_sharpness"),
+        (VCP_COLOR_ENHANCE, "adj_color_enhance"),
+        (VCP_CR_ENHANCE, "adj_cr_enhance"),
+        (VCP_SHADOW_BALANCE, "adj_shadow_balance"),
+        (VCP_SUPER_RES, "adj_super_res"),
+        (VCP_HALO_CONTROL, "adj_halo"),
+        (VCP_HUE_RED, "adj_hue_red"),
+        (VCP_HUE_GREEN, "adj_hue_green"),
+        (VCP_HUE_BLUE, "adj_hue_blue"),
+        (VCP_HUE_CYAN, "adj_hue_cyan"),
+        (VCP_HUE_MAGENTA, "adj_hue_magenta"),
+        (VCP_HUE_YELLOW, "adj_hue_yellow"),
+        (VCP_SATURATION_RED, "adj_sat_red"),
+        (VCP_SATURATION_GREEN, "adj_sat_green"),
+        (VCP_SATURATION_BLUE, "adj_sat_blue"),
+        (VCP_SATURATION_CYAN, "adj_sat_cyan"),
+        (VCP_SATURATION_MAGENTA, "adj_sat_magenta"),
+        (VCP_SATURATION_YELLOW, "adj_sat_yellow"),
+        (VCP_OSD_TIME, "adj_osd_time"),
+        (VCP_OSD_H_POS, "adj_osd_h"),
+        (VCP_OSD_V_POS, "adj_osd_v"),
+    ] {
+        b.bind(code, slider(id));
+    }
+    // OSD transparency: 6 OSD levels = DDC 0-100 in steps of 20.
+    b.bind(VCP_OSD_TRANS, Control::Adjustment { adj: adj("adj_osd_trans"), factor: 20 });
+
+    // Switches (on value, off value).
+    b.bind(VCP_ADAPTIVE_SYNC, switch("adaptive_sync", 1, 0));
+    b.bind(VCP_REAR_LED, switch("led", 0, 1));
+    b.bind(VCP_OSD_LOCK, switch("osd_lock", 1, 0));
+    b.bind(VCP_BUTTON_LOCK, switch("button_lock", values::BUTTONS_LOCKED, values::BUTTONS_UNLOCKED));
+    b.bind(VCP_DCR, switch("dcr", 1, 0));
+    // Mute: speaker button on the volume row (speaker / crossed-out speaker).
+    let mute: gtk4::ToggleButton = ui.get("mute");
+    mute.connect_toggled(|button| {
+        button.set_icon_name(if button.is_active() { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
+    });
+    b.bind(VCP_MUTE, Control::Toggle { button: mute, on: 1, off: 0 });
+    b.bind(VCP_USB_POWER_SLEEP, switch("usb_power_sleep", 1, 0));
+    b.bind(VCP_QUICK_BOOT, switch("quick_boot", 1, 0));
+    // Eyeshield reminder: over DDC only on (1 = 30 min) and off; the OSD can set 2-8.
+    b.bind(VCP_EYESHIELD_REMINDER, switch("eyeshield", 1, 0));
+
+    // Toggle groups (values in the order of the toggles).
+    b.bind(VCP_HDR, toggles("hdr", &HDR_VALUES));
+    b.bind(VCP_LOCAL_DIMMING, toggles("local_dimming", &LOCAL_DIMMING_VALUES));
+    b.bind(VCP_COLOR_TEMP, toggles("color_temp", &COLOR_TEMP_VALUES));
+    b.bind(VCP_GAMMA, toggles("gamma", &GAMMA_VALUES));
+    b.bind(VCP_DYNAMIC_OD, toggles("dynamic_od", &DYNAMIC_OD_VALUES));
+    b.bind(VCP_DYDS, toggles("dyds", &DYDS_VALUES));
+    b.bind(VCP_NIGHT_VISION, toggles("night_vision", &NIGHT_VISION_VALUES));
+    b.bind(VCP_SCREEN_SIZE, toggles("screen_size", &[0, 1]));
+    // Positions in the UI: top-left, top-right, (center,) bottom-left, bottom-right.
+    // Monitor values: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left.
+    let corners = [1, 0, 3, 2];
+    b.bind(VCP_FPS_POS, toggles("fps_pos", &corners));
+    b.bind(VCP_STOPWATCH_POS, toggles("stopwatch_pos", &corners));
+    b.bind(VCP_GAME_TIME_POS, toggles("game_time_pos", &corners));
+    // Magnifier: 1 top-right, 2 top-left, 5 center, 3 bottom-right, 4 bottom-left.
+    b.bind(VCP_MAGNIFIER_POS, toggles("magnifier_pos", &[2, 1, 5, 4, 3]));
+    // HawkEye: 0 top-right, 1 top-left, 2 center, 3 bottom-right, 4 bottom-left.
+    b.bind(VCP_HAWKEYE_POS, toggles("hawkeye_pos", &[1, 0, 2, 4, 3]));
+    b.bind(VCP_CROSSHAIR_SHAPE, toggles("crosshair_shape", &[1, 2, 3, 4, 5, 6]));
+    b.bind(VCP_STOPWATCH_TIME, toggles("stopwatch_time", &[1, 2, 3, 4]));
+    b.bind(VCP_GAME_TIME_VAL, toggles("game_time_val", &[1, 2, 3, 4]));
+    b.bind(VCP_MAGNIFIER_ZOOM, toggles("magnifier_zoom", &[0, 1, 2]));
+    b.bind(VCP_MAGNIFIER_SIZE, toggles("magnifier_size", &[1, 2, 3]));
+    b.bind(VCP_HAWKEYE_SIZE, toggles("hawkeye_size", &[0, 1, 2]));
+    b.bind(VCP_HAWKEYE_LEVEL, toggles("hawkeye_level", &[0, 1, 2, 3, 4]));
+    b.bind(VCP_USB_HUB_SOURCE, toggles("usb_hub", &values::USB_HUB_SOURCE));
+    b.bind(VCP_PIP_POSITION, toggles("pip_position", &corners));
+    b.bind(VCP_PIP_SIZE, toggles("pip_size", &values::PIP_SIZE));
+    b.bind(VCP_LED_STRENGTH, toggles("led_strength", &values::LED_STRENGTH));
+    b.bind(VCP_POWER_LED, toggles("power_led", &values::POWER_LED));
+    b.bind(VCP_POWER_SAVING, toggles("power_saving", &[0, 1, 2]));
+
+    // Combos.
+    let inputs = [0, 1, 3, 5, 6]; // auto, DP, USB-C, HDMI-1, HDMI-2 (0x57)
+    b.bind(VCP_INPUT_SELECT, combo("input_select", &inputs));
+    b.bind(VCP_OUTPUT_RANGE, combo("output_range", &OUTPUT_RANGE_VALUES));
+    b.bind(VCP_RATIO, combo("ratio", &values::RATIO));
+    // 21:9 needs a wider Full Game screen mode (3K Wide and similar) than Wide / 25", which are the only ones the
+    // monitor accepts over DDC: the option is shown greyed out.
+    {
+        let factory = gtk4::SignalListItemFactory::new();
+        factory.connect_setup(|_, item| {
+            let Some(item) = item.downcast_ref::<gtk4::ListItem>() else { return };
+            item.set_child(Some(&gtk4::Label::builder().xalign(0.0).build()));
+        });
+        factory.connect_bind(|_, item| {
+            let Some(item) = item.downcast_ref::<gtk4::ListItem>() else { return };
+            let Some(label) = item.child().and_downcast::<gtk4::Label>() else { return };
+            let text = item.item().and_downcast::<gtk4::StringObject>().map(|text| text.string());
+            label.set_label(text.as_deref().unwrap_or_default());
+            let available = item.position() != RATIO_21_9_INDEX;
+            label.set_sensitive(available);
+            item.set_selectable(available);
+            item.set_activatable(available);
+        });
+        ui.get::<adw::ComboRow>("ratio").set_list_factory(Some(&factory));
+    }
+    b.bind(VCP_PIP_MODE, combo("pip_mode", &values::PIP_MODE));
+    b.bind(VCP_PIP_SOURCE, combo("pip_source", &values::PIP_SOURCE));
+    b.bind(VCP_AUDIO_SOURCE, combo("audio_source", &values::AUDIO_SOURCE));
+    b.bind(VCP_LED_MODE, combo("led_mode", &values::LED_MODE));
+    b.bind(VCP_LED_FRONT_COLOR, combo("led_front", &values::LED_SIDE_COLOR));
+    b.bind(VCP_LED_REAR_COLOR, combo("led_rear", &values::LED_SIDE_COLOR));
+    b.bind(VCP_OSD_LANG, combo("osd_language", &crate::OSD_LANGUAGE_VALUES));
+
+    // Expanders with an enable switch.
+    for (code, id) in [
+        (VCP_FPS_COUNTER, "fps_counter"),
+        (VCP_CROSSHAIR, "crosshair"),
+        (VCP_STOPWATCH, "stopwatch"),
+        (VCP_GAME_TIME, "game_time"),
+        (VCP_MAGNIFIER, "magnifier"),
+        (VCP_HAWKEYE, "hawkeye"),
+    ] {
+        b.bind(code, expander(id));
     }
 
-    // --- MONITOR -> UI ---
-
-    let current_monitor_name = Rc::new(RefCell::new(String::new()));
-    let sync_gaming_constraints: Rc<dyn Fn()> = {
-        let buttons_screen_size = buttons_screen_size.clone();
-        let switch_gaming_async = switch_gaming_async.clone();
-        let switch_gaming_rush = switch_gaming_rush.clone();
-        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
-        let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
-        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-        let expander_magnifier = expander_magnifier.clone();
-        let expander_hawkeye = expander_hawkeye.clone();
-        let buttons_magnifier_zoom = buttons_magnifier_zoom.clone();
-        let buttons_magnifier_size = buttons_magnifier_size.clone();
-        let buttons_magnifier_pos = buttons_magnifier_pos.clone();
-        let buttons_hawkeye_size = buttons_hawkeye_size.clone();
-        let buttons_hawkeye_pos = buttons_hawkeye_pos.clone();
-        let buttons_hawkeye_lvl = buttons_hawkeye_lvl.clone();
-        let switch_alignment = switch_alignment.clone();
-        let scale_gaming_halo_control = scale_gaming_halo_control.clone();
-        Rc::new(move || {
-            let wide_mode_active = buttons_screen_size
-                .first()
-                .is_some_and(|btn| btn.is_active());
-            let dyds_ull_active = buttons_gaming_dyds
-                .iter()
-                .enumerate()
-                .skip(4)
-                .any(|(_, btn)| btn.is_active());
-            let adaptive_sync_active = switch_gaming_async.is_active();
-            let local_dimming_enabled = buttons_gaming_local_dimming
-                .iter()
-                .enumerate()
-                .skip(1)
-                .any(|(_, btn)| btn.is_active());
-            let magnifier_active = expander_magnifier.enables_expansion();
-            let hawkeye_active = expander_hawkeye.enables_expansion();
-
-            if !wide_mode_active {
-                switch_gaming_async.set_active(false);
-                if let Some(off_button) = buttons_gaming_dyds.first() {
-                    off_button.set_active(true);
-                }
-                if let Some(off_button) = buttons_gaming_dynamic_od.first() {
-                    off_button.set_active(true);
-                }
-                expander_magnifier.set_enable_expansion(false);
-                expander_hawkeye.set_enable_expansion(false);
-                scale_gaming_halo_control.set_value(0.0);
-            }
-
-            if adaptive_sync_active {
-                if let Some(off_button) = buttons_gaming_dyds.first() {
-                    off_button.set_active(true);
-                }
-                expander_magnifier.set_enable_expansion(false);
-                expander_hawkeye.set_enable_expansion(false);
-            }
-
-            if magnifier_active && hawkeye_active {
-                expander_hawkeye.set_enable_expansion(false);
-            }
-
-            if dyds_ull_active
-                && let Some(disabled_button) = buttons_gaming_local_dimming.first()
-            {
-                disabled_button.set_active(true);
-            }
-
-            if !switch_gaming_rush.is_active() {
-                switch_gaming_rush.set_active(true);
-            }
-
-            switch_gaming_async.set_sensitive(true);
-            switch_gaming_rush.set_sensitive(false);
-
-            if let Some(spx_button) = buttons_screen_size.get(2) {
-                spx_button.set_sensitive(false);
-            }
-
-            switch_alignment.set_sensitive(false);
-
-            expander_magnifier.set_sensitive(true);
-            expander_hawkeye.set_sensitive(true);
-            let magnifier_controls_enabled =
-                wide_mode_active && !adaptive_sync_active && !hawkeye_active && magnifier_active;
-            let hawkeye_controls_enabled =
-                wide_mode_active && !adaptive_sync_active && !magnifier_active && hawkeye_active;
-
-            for button in buttons_magnifier_zoom
-                .iter()
-                .chain(buttons_magnifier_size.iter())
-                .chain(buttons_magnifier_pos.iter())
-            {
-                button.set_sensitive(magnifier_controls_enabled);
-            }
-            for button in buttons_hawkeye_size
-                .iter()
-                .chain(buttons_hawkeye_pos.iter())
-                .chain(buttons_hawkeye_lvl.iter())
-            {
-                button.set_sensitive(hawkeye_controls_enabled);
-            }
-            switch_gaming_async.set_sensitive(wide_mode_active);
-            scale_gaming_halo_control
-                .set_sensitive(wide_mode_active && local_dimming_enabled && !dyds_ull_active);
-
-            for (index, button) in buttons_gaming_dyds.iter().enumerate() {
-                button.set_sensitive(
-                    wide_mode_active
-                        && !adaptive_sync_active
-                        && (!switch_gaming_async.is_active() || index == 0 || button.is_active()),
-                );
-            }
-
-            for button in &buttons_gaming_dynamic_od {
-                button.set_sensitive(wide_mode_active);
-            }
-
-            for button in &buttons_gaming_local_dimming {
-                button.set_sensitive(!dyds_ull_active);
-            }
-        })
+    // Color swatches.
+    let buttons = |prefix: &str, count: usize| -> Vec<gtk4::ToggleButton> {
+        (0..count).map(|index| ui.get(&format!("{prefix}{index}"))).collect()
     };
-    let sync_dcr_constraints: Rc<dyn Fn()> = {
-        let switch_custom_dcr = switch_custom_dcr.clone();
-        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-        let scale_custom_brightness = scale_custom_brightness.clone();
-        let scale_custom_contrast = scale_custom_contrast.clone();
-        let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
-        let scale_custom_halo_control = scale_gaming_halo_control.clone();
-        Rc::new(move || {
-            let local_dimming_enabled = buttons_gaming_local_dimming
-                .iter()
-                .enumerate()
-                .skip(1)
-                .any(|(_, button)| button.is_active());
-            let dcr_active = switch_custom_dcr.is_active();
+    b.bind(VCP_CROSSHAIR_COLOR, Control::Buttons { buttons: buttons("cross_c", 8), values: (0..8).collect() });
+    let led_buttons: Vec<gtk4::ToggleButton> = (1..=7).map(|index| ui.get(&format!("led_c{index}"))).collect();
+    b.bind(VCP_LED_COLOR, Control::Buttons { buttons: led_buttons, values: values::LED_COLOR.to_vec() });
 
-            switch_custom_dcr.set_sensitive(!local_dimming_enabled);
-            for button in &buttons_gaming_local_dimming {
-                button.set_sensitive(!dcr_active);
-            }
-            scale_custom_brightness.set_sensitive(!dcr_active);
-            scale_custom_contrast.set_sensitive(!dcr_active);
-            scale_custom_shadow_balance.set_sensitive(!dcr_active);
-            scale_custom_halo_control.set_sensitive(!dcr_active);
-        })
-    };
+    // Output Range: the monitor needs Auto (0) before another range.
     {
-        let sync_dcr_constraints = sync_dcr_constraints.clone();
-        switch_custom_dcr.connect_active_notify(move |_| {
-            sync_dcr_constraints();
-        });
-    }
-
-    {
-        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
-        let sync_gaming_constraints = sync_gaming_constraints.clone();
-        switch_gaming_async.connect_active_notify(move |sw| {
-            if sw.is_active()
-                && let Some(off_button) = buttons_gaming_dyds.first()
-            {
-                off_button.set_active(true);
-            }
-            sync_gaming_constraints();
-        });
-    }
-
-    for (index, button) in buttons_gaming_dyds.iter().enumerate() {
-        let sync_gaming_constraints = sync_gaming_constraints.clone();
-        let sync_dcr_constraints = sync_dcr_constraints.clone();
-        let switch_custom_dcr = switch_custom_dcr.clone();
-        let tx = worker_tx.clone();
-        button.connect_toggled(move |button| {
-            if button.is_active() && index > 0 && switch_custom_dcr.is_active() {
-                switch_custom_dcr.set_active(false);
-                let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, 0));
-            }
-            sync_gaming_constraints();
-            sync_dcr_constraints();
-        });
-    }
-
-    for button in &buttons_gaming_local_dimming {
-        let sync_gaming_constraints = sync_gaming_constraints.clone();
-        let sync_dcr_constraints = sync_dcr_constraints.clone();
-        button.connect_toggled(move |_| {
-            sync_gaming_constraints();
-            sync_dcr_constraints();
-        });
-    }
-
-    {
-        let sync_gaming_constraints = sync_gaming_constraints.clone();
-        expander_magnifier.connect_enable_expansion_notify(move |_| {
-            sync_gaming_constraints();
-        });
-    }
-
-    {
-        let sync_gaming_constraints = sync_gaming_constraints.clone();
-        expander_hawkeye.connect_enable_expansion_notify(move |_| {
-            sync_gaming_constraints();
-        });
-    }
-
-    let sync_color_temp_controls: Rc<dyn Fn()> = {
-        let combo_custom_color_temp = combo_custom_color_temp.clone();
-        let scale_custom_red_gain = scale_custom_red_gain.clone();
-        let scale_custom_green_gain = scale_custom_green_gain.clone();
-        let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-        let init = init.clone();
-        let current_monitor_name = current_monitor_name.clone();
-        Rc::new(move || {
-            let Some(selected) = selected_toggle_index(&combo_custom_color_temp) else {
-                return;
-            };
-            let Some(&color_temp) = monitor::COLOR_TEMP_VALUES.get(selected) else {
-                return;
-            };
-
-            let previous_init = init.replace(true);
-
-            if let Some((red, green, blue)) = monitor::builtin_color_temp_rgb(color_temp) {
-                scale_custom_red_gain.set_sensitive(false);
-                scale_custom_green_gain.set_sensitive(false);
-                scale_custom_blue_gain.set_sensitive(false);
-                scale_custom_red_gain.set_value(red as f64);
-                scale_custom_green_gain.set_value(green as f64);
-                scale_custom_blue_gain.set_value(blue as f64);
-            } else {
-                scale_custom_red_gain.set_sensitive(true);
-                scale_custom_green_gain.set_sensitive(true);
-                scale_custom_blue_gain.set_sensitive(true);
-
-                let monitor_name = current_monitor_name.borrow().clone();
-                if !monitor_name.is_empty() {
-                    let cached = monitor::load_color_temp_profile_cache(&monitor_name, color_temp);
-                    if let Some(&value) = cached.get(&monitor::VCP_RED) {
-                        scale_custom_red_gain.set_value(value as f64);
-                    }
-                    if let Some(&value) = cached.get(&monitor::VCP_GREEN) {
-                        scale_custom_green_gain.set_value(value as f64);
-                    }
-                    if let Some(&value) = cached.get(&monitor::VCP_BLUE) {
-                        scale_custom_blue_gain.set_value(value as f64);
-                    }
-                }
-            }
-
-            init.set(previous_init);
-        })
-    };
-
-    // Collect scale bindings: (Scale, VCP code)
-    let scale_binds: Vec<(Scale, u8)> = vec![
-        (scale_audio_volume.clone(), monitor::VCP_VOLUME),
-        (scale_osd_time.clone(), monitor::VCP_OSD_TIME),
-        (scale_osd_h_position.clone(), monitor::VCP_OSD_H_POS),
-        (scale_osd_v_position.clone(), monitor::VCP_OSD_V_POS),
-        (scale_osd_transparency.clone(), monitor::VCP_OSD_TRANS),
-        (scale_custom_brightness.clone(), monitor::VCP_BRIGHTNESS),
-        (scale_custom_contrast.clone(), monitor::VCP_CONTRAST),
-        (scale_custom_sharpness.clone(), monitor::VCP_SHARPNESS),
-        (
-            scale_custom_shadow_balance.clone(),
-            monitor::VCP_SHADOW_BALANCE,
-        ),
-        (scale_custom_cr_enhance.clone(), monitor::VCP_CR_ENHANCE),
-        (
-            scale_custom_color_enhance.clone(),
-            monitor::VCP_COLOR_ENHANCE,
-        ),
-        (scale_custom_super_res.clone(), monitor::VCP_SUPER_RES),
-        (scale_custom_low_blue_light.clone(), monitor::VCP_LOW_BLUE),
-        (scale_custom_red_gain.clone(), monitor::VCP_RED),
-        (scale_custom_green_gain.clone(), monitor::VCP_GREEN),
-        (scale_custom_blue_gain.clone(), monitor::VCP_BLUE),
-        (hue_scales_vector[0].clone(), monitor::HUE_CODES[0]),
-        (hue_scales_vector[1].clone(), monitor::HUE_CODES[1]),
-        (hue_scales_vector[2].clone(), monitor::HUE_CODES[2]),
-        (hue_scales_vector[3].clone(), monitor::HUE_CODES[3]),
-        (hue_scales_vector[4].clone(), monitor::HUE_CODES[4]),
-        (hue_scales_vector[5].clone(), monitor::HUE_CODES[5]),
-        (
-            saturation_scales_vector[0].clone(),
-            monitor::SATURATION_CODES[0],
-        ),
-        (
-            saturation_scales_vector[1].clone(),
-            monitor::SATURATION_CODES[1],
-        ),
-        (
-            saturation_scales_vector[2].clone(),
-            monitor::SATURATION_CODES[2],
-        ),
-        (
-            saturation_scales_vector[3].clone(),
-            monitor::SATURATION_CODES[3],
-        ),
-        (
-            saturation_scales_vector[4].clone(),
-            monitor::SATURATION_CODES[4],
-        ),
-        (
-            saturation_scales_vector[5].clone(),
-            monitor::SATURATION_CODES[5],
-        ),
-        (
-            scale_gaming_color_enhance.clone(),
-            monitor::VCP_COLOR_ENHANCE,
-        ),
-        (scale_gaming_cr_enhance.clone(), monitor::VCP_CR_ENHANCE),
-        (
-            scale_gaming_shadow_enhance.clone(),
-            monitor::VCP_SHADOW_BALANCE,
-        ),
-        (scale_gaming_super_res.clone(), monitor::VCP_SUPER_RES),
-        (scale_gaming_halo_control.clone(), monitor::VCP_HALO_CONTROL),
-    ];
-
-    // Collect switch bindings: (Switch, VCP code, active value)
-    let switch_binds: Vec<(Switch, u8, u16)> = vec![
-        (switch_rear_led.clone(), monitor::VCP_REAR_LED, 0),
-        (switch_quick_boot.clone(), monitor::VCP_QUICK_BOOT, 1),
-        (switch_gaming_async.clone(), monitor::VCP_ADAPTIVE_SYNC, 1),
-        (
-            switch_magnifier_night_vision.clone(),
-            monitor::VCP_MAGNIFIER_NV,
-            1,
-        ),
-        (switch_custom_dcr.clone(), monitor::VCP_DCR, 1),
-        (switch_alignment.clone(), monitor::VCP_ALIGNMENT, 1),
-        (switch_gaming_rush.clone(), monitor::VCP_GAME_RUSH, 2),
-    ];
-
-    // Collect expander bindings: (ExpanderRow, VCP code)
-    let expander_binds: Vec<(ExpanderRow, u8)> = vec![
-        (expander_fps_counter.clone(), monitor::VCP_FPS_COUNTER),
-        (expander_crosshair.clone(), monitor::VCP_CROSSHAIR),
-        (expander_stopwatch.clone(), monitor::VCP_STOPWATCH),
-        (expander_game_time.clone(), monitor::VCP_GAME_TIME),
-        (expander_magnifier.clone(), monitor::VCP_MAGNIFIER),
-        (expander_hawkeye.clone(), monitor::VCP_HAWKEYE),
-    ];
-
-    // Collect toggle bindings: (buttons, VCP code, offset)
-    let toggle_binds: Vec<(Vec<ToggleButton>, u8, u16)> = vec![
-        (
-            vec![
-                button_power_save_off.clone(),
-                button_power_save_lvl1.clone(),
-                button_power_save_lvl2.clone(),
-            ],
-            monitor::VCP_POWER_SAVING,
-            1,
-        ),
-        (
-            vec![
-                button_led_off.clone(),
-                button_led_lvl1.clone(),
-                button_led_lvl2.clone(),
-                button_led_lvl3.clone(),
-            ],
-            monitor::VCP_POWER_LED,
-            1,
-        ),
-        (
-            buttons_crosshair_shape.clone(),
-            monitor::VCP_CROSSHAIR_SHAPE,
-            1,
-        ),
-        (
-            buttons_stopwatch_time.clone(),
-            monitor::VCP_STOPWATCH_TIME,
-            1,
-        ),
-        (buttons_game_time_val.clone(), monitor::VCP_GAME_TIME_VAL, 1),
-        (
-            buttons_magnifier_size.clone(),
-            monitor::VCP_MAGNIFIER_SIZE,
-            1,
-        ),
-    ];
-
-    let toggle_value_binds: Vec<(Vec<ToggleButton>, u8, Vec<u16>)> = vec![
-        (
-            buttons_screen_size.clone(),
-            monitor::VCP_SCREEN_SIZE,
-            vec![0, 1, 2],
-        ),
-        (
-            buttons_fps_pos.clone(),
-            monitor::VCP_FPS_POS,
-            vec![0, 1, 2, 3],
-        ),
-        (
-            buttons_crosshair_color.clone(),
-            monitor::VCP_CROSSHAIR_COLOR,
-            vec![0, 1, 2, 3, 4, 5, 6, 7],
-        ),
-        (
-            buttons_stopwatch_pos.clone(),
-            monitor::VCP_STOPWATCH_POS,
-            vec![0, 1, 2, 3],
-        ),
-        (
-            buttons_game_time_pos.clone(),
-            monitor::VCP_GAME_TIME_POS,
-            vec![0, 1, 2, 3],
-        ),
-        (
-            buttons_magnifier_zoom.clone(),
-            monitor::VCP_MAGNIFIER_ZOOM,
-            vec![0, 1, 2],
-        ),
-        (
-            buttons_magnifier_pos.clone(),
-            monitor::VCP_MAGNIFIER_POS,
-            vec![1, 2, 5, 3, 4],
-        ),
-        (
-            buttons_hawkeye_size.clone(),
-            monitor::VCP_HAWKEYE_SIZE,
-            vec![0, 1, 2],
-        ),
-        (
-            buttons_hawkeye_pos.clone(),
-            monitor::VCP_HAWKEYE_POS,
-            vec![0, 1, 2, 3, 4],
-        ),
-        (
-            buttons_hawkeye_lvl.clone(),
-            monitor::VCP_HAWKEYE_LEVEL,
-            vec![0, 1, 2, 3, 4],
-        ),
-        (
-            buttons_gaming_local_dimming.clone(),
-            monitor::VCP_LOCAL_DIMMING,
-            monitor::LOCAL_DIMMING_VALUES.to_vec(),
-        ),
-        (
-            buttons_gaming_dyds.clone(),
-            monitor::VCP_DYDS,
-            monitor::DYDS_VALUES.to_vec(),
-        ),
-        (
-            buttons_gaming_night_vision.clone(),
-            monitor::VCP_NIGHT_VISION,
-            monitor::NIGHT_VISION_VALUES.to_vec(),
-        ),
-        (
-            buttons_gaming_dynamic_od.clone(),
-            monitor::VCP_DYNAMIC_OD,
-            monitor::DYNAMIC_OD_VALUES.to_vec(),
-        ),
-        (
-            buttons_gaming_hdr.clone(),
-            monitor::VCP_HDR,
-            monitor::HDR_VALUES.to_vec(),
-        ),
-    ];
-
-    let mut monitor_control_widgets: Vec<gtk4::Widget> = scale_binds
-        .iter()
-        .map(|(scale, _)| scale.clone().upcast())
-        .collect();
-    monitor_control_widgets.extend([
-        switch_audio_mute.clone().upcast(),
-        combo_input_source.clone().upcast(),
-        combo_output_range.clone().upcast(),
-        combo_osd_language.clone().upcast(),
-        combo_picture_mode.clone().upcast(),
-        button_profile_default.clone().upcast(),
-        button_profile_custom.clone().upcast(),
-        switch_rear_led.clone().upcast(),
-        button_power_off.clone().upcast(),
-        button_reset_colors.clone().upcast(),
-        button_reset_factory.clone().upcast(),
-    ]);
-    monitor_control_widgets.extend(
-        switch_binds
-            .iter()
-            .map(|(sw, _, _)| sw.clone().upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(
-        expander_binds
-            .iter()
-            .map(|(exp, _)| exp.clone().upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(toggle_binds.iter().flat_map(|(buttons, _, _)| {
-        buttons
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>())
-            .collect::<Vec<_>>()
-    }));
-    monitor_control_widgets.extend(toggle_value_binds.iter().flat_map(|(buttons, _, _)| {
-        buttons
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>())
-            .collect::<Vec<_>>()
-    }));
-    monitor_control_widgets.extend(
-        combo_custom_color_temp
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(
-        combo_custom_hdr
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(
-        combo_custom_gamma
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(
-        combo_custom_night_vision
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>()),
-    );
-    monitor_control_widgets.extend(
-        combo_custom_dynamic_od
-            .iter()
-            .cloned()
-            .map(|button| button.upcast::<gtk4::Widget>()),
-    );
-
-    let combo_picture_mode_ui = combo_picture_mode.clone();
-
-    glib::MainContext::default().spawn_local(glib::clone!(
-        #[strong]
-        splash,
-        #[strong]
-        splash_label,
-        #[strong]
-        window,
-        #[strong]
-        row_info_model,
-        #[strong]
-        row_info_resolution,
-        #[strong]
-        row_info_hz,
-        #[strong]
-        row_info_firmware,
-        #[strong]
-        row_info_usage,
-        #[strong]
-        switch_audio_mute,
-        #[strong]
-        combo_input_source,
-        #[strong]
-        combo_output_range,
-        #[strong]
-        combo_picture_mode_ui,
-        #[strong]
-        combo_osd_language,
-        #[strong]
-        combo_custom_color_temp,
-        #[strong]
-        combo_custom_hdr,
-        #[strong]
-        combo_custom_gamma,
-        #[strong]
-        combo_custom_night_vision,
-        #[strong]
-        combo_custom_dynamic_od,
-        #[strong]
-        combo_custom_dyds,
-        #[strong]
-        switch_custom_dcr,
-        #[strong]
-        buttons_gaming_hdr,
-        #[strong]
-        buttons_gaming_night_vision,
-        #[strong]
-        buttons_gaming_dynamic_od,
-        #[strong]
-        buttons_gaming_dyds,
-        #[strong]
-        button_profile_custom,
-        #[strong]
-        monitor_control_widgets,
-        #[strong]
-        init,
-        #[strong]
-        app_cfg,
-        #[strong]
-        startup_finished,
-        #[strong]
-        active_picture_mode,
-        #[strong]
-        active_picture_mode_has_custom,
-        #[strong]
-        current_monitor_name,
-        #[strong]
-        load_custom_profile_for_mode,
-        #[strong]
-        sync_color_temp_controls,
-        #[strong]
-        sync_gaming_constraints,
-        #[strong]
-        sync_dcr_constraints,
-        #[strong]
-        sync_picture_mode_controls,
-        #[strong]
-        lang_cell,
-        async move {
-            while let Ok(msg) = ui_rx.recv().await {
-                match msg {
-                    monitor::UiCmd::MonitorFound(info) => {
-                        let s = &info.settings;
-                        *current_monitor_name.borrow_mut() = info.name.clone();
-
-                        // Info rows
-                        row_info_model.set_subtitle(&info.name);
-                        row_info_resolution.set_subtitle(if info.resolution.is_empty() {
-                            "-"
-                        } else {
-                            &info.resolution
-                        });
-                        row_info_hz.set_subtitle(&format!("{} Hz", info.hz));
-                        row_info_firmware.set_subtitle(&info.firm);
-                        row_info_usage.set_subtitle(&format!(
-                            "{} h {} min",
-                            info.usage_mins / 60,
-                            info.usage_mins % 60
-                        ));
-
-                        // Scales
-                        for (scale, code) in &scale_binds {
-                            if let Some(&val) = s.get(code) {
-                                scale.set_value(val as f64);
-                            }
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_OUTPUT_RANGE) {
-                            combo_output_range.set_selected(monitor::vcp_to_combo_index(
-                                &monitor::OUTPUT_RANGE_VALUES[..],
-                                val,
-                            ));
-                        }
-
-                        // Color temp (special mapping)
-                        if let Some(&val) = s.get(&monitor::VCP_MODE)
-                            && let Some((mode_index, custom_active)) =
-                                monitor::picture_mode_from_vcp(val)
-                        {
-                            combo_picture_mode_ui.set_selected(mode_index as u32);
-                            active_picture_mode.set(mode_index as u16);
-                            active_picture_mode_has_custom
-                                .set(monitor::picture_mode_has_custom(mode_index));
-                            (sync_picture_mode_controls)(mode_index as u16, custom_active);
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_COLOR_TEMP) {
-                            activate_toggle_value(
-                                &combo_custom_color_temp,
-                                &monitor::COLOR_TEMP_VALUES[..],
-                                val,
-                            );
-                            sync_color_temp_controls();
-                        } else {
-                            sync_color_temp_controls();
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_HDR) {
-                            activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], val);
-                            activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], val);
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_NIGHT_VISION) {
-                            activate_toggle_value(
-                                &combo_custom_night_vision,
-                                &monitor::NIGHT_VISION_VALUES[..],
-                                val,
-                            );
-                            activate_toggle_value(
-                                &buttons_gaming_night_vision,
-                                &monitor::NIGHT_VISION_VALUES[..],
-                                val,
-                            );
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_DYNAMIC_OD) {
-                            activate_toggle_value(
-                                &combo_custom_dynamic_od,
-                                &monitor::DYNAMIC_OD_VALUES[..],
-                                val,
-                            );
-                            activate_toggle_value(
-                                &buttons_gaming_dynamic_od,
-                                &monitor::DYNAMIC_OD_VALUES[..],
-                                val,
-                            );
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_DYDS) {
-                            activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], val);
-                            activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], val);
-                        }
-
-                        if let Some(&val) = s.get(&monitor::VCP_GAMMA) {
-                            activate_toggle_value(
-                                &combo_custom_gamma,
-                                &monitor::GAMMA_VALUES[..],
-                                val,
-                            );
-                        }
-                        sync_dcr_constraints();
-
-                        // OSD language (actual values from MCCS capability list)
-                        if let Some(&val) = s.get(&monitor::VCP_OSD_LANG) {
-                            combo_osd_language.set_selected(monitor::vcp_to_combo_index(
-                                &monitor::OSD_LANGUAGE_VALUES[..],
-                                val,
-                            ));
-                        }
-
-                        // Input source uses MCCS values 15-18
-                        if let Some(&val) = s.get(&monitor::VCP_INPUT_SOURCE) {
-                            combo_input_source.set_selected(monitor::vcp_to_combo_index(
-                                &monitor::INPUT_SOURCE_VALUES[..],
-                                val,
-                            ));
-                        }
-
-                        // Switches
-                        for (sw, code, active_value) in &switch_binds {
-                            if let Some(&val) = s.get(code) {
-                                sw.set_active(val == *active_value);
-                            }
-                        }
-
-                        // Mute (HKC: 2=mute, 1=unmute)
-                        if let Some(&val) = s.get(&monitor::VCP_MUTE) {
-                            switch_audio_mute.set_active(val > 1);
-                        }
-
-                        // Expanders
-                        for (exp, code) in &expander_binds {
-                            if let Some(&val) = s.get(code) {
-                                exp.set_enable_expansion(val > 0);
-                            }
-                        }
-
-                        // Toggles
-                        for (btns, code, offset) in &toggle_binds {
-                            if let Some(&val) = s.get(code) {
-                                let idx = (val as i32) - (*offset as i32);
-                                if idx >= 0 && (idx as usize) < btns.len() {
-                                    btns[idx as usize].set_active(true);
-                                }
-                            }
-                        }
-
-                        for (btns, code, values) in &toggle_value_binds {
-                            if let Some(&val) = s.get(code)
-                                && let Some(idx) =
-                                    values.iter().position(|&mapped| mapped == val)
-                                && idx < btns.len()
-                            {
-                                btns[idx].set_active(true);
-                            }
-                        }
-
-                        // Done - unblock signals
-                        init.set(false);
-                        sync_gaming_constraints();
-                        (load_custom_profile_for_mode)(active_picture_mode.get());
-                        startup_finished.set(true);
-                        splash.close();
-                        if !app_cfg.borrow().start_minimized {
-                            window.present();
-                        }
-                    }
-                    monitor::UiCmd::Progress(msg) => {
-                        splash_label.set_label(&translate_startup_message(&lang_cell.get(), &msg));
-                    }
-                    monitor::UiCmd::Error(e) => {
-                        startup_finished.set(true);
-                        splash_label.set_label(&translate_startup_message(&lang_cell.get(), &e));
-                        if !splash.is_visible() {
-                            splash.present();
-                        }
-                        if e == "Monitor not found" {
-                            splash.close();
-                            if let Some(app) = window.application() {
-                                app.quit();
-                            }
-                        }
-                    }
-                    monitor::UiCmd::Settings(s) => {
-                        let previous_init = init.replace(true);
-                        for (scale, code) in &scale_binds {
-                            if let Some(&val) = s.get(code) {
-                                scale.set_value(val as f64);
-                            }
-                        }
-                        if let Some(&val) = s.get(&monitor::VCP_DCR) {
-                            switch_custom_dcr.set_active(val != 0);
-                        }
-                        init.set(previous_init);
-                        sync_dcr_constraints();
-                    }
-                    monitor::UiCmd::Busy(busy) => {
-                        for widget in &monitor_control_widgets {
-                            widget.set_sensitive(!busy);
-                        }
-                        if !busy {
-                            (sync_picture_mode_controls)(
-                                active_picture_mode.get(),
-                                button_profile_custom.is_active(),
-                            );
-                            sync_color_temp_controls();
-                            sync_gaming_constraints();
-                            sync_dcr_constraints();
-                        }
-                    }
-                }
-            }
-        }
-    ));
-
-    // --- UI -> WORKER ---
-
-    let tx = worker_tx.clone();
-
-    // ===== DISPLAY TAB =====
-
-    // Audio
-    wire_scale(&scale_audio_volume, &tx, monitor::VCP_VOLUME, true, &init);
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let switch_audio_mute_ref = switch_audio_mute.clone();
-        switch_audio_mute.connect_state_set(move |_, state| {
-            if init.get() || !switch_audio_mute_ref.is_sensitive() {
-                return glib::Propagation::Proceed;
-            }
-            let val = if state { 2 } else { 1 };
-            let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_MUTE, val));
-            glib::Propagation::Proceed
-        });
-    }
-
-    wire_switch_values(
-        &switch_rear_led,
-        &tx,
-        monitor::VCP_REAR_LED,
-        0,
-        1,
-        true,
-        &init,
-    );
-
-    // I/O & OSD
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        combo_input_source.connect_selected_notify(move |c| {
-            if init.get() {
-                return;
-            }
-            let idx = c.selected() as usize;
-            if idx < monitor::INPUT_SOURCE_VALUES.len() {
-                let _ = tx.send(WorkerCmd::Set(
-                    monitor::VCP_INPUT_SOURCE,
-                    monitor::INPUT_SOURCE_VALUES[idx],
-                ));
-            }
-        });
-    }
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        combo_output_range.connect_selected_notify(move |c| {
-            if init.get() || !c.is_sensitive() {
-                return;
-            }
-            let idx = c.selected() as usize;
-            if idx >= monitor::OUTPUT_RANGE_VALUES.len() {
-                return;
-            }
-            let val = monitor::OUTPUT_RANGE_VALUES[idx];
-            if val == 0 {
-                let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, 0));
-            } else {
-                // Monitor requires reset to Auto (0) before switching to another mode
-                let _ = tx.send(WorkerCmd::Set(monitor::VCP_OUTPUT_RANGE, 0));
+        let tx = a.tx().clone();
+        b.set_sender(VCP_OUTPUT_RANGE, move |value| {
+            let _ = tx.send(WorkerCmd::Set(VCP_OUTPUT_RANGE, 0));
+            if value != 0 {
                 let tx = tx.clone();
                 glib::timeout_add_local_once(Duration::from_millis(250), move || {
-                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, val));
+                    let _ = tx.send(WorkerCmd::Set(VCP_OUTPUT_RANGE, value));
                 });
             }
         });
     }
-    wire_switch_values(
-        &switch_quick_boot,
-        &tx,
-        monitor::VCP_QUICK_BOOT,
-        1,
-        0,
-        true,
-        &init,
-    );
+    // DyDs (except Off) and DCR exclude each other: switch DCR off first.
     {
-        let tx = tx.clone();
-        let init = init.clone();
-        combo_osd_language.connect_selected_notify(move |c| {
-            if init.get() {
-                return;
-            }
-            let idx = c.selected() as usize;
-            if idx < monitor::OSD_LANGUAGE_VALUES.len() {
-                let _ = tx.send(WorkerCmd::Set(
-                    monitor::VCP_OSD_LANG,
-                    monitor::OSD_LANGUAGE_VALUES[idx],
-                ));
-            }
-        });
-    }
-    wire_scale(&scale_osd_time, &tx, monitor::VCP_OSD_TIME, true, &init);
-    wire_scale(
-        &scale_osd_h_position,
-        &tx,
-        monitor::VCP_OSD_H_POS,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_osd_v_position,
-        &tx,
-        monitor::VCP_OSD_V_POS,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_osd_transparency,
-        &tx,
-        monitor::VCP_OSD_TRANS,
-        true,
-        &init,
-    );
-
-    // Power Saving (Off=0, Lvl1=1, Lvl2=2)
-    {
-        let ps = vec![
-            button_power_save_off.clone(),
-            button_power_save_lvl1.clone(),
-            button_power_save_lvl2.clone(),
-        ];
-        wire_toggles(&ps, &tx, monitor::VCP_POWER_SAVING, true, 0, &init);
-    }
-
-    // Power LED (Off=1, Lvl1=2, Lvl2=3, Lvl3=4)
-    {
-        let pl = vec![
-            button_led_off.clone(),
-            button_led_lvl1.clone(),
-            button_led_lvl2.clone(),
-            button_led_lvl3.clone(),
-        ];
-        wire_toggles(&pl, &tx, monitor::VCP_POWER_LED, true, 1, &init);
-    }
-
-    // Resets & Power Off
-    {
-        let tx = tx.clone();
-        let window = window.clone();
-        let lang_cell = lang_cell.clone();
-        button_power_off.connect_clicked(move |_| {
-            let lang = lang_cell.get();
-            let tx = tx.clone();
-            confirm_destructive_action(
-                &window,
-                &tr(&lang, "confirm_power_off_title"),
-                &tr(&lang, "confirm_power_off_body"),
-                &tr(&lang, "cancel_btn"),
-                &tr(&lang, "power_off"),
-                move || {
-                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_DPMS, 0x04));
-                },
-            );
-        });
-    }
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let window = window.clone();
-        let lang_cell = lang_cell.clone();
-        let scale_custom_brightness = scale_custom_brightness.clone();
-        let scale_custom_contrast = scale_custom_contrast.clone();
-        let scale_custom_red_gain = scale_custom_red_gain.clone();
-        let scale_custom_green_gain = scale_custom_green_gain.clone();
-        let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-        button_reset_colors.connect_clicked(move |_| {
-            let lang = lang_cell.get();
-            let tx = tx.clone();
-            let init = init.clone();
-            let scale_custom_brightness = scale_custom_brightness.clone();
-            let scale_custom_contrast = scale_custom_contrast.clone();
-            let scale_custom_red_gain = scale_custom_red_gain.clone();
-            let scale_custom_green_gain = scale_custom_green_gain.clone();
-            let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-            confirm_destructive_action(
-                &window,
-                &tr(&lang, "confirm_reset_colors_title"),
-                &tr(&lang, "confirm_reset_colors_body"),
-                &tr(&lang, "cancel_btn"),
-                &tr(&lang, "reset_btn"),
-                move || {
-                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_COLOR, 1));
-
-                    let previous_init = init.replace(true);
-                    scale_custom_brightness.set_value(25.0);
-                    scale_custom_contrast.set_value(50.0);
-                    scale_custom_red_gain.set_value(50.0);
-                    scale_custom_green_gain.set_value(50.0);
-                    scale_custom_blue_gain.set_value(50.0);
-                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
-                        high_button.set_active(true);
-                    }
-                    init.set(previous_init);
-
-                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
-                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
-                    let _ = tx.send(WorkerCmd::SetSave(
-                        monitor::VCP_LOCAL_DIMMING,
-                        monitor::LOCAL_DIMMING_VALUES[4],
-                    ));
-                    for code in [
-                        monitor::VCP_USER1_RED,
-                        monitor::VCP_USER1_GREEN,
-                        monitor::VCP_USER1_BLUE,
-                        monitor::VCP_USER2_RED,
-                        monitor::VCP_USER2_GREEN,
-                        monitor::VCP_USER2_BLUE,
-                        monitor::VCP_USER3_RED,
-                        monitor::VCP_USER3_GREEN,
-                        monitor::VCP_USER3_BLUE,
-                    ] {
-                        let _ = tx.send(WorkerCmd::SetSave(code, 50));
-                    }
-                },
-            );
-        });
-    }
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let window = window.clone();
-        let lang_cell = lang_cell.clone();
-        let scale_custom_brightness = scale_custom_brightness.clone();
-        let scale_custom_contrast = scale_custom_contrast.clone();
-        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-        button_reset_settings.connect_clicked(move |_| {
-            let lang = lang_cell.get();
-            let tx = tx.clone();
-            let init = init.clone();
-            let scale_custom_brightness = scale_custom_brightness.clone();
-            let scale_custom_contrast = scale_custom_contrast.clone();
-            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-            confirm_destructive_action(
-                &window,
-                &tr(&lang, "confirm_reset_settings_title"),
-                &tr(&lang, "confirm_reset_settings_body"),
-                &tr(&lang, "cancel_btn"),
-                &tr(&lang, "reset_btn"),
-                move || {
-                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_BC, 1));
-                    let previous_init = init.replace(true);
-                    scale_custom_brightness.set_value(25.0);
-                    scale_custom_contrast.set_value(50.0);
-                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
-                        high_button.set_active(true);
-                    }
-                    init.set(previous_init);
-
-                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
-                    let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
-                    let _ = tx.send(WorkerCmd::SetSave(
-                        monitor::VCP_LOCAL_DIMMING,
-                        monitor::LOCAL_DIMMING_VALUES[4],
-                    ));
-                },
-            );
-        });
-    }
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let window = window.clone();
-        let lang_cell = lang_cell.clone();
-        let scale_osd_time = scale_osd_time.clone();
-        let scale_osd_h_position = scale_osd_h_position.clone();
-        let scale_osd_v_position = scale_osd_v_position.clone();
-        let scale_osd_transparency = scale_osd_transparency.clone();
-        let switch_audio_mute = switch_audio_mute.clone();
-        let scale_audio_volume = scale_audio_volume.clone();
-        let switch_rear_led = switch_rear_led.clone();
-        let combo_output_range = combo_output_range.clone();
-        let switch_quick_boot = switch_quick_boot.clone();
-        let combo_osd_language = combo_osd_language.clone();
-        let scale_custom_brightness = scale_custom_brightness.clone();
-        let scale_custom_contrast = scale_custom_contrast.clone();
-        let scale_custom_sharpness = scale_custom_sharpness.clone();
-        let scale_custom_color_enhance = scale_custom_color_enhance.clone();
-        let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
-        let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
-        let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
-        let scale_gaming_halo_control = scale_gaming_halo_control.clone();
-        let scale_gaming_super_res = scale_gaming_super_res.clone();
-        let switch_custom_dcr = switch_custom_dcr.clone();
-        let switch_gaming_async = switch_gaming_async.clone();
-        let combo_custom_color_temp = combo_custom_color_temp.clone();
-        let combo_custom_gamma = combo_custom_gamma.clone();
-        let combo_custom_hdr = combo_custom_hdr.clone();
-        let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
-        let combo_custom_dyds = combo_custom_dyds.clone();
-        let combo_custom_night_vision = combo_custom_night_vision.clone();
-        let buttons_gaming_hdr = buttons_gaming_hdr.clone();
-        let buttons_gaming_dyds = buttons_gaming_dyds.clone();
-        let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
-        let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
-        let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-        let button_power_save_off = button_power_save_off.clone();
-        let button_led_lvl2 = button_led_lvl2.clone();
-        let combo_picture_mode = combo_picture_mode.clone();
-        let button_profile_default = button_profile_default.clone();
-        let button_profile_custom = button_profile_custom.clone();
-        let custom_revealer = custom_revealer.clone();
-        button_reset_factory.connect_clicked(move |_| {
-            let lang = lang_cell.get();
-            let tx = tx.clone();
-            let init = init.clone();
-            let scale_osd_time = scale_osd_time.clone();
-            let scale_osd_h_position = scale_osd_h_position.clone();
-            let scale_osd_v_position = scale_osd_v_position.clone();
-            let scale_osd_transparency = scale_osd_transparency.clone();
-            let switch_audio_mute = switch_audio_mute.clone();
-            let scale_audio_volume = scale_audio_volume.clone();
-            let switch_rear_led = switch_rear_led.clone();
-            let combo_output_range = combo_output_range.clone();
-            let switch_quick_boot = switch_quick_boot.clone();
-            let combo_osd_language = combo_osd_language.clone();
-            let scale_custom_brightness = scale_custom_brightness.clone();
-            let scale_custom_contrast = scale_custom_contrast.clone();
-            let scale_custom_sharpness = scale_custom_sharpness.clone();
-            let scale_custom_color_enhance = scale_custom_color_enhance.clone();
-            let scale_custom_cr_enhance = scale_custom_cr_enhance.clone();
-            let scale_custom_low_blue_light = scale_custom_low_blue_light.clone();
-            let scale_custom_shadow_balance = scale_custom_shadow_balance.clone();
-            let scale_gaming_halo_control = scale_gaming_halo_control.clone();
-            let scale_gaming_super_res = scale_gaming_super_res.clone();
-            let switch_custom_dcr = switch_custom_dcr.clone();
-            let switch_gaming_async = switch_gaming_async.clone();
-            let combo_custom_color_temp = combo_custom_color_temp.clone();
-            let combo_custom_gamma = combo_custom_gamma.clone();
-            let combo_custom_hdr = combo_custom_hdr.clone();
-            let combo_custom_dynamic_od = combo_custom_dynamic_od.clone();
-            let combo_custom_dyds = combo_custom_dyds.clone();
-            let combo_custom_night_vision = combo_custom_night_vision.clone();
-            let buttons_gaming_hdr = buttons_gaming_hdr.clone();
-            let buttons_gaming_dyds = buttons_gaming_dyds.clone();
-            let buttons_gaming_dynamic_od = buttons_gaming_dynamic_od.clone();
-            let buttons_gaming_night_vision = buttons_gaming_night_vision.clone();
-            let buttons_gaming_local_dimming = buttons_gaming_local_dimming.clone();
-            let button_power_save_off = button_power_save_off.clone();
-            let button_led_lvl2 = button_led_lvl2.clone();
-            let combo_picture_mode = combo_picture_mode.clone();
-            let button_profile_default = button_profile_default.clone();
-            let button_profile_custom = button_profile_custom.clone();
-            let custom_revealer = custom_revealer.clone();
-            confirm_destructive_action(
-                &window,
-                &tr(&lang, "confirm_reset_factory_title"),
-                &tr(&lang, "confirm_reset_factory_body"),
-                &tr(&lang, "cancel_btn"),
-                &tr(&lang, "reset_btn"),
-                move || {
-                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_RESET_FACTORY, 1));
-
-                    let previous_init = init.replace(true);
-                    scale_osd_time.set_value(10.0);
-                    scale_osd_h_position.set_value(50.0);
-                    scale_osd_v_position.set_value(50.0);
-                    scale_osd_transparency.set_value(0.0);
-                    switch_audio_mute.set_active(false);
-                    scale_audio_volume.set_value(50.0);
-                    switch_rear_led.set_active(true);
-                    combo_output_range.set_selected(0);
-                    switch_quick_boot.set_active(false);
-                    combo_osd_language.set_selected(0);
-                    scale_custom_brightness.set_value(25.0);
-                    scale_custom_contrast.set_value(50.0);
-                    scale_custom_sharpness.set_value(0.0);
-                    scale_custom_color_enhance.set_value(0.0);
-                    scale_custom_cr_enhance.set_value(0.0);
-                    scale_custom_low_blue_light.set_value(0.0);
-                    scale_custom_shadow_balance.set_value(50.0);
-                    scale_gaming_halo_control.set_value(0.0);
-                    scale_gaming_super_res.set_value(0.0);
-                    switch_custom_dcr.set_active(false);
-                    switch_gaming_async.set_active(false);
-                    activate_toggle_value(&combo_custom_color_temp, &monitor::COLOR_TEMP_VALUES[..], monitor::COLOR_TEMP_VALUES[0]);
-                    activate_toggle_value(&combo_custom_gamma, &monitor::GAMMA_VALUES[..], monitor::GAMMA_VALUES[2]);
-                    activate_toggle_value(&combo_custom_hdr, &monitor::HDR_VALUES[..], monitor::HDR_VALUES[0]);
-                    activate_toggle_value(&buttons_gaming_hdr, &monitor::HDR_VALUES[..], monitor::HDR_VALUES[0]);
-                    activate_toggle_value(&combo_custom_dyds, &monitor::DYDS_VALUES[..], monitor::DYDS_VALUES[0]);
-                    activate_toggle_value(&buttons_gaming_dyds, &monitor::DYDS_VALUES[..], monitor::DYDS_VALUES[0]);
-                    activate_toggle_value(&combo_custom_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], monitor::DYNAMIC_OD_VALUES[0]);
-                    activate_toggle_value(&buttons_gaming_dynamic_od, &monitor::DYNAMIC_OD_VALUES[..], monitor::DYNAMIC_OD_VALUES[0]);
-                    activate_toggle_value(&combo_custom_night_vision, &monitor::NIGHT_VISION_VALUES[..], monitor::NIGHT_VISION_VALUES[0]);
-                    activate_toggle_value(&buttons_gaming_night_vision, &monitor::NIGHT_VISION_VALUES[..], monitor::NIGHT_VISION_VALUES[0]);
-                    if let Some(high_button) = buttons_gaming_local_dimming.get(4) {
-                        high_button.set_active(true);
-                    }
-                    button_power_save_off.set_active(true);
-                    button_led_lvl2.set_active(true);
-                    combo_picture_mode.set_selected(0);
-                    button_profile_default.set_active(true);
-                    button_profile_custom.set_active(false);
-                    custom_revealer.set_reveal_child(true);
-                    custom_revealer.set_sensitive(false);
-                    init.set(previous_init);
-
-                    let tx = tx.clone();
-                    glib::timeout_add_local_once(Duration::from_millis(1500), move || {
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_TIME, 10));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_H_POS, 50));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_V_POS, 50));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_TRANS, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OSD_LANG, 0x02));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_MUTE, 1));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_VOLUME, 50));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_OUTPUT_RANGE, monitor::OUTPUT_RANGE_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_QUICK_BOOT, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_REAR_LED, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_POWER_LED, 3));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_POWER_SAVING, monitor::POWER_SAVING_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_BRIGHTNESS, 25));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CONTRAST, 50));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SHARPNESS, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_COLOR_TEMP, monitor::COLOR_TEMP_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_GAMMA, monitor::GAMMA_VALUES[2]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_HDR, monitor::HDR_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_ADAPTIVE_SYNC, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(
-                            monitor::VCP_LOCAL_DIMMING,
-                            monitor::LOCAL_DIMMING_VALUES[4],
-                        ));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DYDS, monitor::DYDS_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_LOW_BLUE, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_COLOR_ENHANCE, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CR_ENHANCE, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SHADOW_BALANCE, 50));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_NIGHT_VISION, monitor::NIGHT_VISION_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_SUPER_RES, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DYNAMIC_OD, monitor::DYNAMIC_OD_VALUES[0]));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_HALO_CONTROL, 0));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CROSSHAIR, 1));
-                        let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_CROSSHAIR_COLOR, 8));
-                        let _ = tx.send(WorkerCmd::Set(
-                            monitor::VCP_MODE,
-                            monitor::PICTURE_MODE_DEFAULT_VALUES[0],
-                        ));
-                    });
-                },
-            );
-        });
-    }
-    // ===== PROFILE TAB =====
-
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let active_picture_mode = active_picture_mode.clone();
-        let active_picture_mode_has_custom = active_picture_mode_has_custom.clone();
-        let app_cfg = app_cfg.clone();
-        let persist_current_custom_profile_state = persist_current_custom_profile_state.clone();
-        let load_custom_profile_for_mode = load_custom_profile_for_mode.clone();
-        let button_profile_custom = button_profile_custom.clone();
-        combo_picture_mode.connect_selected_notify(move |c| {
-            let new_mode = c.selected() as u16;
-
-            let mut cfg = app_cfg.borrow().clone();
-            cfg.last_picture_mode = Some(new_mode);
-            let _ = app_settings::save(&cfg);
-            *app_cfg.borrow_mut() = cfg;
-
-            if init.get() {
-                active_picture_mode.set(new_mode);
-                active_picture_mode_has_custom
-                    .set(monitor::picture_mode_has_custom(new_mode as usize));
-                return;
-            }
-
-            (persist_current_custom_profile_state)();
-            active_picture_mode.set(new_mode);
-            active_picture_mode_has_custom.set(monitor::picture_mode_has_custom(new_mode as usize));
-            let requested_custom =
-                active_picture_mode_has_custom.get() && button_profile_custom.is_active();
-            if let Some(mode_value) =
-                monitor::picture_mode_vcp_value(new_mode as usize, requested_custom)
+        let bindings = Rc::downgrade(&a.bindings);
+        let tx = a.tx().clone();
+        b.set_sender(VCP_DYDS, move |value| {
+            if let Some(bindings) = bindings.upgrade()
+                && value != DYDS_VALUES[0]
+                && bindings.get(VCP_DCR) == Some(1)
             {
-                let _ = tx.send(WorkerCmd::Set(monitor::VCP_MODE, mode_value));
+                let _ = tx.send(WorkerCmd::Set(VCP_DCR, 0));
+                bindings.apply(&HashMap::from([(VCP_DCR, 0)]), false);
             }
-            (load_custom_profile_for_mode)(new_mode);
+            let _ = tx.send(WorkerCmd::Set(VCP_DYDS, value));
         });
     }
-    wire_scale(
-        &scale_custom_brightness,
-        &tx,
-        monitor::VCP_BRIGHTNESS,
-        false,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_contrast,
-        &tx,
-        monitor::VCP_CONTRAST,
-        false,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_sharpness,
-        &tx,
-        monitor::VCP_SHARPNESS,
-        false,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_shadow_balance,
-        &tx,
-        monitor::VCP_SHADOW_BALANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_cr_enhance,
-        &tx,
-        monitor::VCP_CR_ENHANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_color_enhance,
-        &tx,
-        monitor::VCP_COLOR_ENHANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_super_res,
-        &tx,
-        monitor::VCP_SUPER_RES,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_custom_low_blue_light,
-        &tx,
-        monitor::VCP_LOW_BLUE,
-        false,
-        &init,
-    );
+}
 
-    // Color temperature (special mapping)
+/// Picture mode combo and the Default/Custom toggle, both written as VCP 0x22.
+fn setup_picture_mode(a: &Rc<App>) {
+    refresh_picture_models(a);
     {
-        let tx = tx.clone();
-        let init_c = init.clone();
-        let sync_color_temp_controls = sync_color_temp_controls.clone();
-        let scale_custom_red_gain = scale_custom_red_gain.clone();
-        let scale_custom_green_gain = scale_custom_green_gain.clone();
-        let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-        for (idx, button) in combo_custom_color_temp.iter().enumerate() {
-            let tx = tx.clone();
-            let init_c = init_c.clone();
-            let sync_color_temp_controls = sync_color_temp_controls.clone();
-            let scale_custom_red_gain = scale_custom_red_gain.clone();
-            let scale_custom_green_gain = scale_custom_green_gain.clone();
-            let scale_custom_blue_gain = scale_custom_blue_gain.clone();
-            button.connect_toggled(move |button| {
-                if !button.is_active() {
-                    return;
-                }
+        let combo: adw::ComboRow = a.ui.get("picture_mode");
+        let a2 = a.clone();
+        combo.connect_selected_notify(move |combo| {
+            if bindings::suppressed() {
+                return;
+            }
+            let Some(&mode) = a2.picture_order.borrow().get(combo.selected() as usize) else { return };
+            let custom = a2.ui.get::<adw::ToggleGroup>("profile_variant").active() == 1;
+            if let Some(value) = monitor::picture_mode_vcp_value(mode as usize, custom) {
+                start_profile_load(&a2);
+                a2.bindings.local_change(monitor::VCP_MODE, value);
+            }
+        });
+    }
+    let variant: adw::ToggleGroup = a.ui.get("profile_variant");
+    let a2 = a.clone();
+    variant.connect_active_notify(move |group| {
+        if bindings::suppressed() {
+            return;
+        }
+        let mode = a2
+            .bindings
+            .get(monitor::VCP_MODE)
+            .and_then(monitor::picture_mode_from_vcp)
+            .map(|(mode, _)| mode)
+            .unwrap_or(0);
+        if let Some(value) = monitor::picture_mode_vcp_value(mode, group.active() == 1) {
+            start_profile_load(&a2);
+            a2.bindings.local_change(monitor::VCP_MODE, value);
+        }
+    });
+}
 
-                sync_color_temp_controls();
-                if init_c.get() {
-                    return;
-                }
-                if idx < monitor::COLOR_TEMP_VALUES.len() {
-                    let color_temp = monitor::COLOR_TEMP_VALUES[idx];
-                    let _ = tx.send(WorkerCmd::Set(monitor::VCP_COLOR_TEMP, color_temp));
+/// A profile change is being carried out: the profile controls stay locked until its settings are read (at most
+/// 25 seconds, in case the monitor never answers).
+fn start_profile_load(a: &Rc<App>) {
+    a.profile_loading.set(true);
+    let generation = a.profile_load_generation.get().wrapping_add(1);
+    a.profile_load_generation.set(generation);
+    let a2 = a.clone();
+    glib::timeout_add_local_once(Duration::from_secs(25), move || {
+        if a2.profile_load_generation.get() == generation {
+            finish_profile_load(&a2);
+        }
+    });
+    sync_state(a);
+}
 
-                    if let Some((red_code, green_code, blue_code)) =
-                        monitor::color_temp_rgb_codes(color_temp)
-                    {
-                        let _ = tx.send(WorkerCmd::Set(
-                            red_code,
-                            scale_custom_red_gain.value() as u16,
-                        ));
-                        let _ = tx.send(WorkerCmd::Set(
-                            green_code,
-                            scale_custom_green_gain.value() as u16,
-                        ));
-                        let _ = tx.send(WorkerCmd::Set(
-                            blue_code,
-                            scale_custom_blue_gain.value() as u16,
-                        ));
+fn finish_profile_load(a: &Rc<App>) {
+    if a.profile_loading.replace(false) {
+        sync_state(a);
+    }
+}
+
+/// Fills the picture mode combo.
+fn refresh_picture_models(a: &Rc<App>) {
+    let order: Vec<u16> = (0..monitor::PICTURE_MODE_NAMES.len() as u16).collect();
+    let names: Vec<&str> = order.iter().map(|&mode| monitor::PICTURE_MODE_NAMES[mode as usize]).collect();
+    *a.picture_order.borrow_mut() = order;
+    bindings::suppress(|| {
+        a.ui.get::<adw::ComboRow>("picture_mode").set_model(Some(&gtk4::StringList::new(&names)));
+    });
+    show_picture_mode(a);
+}
+
+/// Shows the active picture mode (from VCP 0x22) in the combos, the toggle, the star and the tray.
+fn show_picture_mode(a: &Rc<App>) {
+    let Some((mode, custom)) = a.bindings.get(monitor::VCP_MODE).and_then(monitor::picture_mode_from_vcp) else {
+        return;
+    };
+    let index = a
+        .picture_order
+        .borrow()
+        .iter()
+        .position(|&candidate| candidate as usize == mode)
+        .map(|index| index as u32)
+        .unwrap_or(gtk4::INVALID_LIST_POSITION);
+    bindings::suppress(|| {
+        let combo: adw::ComboRow = a.ui.get("picture_mode");
+        if combo.selected() != index {
+            combo.set_selected(index);
+        }
+        let variant: adw::ToggleGroup = a.ui.get("profile_variant");
+        variant.set_active(custom as u32);
+        if let Some(star) = a.picture_star.borrow().as_ref() {
+            star.set_active(a.cfg.borrow().is_favorite_picture_mode(mode as u16));
+        }
+    });
+    let changed = a.tray_active_mode.lock().map(|mut active| active.replace(mode as u16) != Some(mode as u16));
+    if changed.unwrap_or(false) {
+        a.refresh_tray();
+    }
+}
+
+/// RGB gains show and change the User 1-3 set of the selected color temperature.
+fn setup_color_temp_rgb(a: &Rc<App>) {
+    for (channel, id) in ["adj_red", "adj_green", "adj_blue"].into_iter().enumerate() {
+        let adj: gtk4::Adjustment = a.ui.get(id);
+        let a2 = a.clone();
+        adj.connect_value_changed(move |adj| {
+            if bindings::suppressed() {
+                return;
+            }
+            let Some(temp) = a2.bindings.get(monitor::VCP_COLOR_TEMP) else { return };
+            let Some(codes) = monitor::color_temp_rgb_codes(temp) else { return };
+            let code = [codes.0, codes.1, codes.2][channel];
+            a2.bindings.slider_change(code, adj.value().round() as u16);
+        });
+    }
+}
+
+/// With Color Enhance on, the monitor sets the six saturation axes itself (and locks them): the sliders show those
+/// values. When it goes back to 0 the saturation the user had set before is restored (and sent to the monitor).
+fn show_saturation(a: &Rc<App>) {
+    let level = a.bindings.get(monitor::VCP_COLOR_ENHANCE).unwrap_or(0);
+    let was_on = a.color_enhance_level.replace(level) > 0;
+    let current = |index: usize| a.bindings.get(monitor::SATURATION_CODES[index]);
+    let forced = monitor::color_enhance_saturation(level);
+    let values: [Option<u16>; 6] = if let Some(forced) = forced {
+        forced.map(Some)
+    } else if was_on && let Some(saved) = *a.user_saturation.borrow() {
+        for (index, code) in monitor::SATURATION_CODES.into_iter().enumerate() {
+            if current(index) != Some(saved[index]) {
+                a.bindings.local_change(code, saved[index]);
+            }
+        }
+        saved.map(Some)
+    } else {
+        // Free sliders: remember what the user set, to restore it after Color Enhance.
+        let now: [Option<u16>; 6] = std::array::from_fn(current);
+        if let [Some(r), Some(g), Some(b), Some(c), Some(m), Some(y)] = now {
+            *a.user_saturation.borrow_mut() = Some([r, g, b, c, m, y]);
+        }
+        now
+    };
+    // Free sliders are left alone while one is being dragged; locked ones always follow Color Enhance.
+    if forced.is_none() && bindings::pointer_down() {
+        return;
+    }
+    let ids = ["adj_sat_red", "adj_sat_green", "adj_sat_blue", "adj_sat_cyan", "adj_sat_magenta", "adj_sat_yellow"];
+    bindings::suppress(|| {
+        for (id, value) in ids.into_iter().zip(values) {
+            if let Some(value) = value {
+                a.ui.get::<gtk4::Adjustment>(id).set_value(value as f64);
+            }
+        }
+    });
+}
+
+fn show_color_temp_rgb(a: &Rc<App>) {
+    if bindings::pointer_down() {
+        return;
+    }
+    let Some(temp) = a.bindings.get(monitor::VCP_COLOR_TEMP) else { return };
+    let values = match monitor::builtin_color_temp_rgb(temp) {
+        Some((r, g, b)) => Some([r, g, b]),
+        None => monitor::color_temp_rgb_codes(temp).and_then(|(r, g, b)| {
+            Some([a.bindings.get(r)?, a.bindings.get(g)?, a.bindings.get(b)?])
+        }),
+    };
+    let Some(values) = values else { return };
+    bindings::suppress(|| {
+        for (id, value) in ["adj_red", "adj_green", "adj_blue"].into_iter().zip(values) {
+            a.ui.get::<gtk4::Adjustment>(id).set_value(value as f64);
+        }
+    });
+}
+
+/// Buttons that send an action: PIP, power, resets.
+fn setup_actions_rows(a: &Rc<App>) {
+    for (id, code) in [("pip_swap", monitor::VCP_PIP_SWAP), ("pip_reset", monitor::VCP_PIP_RESET)] {
+        let tx = a.tx().clone();
+        a.ui.get::<adw::ButtonRow>(id).connect_activated(move |_| {
+            let _ = tx.send(WorkerCmd::Set(code, 1));
+        });
+    }
+    let confirm = |id: &str, title: &'static str, body: &'static str, action: &'static str, code: u8, value: u16| {
+        let a2 = a.clone();
+        a.ui.get::<adw::ButtonRow>(id).connect_activated(move |_| {
+            let lang = a2.lang();
+            let dialog = adw::AlertDialog::new(Some(&tr(&lang, title)), Some(&tr(&lang, body)));
+            dialog.add_responses(&[("cancel", &tr(&lang, "cancel_btn")), ("confirm", &tr(&lang, action))]);
+            dialog.set_response_appearance("confirm", adw::ResponseAppearance::Destructive);
+            dialog.set_default_response(Some("cancel"));
+            dialog.set_close_response("cancel");
+            let tx = a2.tx().clone();
+            dialog.connect_response(Some("confirm"), move |_, _| {
+                let _ = tx.send(WorkerCmd::Set(code, value));
+            });
+            dialog.present(Some(&a2.ui.window));
+        });
+    };
+    confirm(
+        "power_off",
+        "confirm_power_off_title",
+        "confirm_power_off_body",
+        "power_off",
+        monitor::VCP_DPMS,
+        monitor::values::POWER_OFF,
+    );
+    confirm(
+        "reset_colors",
+        "confirm_reset_colors_title",
+        "confirm_reset_colors_body",
+        "reset_btn",
+        monitor::VCP_RESET_COLOR,
+        1,
+    );
+    confirm(
+        "reset_brightness",
+        "confirm_reset_settings_title",
+        "confirm_reset_settings_body",
+        "reset_btn",
+        monitor::VCP_RESET_BC,
+        1,
+    );
+    confirm(
+        "reset_factory",
+        "confirm_reset_factory_title",
+        "confirm_reset_factory_body",
+        "reset_btn",
+        monitor::VCP_RESET_FACTORY,
+        1,
+    );
+}
+
+/// Updates everything that depends on several settings: availability of controls, picture mode, RGB, tray.
+fn sync_state(a: &Rc<App>) {
+    use monitor::*;
+    let state = a.bindings.state();
+    let get = |code: u8| state.get(&code).copied();
+    let mut allowed: HashMap<u8, bool> = HashMap::new();
+    let mut allow = |code: u8, ok: bool| {
+        *allowed.entry(code).or_insert(true) &= ok;
+    };
+
+    // Picture profile: the table settings can only be changed in a Custom profile.
+    let custom = get(VCP_MODE).is_none_or(|mode| is_custom_profile(mode as u8));
+    let loading = a.profile_loading.get();
+    for &code in PROFILE_LOCKED {
+        allow(code, custom && !loading);
+    }
+
+    // Game modes and overlays.
+    let wide = get(VCP_SCREEN_SIZE) != Some(1);
+    let adaptive = get(VCP_ADAPTIVE_SYNC) == Some(1);
+    let dyds_ull = get(VCP_DYDS).is_some_and(|value| value >= DYDS_VALUES[4]);
+    let local_dimming = get(VCP_LOCAL_DIMMING).is_some_and(|value| value > LOCAL_DIMMING_VALUES[0]);
+    let dcr = get(VCP_DCR) == Some(1);
+    let magnifier = get(VCP_MAGNIFIER) == Some(1);
+    let hawkeye = get(VCP_HAWKEYE) == Some(1);
+    // Firmware 2025-09-20 runs DyDs with Adaptive-Sync. HawkEye works with Adaptive-Sync, the magnifier does not.
+    let dyds_with_vrr = a.cfg.borrow().firmware_package.dyds_with_adaptive_sync();
+    allow(VCP_ADAPTIVE_SYNC, wide);
+    allow(VCP_DYDS, wide && (dyds_with_vrr || !adaptive));
+    allow(VCP_DYNAMIC_OD, wide);
+    allow(VCP_MAGNIFIER, wide && !adaptive && !hawkeye);
+    allow(VCP_HAWKEYE, wide && !magnifier);
+    allow(VCP_HALO_CONTROL, wide && local_dimming && !dyds_ull && !dcr);
+    allow(VCP_LOCAL_DIMMING, !dyds_ull && !dcr);
+    allow(VCP_DCR, !local_dimming);
+    for code in [VCP_BRIGHTNESS, VCP_CONTRAST, VCP_SHADOW_BALANCE] {
+        allow(code, !dcr);
+    }
+    let color_enhance = get(VCP_COLOR_ENHANCE).is_some_and(|value| value > 0);
+    for code in SATURATION_CODES {
+        allow(code, !color_enhance);
+    }
+
+    // PIP/PBP: the monitor switches some features off; position and size only in PIP.
+    let pip = get(VCP_PIP_MODE).unwrap_or(values::PIP_OFF);
+    for &code in PIP_DISABLED_CODES {
+        allow(code, pip == values::PIP_OFF);
+    }
+    allow(VCP_PIP_SOURCE, pip != values::PIP_OFF);
+    allow(VCP_AUDIO_SOURCE, pip != values::PIP_OFF);
+    allow(VCP_PIP_POSITION, pip == 1);
+    allow(VCP_PIP_SIZE, pip == 1);
+    a.ui.get::<adw::ButtonRow>("pip_swap").set_sensitive(pip != values::PIP_OFF);
+
+    // LED effects: only with the LED on; some modes lock colors.
+    let led_on = get(VCP_REAR_LED) != Some(values::REAR_LED_OFF);
+    for code in [VCP_LED_MODE, VCP_LED_COLOR, VCP_LED_STRENGTH, VCP_LED_FRONT_COLOR, VCP_LED_REAR_COLOR] {
+        allow(code, led_on && is_setting_available(&state, code));
+    }
+    a.ui.get::<adw::ExpanderRow>("led_sides").set_sensitive(led_on && is_setting_available(&state, VCP_LED_FRONT_COLOR));
+    a.ui.get::<gtk4::ToggleButton>("led_c7").set_sensitive(led_mode_has_colorful(get(VCP_LED_MODE)));
+
+    // Firmware 2025-09-20: with HDR on the monitor locks these settings; DyDs, Night Vision and the magnifier
+    // only while Adaptive-Sync is off.
+    let hdr_locked = a.cfg.borrow().firmware_package.dyds_with_adaptive_sync()
+        && get(VCP_HDR).is_some_and(|value| value != HDR_VALUES[0]);
+    if hdr_locked {
+        for code in [
+            VCP_BRIGHTNESS, VCP_CONTRAST, VCP_DCR, VCP_LOW_BLUE, VCP_COLOR_ENHANCE, VCP_CR_ENHANCE, VCP_SHADOW_BALANCE,
+            VCP_OUTPUT_RANGE,
+        ] {
+            allow(code, false);
+        }
+        for code in [VCP_NIGHT_VISION, VCP_DYDS] {
+            allow(code, adaptive);
+        }
+        allow(VCP_MAGNIFIER, false);
+    }
+    // Firmware 2025-09-20 with Adaptive-Sync on: DyDs offers only ULL 1-3 (the first four options are off).
+    let ull_only = a.cfg.borrow().firmware_package.dyds_with_adaptive_sync() && adaptive;
+    let dyds_group = a.ui.get::<adw::ToggleGroup>("dyds");
+    for index in 0..4 {
+        if let Some(toggle) = dyds_group.toggle(index) {
+            toggle.set_enabled(!ull_only);
+        }
+    }
+    // Local dimming stays adjustable between Low and High, but cannot be turned off.
+    if let Some(toggle) = a.ui.get::<adw::ToggleGroup>("local_dimming").toggle(0) {
+        toggle.set_enabled(!hdr_locked);
+    }
+    a.ui.get::<adw::ComboRow>("picture_mode").set_sensitive(!hdr_locked && !loading);
+    a.ui.get::<gtk4::Widget>("row_profile_variant").set_sensitive(!hdr_locked && !loading);
+
+    for (code, ok) in allowed {
+        a.bindings.set_sensitive(code, ok);
+    }
+
+    // RGB gains: editable only for User 1-3 in a Custom profile.
+    let user_temp = get(VCP_COLOR_TEMP).is_some_and(is_user_color_temp);
+    for id in ["row_color_temp_red", "row_color_temp_green", "row_color_temp_blue"] {
+        a.ui.get::<gtk4::Widget>(id).set_sensitive(custom && user_temp);
+    }
+    show_color_temp_rgb(a);
+    show_saturation(a);
+
+    show_picture_mode(a);
+    sync_system_hdr(a);
+    let hdr = get(VCP_HDR).and_then(|v| HDR_VALUES.iter().position(|&x| x == v)).unwrap_or(0);
+    let gamma = get(VCP_GAMMA).and_then(|v| GAMMA_VALUES.iter().position(|&x| x == v)).unwrap_or(2);
+    let changed = a.tray_choices.lock().map(|mut choices| {
+        let before = (choices.hdr_selected, choices.gamma_selected, choices.hdr_enabled, choices.gamma_enabled);
+        (choices.hdr_selected, choices.gamma_selected, choices.hdr_enabled, choices.gamma_enabled) =
+            (hdr, gamma, true, custom);
+        before != (hdr, gamma, true, custom)
+    });
+    if changed.unwrap_or(false) {
+        a.refresh_tray();
+    }
+}
+
+/// Mirrors the monitor HDR (any mode but Off) to the system HDR of its output, once the value is stable.
+fn sync_system_hdr(a: &Rc<App>) {
+    let Some(hdr) = a.bindings.get(monitor::VCP_HDR).map(|value| value != monitor::HDR_VALUES[0]) else { return };
+    // Unknown system state (no HDR query result): still turn HDR on when the monitor has it on.
+    if a.system_hdr.get().map_or(!hdr, |system| system == hdr) {
+        return;
+    }
+    let generation = a.hdr_sync.get().wrapping_add(1);
+    a.hdr_sync.set(generation);
+    let a2 = a.clone();
+    glib::timeout_add_local_once(HDR_SYNC_DELAY, move || {
+        let current = a2.bindings.get(monitor::VCP_HDR).map(|value| value != monitor::HDR_VALUES[0]);
+        let Some(output) = a2.system_display.borrow().as_ref().map(|state| state.output.clone()) else { return };
+        if a2.hdr_sync.get() != generation || current != Some(hdr) || a2.system_hdr.get() == Some(hdr) {
+            return;
+        }
+        a2.system_hdr.set(Some(hdr));
+        sync_state(&a2);
+        std::thread::spawn(move || {
+            if let Err(error) = monitor::set_system_hdr(&output, hdr) {
+                log!("[HDR] system HDR {}: {error}", if hdr { "on" } else { "off" });
+            }
+        });
+    });
+}
+
+fn setup_system_display(a: &Rc<App>) {
+    for id in ["sys_resolution", "sys_refresh", "sys_scaling"] {
+        let a2 = a.clone();
+        let id_owned = id.to_string();
+        a.ui.get::<adw::ComboRow>(id).connect_selected_notify(move |combo| {
+            if bindings::suppressed() || !combo.is_sensitive() {
+                return;
+            }
+            let Some(state) = a2.system_display.borrow().clone() else { return };
+            let resolution_index = a2.ui.get::<adw::ComboRow>("sys_resolution").selected() as usize;
+            let Some(resolution) = state.available_resolutions.get(resolution_index).cloned() else { return };
+            let rates = state.refresh_rates.get(&resolution).cloned().unwrap_or_default();
+            let (refresh, scale) = match id_owned.as_str() {
+                "sys_resolution" => (
+                    rates
+                        .iter()
+                        .find(|rate| **rate == state.current_refresh)
+                        .or_else(|| rates.first())
+                        .cloned(),
+                    Some(state.current_scale_percent),
+                ),
+                "sys_refresh" => (rates.get(combo.selected() as usize).cloned(), Some(state.current_scale_percent)),
+                _ => (
+                    Some(state.current_refresh.clone()),
+                    state.scaling_options.get(combo.selected() as usize).copied(),
+                ),
+            };
+            match monitor::set_system_display_mode(&state.output, &resolution, refresh.as_deref(), scale) {
+                Ok(()) => {
+                    let a3 = a2.clone();
+                    glib::timeout_add_local_once(Duration::from_millis(350), move || refresh_system_display(&a3));
+                }
+                Err(error) => {
+                    log!("[display] mode change failed: {error}");
+                    let dialog = adw::AlertDialog::new(Some("Display mode change failed"), Some(&error.to_string()));
+                    dialog.add_response("ok", "OK");
+                    dialog.present(Some(&a2.ui.window));
+                    refresh_system_display(&a2);
+                }
+            }
+        });
+    }
+}
+
+fn refresh_system_display(a: &Rc<App>) {
+    let connector = a.connector.borrow().clone();
+    let combos: Vec<adw::ComboRow> =
+        ["sys_resolution", "sys_refresh", "sys_scaling"].iter().map(|id| a.ui.get(id)).collect();
+    let group: adw::PreferencesGroup = a.ui.get("sys_group");
+    let mut wallpaper = None;
+    let fill = |combo: &adw::ComboRow, items: &[String], selected: &str| {
+        let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+        combo.set_model(Some(&gtk4::StringList::new(&refs)));
+        combo.set_selected(items.iter().position(|item| item == selected).unwrap_or(0) as u32);
+    };
+    bindings::suppress(|| {
+        match monitor::query_system_display_state((!connector.is_empty()).then_some(connector.as_str())) {
+            Ok(state) => {
+                group.set_description(None);
+                fill(&combos[0], &state.available_resolutions, &state.current_resolution);
+                let rates = state.refresh_rates.get(&state.current_resolution).cloned().unwrap_or_default();
+                fill(&combos[1], &rates, &state.current_refresh);
+                let scales: Vec<String> = state.scaling_options.iter().map(|value| format!("{value}%")).collect();
+                fill(&combos[2], &scales, &format!("{}%", state.current_scale_percent));
+                combos.iter().for_each(|combo| combo.set_sensitive(true));
+                a.system_hdr.set(state.hdr);
+                wallpaper = monitor::system_wallpaper(&state);
+                *a.system_display.borrow_mut() = Some(state);
+            }
+            Err(error) => {
+                group.set_description(Some(&error.to_string()));
+                for combo in &combos {
+                    fill(combo, &["—".to_string()], "—");
+                    combo.set_sensitive(false);
+                }
+                a.system_hdr.set(None);
+                *a.system_display.borrow_mut() = None;
+            }
+        }
+    });
+    a.ui.show_wallpaper(wallpaper);
+    sync_state(a);
+}
+
+fn setup_preferences(a: &Rc<App>) {
+    let cfg = a.cfg.borrow().clone();
+    let ui = &a.ui;
+    let language: adw::ComboRow = ui.get("pref_language");
+    let theme: adw::ComboRow = ui.get("pref_theme");
+    let tray_icon: adw::ComboRow = ui.get("pref_tray_icon");
+    let autostart: adw::SwitchRow = ui.get("pref_autostart");
+    let minimized: adw::SwitchRow = ui.get("pref_start_minimized");
+    let modifier: adw::ComboRow = ui.get("pref_favorite_modifier");
+
+    bindings::suppress(|| {
+        // 0 = system, 1 = English, 2 = Polish.
+        language.set_selected(match cfg.language {
+            None => 0,
+            Some(index) if i18n::lang_from_index(index) == AppLang::PL => 2,
+            Some(_) => 1,
+        });
+        theme.set_selected(cfg.theme);
+        tray_icon.set_selected(match cfg.tray_icon_style {
+            TrayIconStyle::Theme => 0,
+            TrayIconStyle::Light => 1,
+            TrayIconStyle::Dark => 2,
+        });
+        autostart.set_active(cfg.auto_start);
+        minimized.set_active(cfg.start_minimized);
+        minimized.set_sensitive(cfg.auto_start);
+        modifier.set_selected(StepModifier::ALL.iter().position(|m| *m == cfg.favorite_modifier).unwrap_or(0) as u32);
+    });
+    a.ui.set_favorite_modifier(cfg.favorite_modifier);
+
+    {
+        let a = a.clone();
+        language.connect_selected_notify(move |combo| {
+            if bindings::suppressed() {
+                return;
+            }
+            let saved = match combo.selected() {
+                1 => Some(i18n::lang_index(&AppLang::EN)),
+                2 => Some(i18n::lang_index(&AppLang::PL)),
+                _ => None,
+            };
+            let lang = resolve_lang(saved);
+            a.lang.set(lang);
+            a.save_cfg(|cfg| cfg.language = saved);
+            a.update_info_texts();
+            a.ui.translator.apply(&lang);
+            rebuild_menu(&a);
+            if let Ok(mut shortcuts) = a.tray_shortcuts.lock() {
+                *shortcuts = favorite_tray_shortcut_entries(&a.cfg.borrow(), &lang);
+            }
+            a.refresh_tray();
+        });
+    }
+    {
+        let a = a.clone();
+        theme.connect_selected_notify(move |combo| {
+            if bindings::suppressed() {
+                return;
+            }
+            apply_theme(combo.selected());
+            a.save_cfg(|cfg| cfg.theme = combo.selected());
+        });
+    }
+    {
+        let a = a.clone();
+        let minimized = minimized.clone();
+        autostart.connect_active_notify(move |row| {
+            minimized.set_sensitive(row.is_active());
+            a.save_cfg(|cfg| cfg.auto_start = row.is_active());
+            let _ = app_settings::sync_autostart(&a.cfg.borrow());
+        });
+    }
+    {
+        let a = a.clone();
+        minimized.connect_active_notify(move |row| a.save_cfg(|cfg| cfg.start_minimized = row.is_active()));
+    }
+    {
+        let a = a.clone();
+        modifier.connect_selected_notify(move |combo| {
+            let modifier = StepModifier::ALL.get(combo.selected() as usize).copied().unwrap_or_default();
+            a.ui.set_favorite_modifier(modifier);
+            a.save_cfg(|cfg| cfg.favorite_modifier = modifier);
+        });
+    }
+}
+
+/// Firmware package (chosen by the user; DDC reports 5.1.1 for both packages).
+fn setup_info(a: &Rc<App>) {
+    let package: adw::ComboRow = a.ui.get("firmware_package");
+    {
+        let cfg = a.cfg.borrow();
+        bindings::suppress(|| {
+            package.set_selected(FirmwarePackage::ALL.iter().position(|p| *p == cfg.firmware_package).unwrap_or(0) as u32);
+        });
+    }
+    let a = a.clone();
+    package.connect_selected_notify(move |combo| {
+        if bindings::suppressed() {
+            return;
+        }
+        let Some(&value) = FirmwarePackage::ALL.get(combo.selected() as usize) else { return };
+        a.save_cfg(|cfg| cfg.firmware_package = value);
+        let _ = a.tx().send(WorkerCmd::DydsWithAdaptiveSync(value.dyds_with_adaptive_sync()));
+        sync_state(&a);
+    });
+}
+
+fn show_monitor_info(a: &Rc<App>, info: &monitor::MonitorInfo) {
+    let ui = &a.ui;
+    let usage = format_usage_minutes(info.usage_mins);
+    ui.get::<gtk4::Label>("ov_monitor_title").set_label(&info.name);
+    ui.get::<gtk4::Label>("ov_monitor_subtitle").set_label(&format!(
+        "{} · {} Hz · {}",
+        info.resolution.replace('x', "×"),
+        info.hz,
+        usage
+    ));
+    ui.get::<adw::ActionRow>("info_model").set_subtitle(&info.name);
+    ui.get::<adw::ActionRow>("info_usage").set_subtitle(&usage);
+    let label = if info.connector.is_empty() {
+        info.name.clone()
+    } else {
+        format!("{} ({})", info.name, info.connector.split_once('-').map(|(_, c)| c).unwrap_or(&info.connector))
+    };
+    // The app drives one monitor; the selector appears only when there is a choice.
+    let select: gtk4::DropDown = ui.get("monitor_select");
+    select.set_model(Some(&gtk4::StringList::new(&[label.as_str()])));
+    select.set_visible(select.model().is_some_and(|model| model.n_items() > 1));
+}
+
+fn receive_monitor_messages(
+    a: &Rc<App>,
+    ui_rx: async_channel::Receiver<monitor::UiCmd>,
+    splash: (adw::Window, gtk4::Label),
+    app: adw::Application,
+) {
+    let a = a.clone();
+    glib::spawn_future_local(async move {
+        let (splash, splash_label) = splash;
+        while let Ok(message) = ui_rx.recv().await {
+            match message {
+                monitor::UiCmd::MonitorFound(info) => {
+                    *a.connector.borrow_mut() = info.connector.clone();
+                    show_monitor_info(&a, &info);
+                    a.bindings.apply(&info.settings, true);
+                    *a.info.borrow_mut() = Some(info);
+                    refresh_system_display(&a);
+                    splash.close();
+                    if !a.cfg.borrow().start_minimized {
+                        a.ui.window.present();
                     }
                 }
-            });
-        }
-    }
-
-    wire_color_temp_rgb_scale(
-        &scale_custom_red_gain,
-        &tx,
-        &combo_custom_color_temp,
-        0,
-        &init,
-    );
-    wire_color_temp_rgb_scale(
-        &scale_custom_green_gain,
-        &tx,
-        &combo_custom_color_temp,
-        1,
-        &init,
-    );
-    wire_color_temp_rgb_scale(
-        &scale_custom_blue_gain,
-        &tx,
-        &combo_custom_color_temp,
-        2,
-        &init,
-    );
-    wire_toggle_values(
-        &combo_custom_hdr,
-        &tx,
-        monitor::VCP_HDR,
-        &monitor::HDR_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &combo_custom_gamma,
-        &tx,
-        monitor::VCP_GAMMA,
-        &monitor::GAMMA_VALUES[..],
-        false,
-        &init,
-    );
-    wire_toggle_values(
-        &combo_custom_night_vision,
-        &tx,
-        monitor::VCP_NIGHT_VISION,
-        &monitor::NIGHT_VISION_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &combo_custom_dynamic_od,
-        &tx,
-        monitor::VCP_DYNAMIC_OD,
-        &monitor::DYNAMIC_OD_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &combo_custom_dyds,
-        &tx,
-        monitor::VCP_DYDS,
-        &monitor::DYDS_VALUES[..],
-        true,
-        &init,
-    );
-
-    // ===== GAMING TAB =====
-
-    // Game Aid
-    wire_toggle_values(
-        &buttons_screen_size,
-        &tx,
-        monitor::VCP_SCREEN_SIZE,
-        &[0u16, 1, 2][..],
-        true,
-        &init,
-    );
-    wire_expander(
-        &expander_fps_counter,
-        &tx,
-        monitor::VCP_FPS_COUNTER,
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_fps_pos,
-        &tx,
-        monitor::VCP_FPS_POS,
-        &[0u16, 1, 2, 3][..],
-        true,
-        &init,
-    );
-    wire_expander(
-        &expander_crosshair,
-        &tx,
-        monitor::VCP_CROSSHAIR,
-        true,
-        &init,
-    );
-    wire_toggles(
-        &buttons_crosshair_shape,
-        &tx,
-        monitor::VCP_CROSSHAIR_SHAPE,
-        true,
-        1,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_crosshair_color,
-        &tx,
-        monitor::VCP_CROSSHAIR_COLOR,
-        &[0u16, 1, 2, 3, 4, 5, 6, 7][..],
-        true,
-        &init,
-    );
-    wire_expander(
-        &expander_stopwatch,
-        &tx,
-        monitor::VCP_STOPWATCH,
-        true,
-        &init,
-    );
-    wire_toggles(
-        &buttons_stopwatch_time,
-        &tx,
-        monitor::VCP_STOPWATCH_TIME,
-        true,
-        1,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_stopwatch_pos,
-        &tx,
-        monitor::VCP_STOPWATCH_POS,
-        &[0u16, 1, 2, 3][..],
-        true,
-        &init,
-    );
-    wire_expander(
-        &expander_game_time,
-        &tx,
-        monitor::VCP_GAME_TIME,
-        true,
-        &init,
-    );
-    wire_toggles(
-        &buttons_game_time_val,
-        &tx,
-        monitor::VCP_GAME_TIME_VAL,
-        true,
-        1,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_game_time_pos,
-        &tx,
-        monitor::VCP_GAME_TIME_POS,
-        &[0u16, 1, 2, 3][..],
-        true,
-        &init,
-    );
-    wire_expander(
-        &expander_magnifier,
-        &tx,
-        monitor::VCP_MAGNIFIER,
-        true,
-        &init,
-    );
-    wire_switch_values(
-        &switch_magnifier_night_vision,
-        &tx,
-        monitor::VCP_MAGNIFIER_NV,
-        1,
-        0,
-        true,
-        &init,
-    );
-    {
-        let tx = tx.clone();
-        let init = init.clone();
-        let sync_dcr_constraints = sync_dcr_constraints.clone();
-        let switch_custom_dcr_ref = switch_custom_dcr.clone();
-        switch_custom_dcr.connect_state_set(move |_, state| {
-            if init.get() || !switch_custom_dcr_ref.is_sensitive() {
-                return glib::Propagation::Proceed;
+                monitor::UiCmd::Settings(values) => a.bindings.apply(&values, true),
+                monitor::UiCmd::ProfileLoaded => finish_profile_load(&a),
+                monitor::UiCmd::Corrected(values) => a.bindings.apply(&values, false),
+                monitor::UiCmd::Progress(message) => {
+                    splash_label.set_label(&translate_startup_message(&a.lang(), &message));
+                }
+                monitor::UiCmd::Error(error) => {
+                    splash_label.set_label(&translate_startup_message(&a.lang(), &error));
+                    if !splash.is_visible() {
+                        splash.present();
+                    }
+                    if error == "Monitor not found" {
+                        let app = app.clone();
+                        glib::timeout_add_local_once(Duration::from_secs(3), move || app.quit());
+                    }
+                }
+                monitor::UiCmd::UsageTimeUpdated(usage_mins) => {
+                    a.ui.get::<adw::ActionRow>("info_usage").set_subtitle(&format_usage_minutes(usage_mins));
+                }
+                monitor::UiCmd::InfoRefreshed { hz, usage_mins } => {
+                    let mut info = a.info.borrow_mut();
+                    let Some(info) = info.as_mut() else { continue };
+                    if let Some(hz) = hz {
+                        info.hz = hz;
+                    }
+                    if let Some(usage_mins) = usage_mins {
+                        info.usage_mins = usage_mins;
+                    }
+                    if let Some(state) = a.system_display.borrow().as_ref() {
+                        info.resolution = state.current_resolution.clone();
+                    }
+                    show_monitor_info(&a, info);
+                }
             }
-            let val = if state { 1 } else { 0 };
-            let _ = tx.send(WorkerCmd::SetSave(monitor::VCP_DCR, val));
-            let tx_refresh = tx.clone();
-            glib::timeout_add_local_once(Duration::from_millis(900), move || {
-                let _ = tx_refresh.send(WorkerCmd::ReadStable(vec![
-                    monitor::VCP_BRIGHTNESS,
-                    monitor::VCP_CONTRAST,
-                    monitor::VCP_DCR,
-                ]));
-                let tx_refresh = tx_refresh.clone();
-                glib::timeout_add_local_once(Duration::from_millis(500), move || {
-                    let _ = tx_refresh.send(WorkerCmd::ReadStable(vec![
-                        monitor::VCP_BRIGHTNESS,
-                        monitor::VCP_CONTRAST,
-                        monitor::VCP_DCR,
-                    ]));
-                });
-            });
-            sync_dcr_constraints();
-            glib::Propagation::Proceed
-        });
-    }
-    wire_toggle_values(
-        &buttons_magnifier_zoom,
-        &tx,
-        monitor::VCP_MAGNIFIER_ZOOM,
-        &[0u16, 1, 2][..],
-        true,
-        &init,
-    );
-    wire_toggles(
-        &buttons_magnifier_size,
-        &tx,
-        monitor::VCP_MAGNIFIER_SIZE,
-        true,
-        1,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_magnifier_pos,
-        &tx,
-        monitor::VCP_MAGNIFIER_POS,
-        &[1u16, 2, 5, 3, 4][..],
-        true,
-        &init,
-    );
-    wire_switch_values(
-        &switch_alignment,
-        &tx,
-        monitor::VCP_ALIGNMENT,
-        1,
-        0,
-        true,
-        &init,
-    );
-    wire_expander(&expander_hawkeye, &tx, monitor::VCP_HAWKEYE, true, &init);
-    wire_toggle_values(
-        &buttons_hawkeye_size,
-        &tx,
-        monitor::VCP_HAWKEYE_SIZE,
-        &[0u16, 1, 2][..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_hawkeye_pos,
-        &tx,
-        monitor::VCP_HAWKEYE_POS,
-        &[0u16, 1, 2, 3, 4][..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_hawkeye_lvl,
-        &tx,
-        monitor::VCP_HAWKEYE_LEVEL,
-        &[0u16, 1, 2, 3, 4][..],
-        true,
-        &init,
-    );
-
-    // Picture Enhance
-    wire_switch(
-        &switch_gaming_rush,
-        &tx,
-        monitor::VCP_GAME_RUSH,
-        true,
-        &init,
-    );
-    wire_switch_values(
-        &switch_gaming_async,
-        &tx,
-        monitor::VCP_ADAPTIVE_SYNC,
-        1,
-        0,
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_gaming_local_dimming,
-        &tx,
-        monitor::VCP_LOCAL_DIMMING,
-        &monitor::LOCAL_DIMMING_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_gaming_dyds,
-        &tx,
-        monitor::VCP_DYDS,
-        &monitor::DYDS_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_gaming_night_vision,
-        &tx,
-        monitor::VCP_NIGHT_VISION,
-        &monitor::NIGHT_VISION_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_gaming_dynamic_od,
-        &tx,
-        monitor::VCP_DYNAMIC_OD,
-        &monitor::DYNAMIC_OD_VALUES[..],
-        true,
-        &init,
-    );
-    wire_toggle_values(
-        &buttons_gaming_hdr,
-        &tx,
-        monitor::VCP_HDR,
-        &monitor::HDR_VALUES[..],
-        true,
-        &init,
-    );
-    for (scale, code) in hue_scales_vector.iter().zip(monitor::HUE_CODES.iter()) {
-        wire_scale(scale, &tx, *code, false, &init);
-    }
-    for (scale, code) in saturation_scales_vector
-        .iter()
-        .zip(monitor::SATURATION_CODES.iter())
-    {
-        wire_scale(scale, &tx, *code, false, &init);
-    }
-    wire_scale(
-        &scale_gaming_color_enhance,
-        &tx,
-        monitor::VCP_COLOR_ENHANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_gaming_cr_enhance,
-        &tx,
-        monitor::VCP_CR_ENHANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_gaming_shadow_enhance,
-        &tx,
-        monitor::VCP_SHADOW_BALANCE,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_gaming_super_res,
-        &tx,
-        monitor::VCP_SUPER_RES,
-        true,
-        &init,
-    );
-    wire_scale(
-        &scale_gaming_halo_control,
-        &tx,
-        monitor::VCP_HALO_CONTROL,
-        true,
-        &init,
-    );
-
-    // ===== APP SETTINGS =====
-
-    {
-        let app_cfg = app_cfg.clone();
-        switch_auto_start.connect_state_set(move |_, state| {
-            let mut cfg = app_cfg.borrow().clone();
-            cfg.auto_start = state;
-            let _ = app_settings::save(&cfg);
-            let _ = app_settings::sync_autostart(&cfg);
-            *app_cfg.borrow_mut() = cfg;
-            glib::Propagation::Proceed
-        });
-    }
-
-    {
-        let app_cfg = app_cfg.clone();
-        switch_start_minimized.connect_state_set(move |_, state| {
-            let mut cfg = app_cfg.borrow().clone();
-            cfg.start_minimized = state;
-            let _ = app_settings::save(&cfg);
-            *app_cfg.borrow_mut() = cfg;
-            glib::Propagation::Proceed
-        });
-    }
-
-    {
-        let switch_start_minimized = switch_start_minimized.clone();
-        switch_auto_start.connect_active_notify(move |sw| {
-            switch_start_minimized.set_sensitive(sw.is_active());
-        });
-    }
-
-    // Minimize to tray
-    window.connect_close_request(glib::clone!(
-        #[strong]
-        window,
-        move |_| {
-            window.set_visible(false);
-            glib::Propagation::Stop
         }
-    ));
+    });
+}
 
-    let hold_guard = app.hold();
-    tray::setup_tray(app, &window, hold_guard, lang);
+// ───────────────────────────── tray ─────────────────────────────
+
+fn favorite_profile_entries(cfg: &AppSettings) -> Vec<tray::TrayFavoriteProfile> {
+    cfg.favorite_picture_mode_set()
+        .into_iter()
+        .filter_map(|mode| {
+            monitor::PICTURE_MODE_NAMES
+                .get(mode as usize)
+                .map(|name| tray::TrayFavoriteProfile { mode, label: (*name).to_string() })
+        })
+        .collect()
+}
+
+fn tray_shortcut_label(id: &str, lang: &AppLang) -> String {
+    let axis = |prefix: &str, key: &str| format!("{}: {}", tr(lang, prefix), tr(lang, key));
+    match id {
+        "color_temp_red" => axis("rgb_gain", "red"),
+        "color_temp_green" => axis("rgb_gain", "green"),
+        "color_temp_blue" => axis("rgb_gain", "blue"),
+        _ => {
+            for prefix in ["hue", "saturation"] {
+                if let Some(color) = id.strip_prefix(prefix).and_then(|rest| rest.strip_prefix('_')) {
+                    return axis(prefix, &format!("axis_{color}"));
+                }
+            }
+            tr(lang, id)
+        }
+    }
+}
+
+fn favorite_tray_shortcut_entries(cfg: &AppSettings, lang: &AppLang) -> Vec<tray::TrayShortcut> {
+    cfg.favorite_tray_control_set()
+        .into_iter()
+        .filter(|id| SHORTCUTS.iter().any(|(known, _, _)| known == id))
+        .map(|id| tray::TrayShortcut { label: tray_shortcut_label(&id, lang), id })
+        .collect()
+}
+
+/// Stars: picture modes (always visible) and tray shortcuts (while the favorites key is held), up to 5 each.
+fn setup_favorites(a: &Rc<App>) {
+    let picture_star = gtk4::ToggleButton::builder()
+        .icon_name("starred-symbolic")
+        .valign(gtk4::Align::Center)
+        .tooltip_text("Tray")
+        .css_classes(["flat", "picture-star"])
+        .build();
+    a.ui.get::<adw::ComboRow>("picture_mode").add_suffix(&picture_star);
+    {
+        let a2 = a.clone();
+        picture_star.connect_toggled(move |star| {
+            if bindings::suppressed() {
+                return;
+            }
+            let Some((mode, _)) = a2.bindings.get(monitor::VCP_MODE).and_then(monitor::picture_mode_from_vcp) else {
+                return;
+            };
+            let mode = mode as u16;
+            if star.is_active() && !a2.cfg.borrow().is_favorite_picture_mode(mode) && a2.cfg.borrow().favorite_picture_mode_set().len() >= 5 {
+                bindings::suppress(|| star.set_active(false));
+                return;
+            }
+            a2.save_cfg(|cfg| {
+                cfg.favorite_picture_modes.retain(|&favorite| favorite != mode);
+                if star.is_active() {
+                    cfg.favorite_picture_modes.push(mode);
+                }
+            });
+            if let Ok(mut favorites) = a2.tray_favorites.lock() {
+                *favorites = favorite_profile_entries(&a2.cfg.borrow());
+            }
+            a2.refresh_tray();
+        });
+    }
+    *a.picture_star.borrow_mut() = Some(picture_star);
+
+    for &(id, row, _) in SHORTCUTS {
+        let star = a.ui.add_favorite_star(row, a.cfg.borrow().is_favorite_tray_control(id));
+        let a2 = a.clone();
+        star.connect_toggled(move |star| {
+            if bindings::suppressed() {
+                return;
+            }
+            if star.is_active() && a2.cfg.borrow().favorite_tray_control_set().len() >= 5 {
+                bindings::suppress(|| star.set_active(false));
+                return;
+            }
+            a2.save_cfg(|cfg| {
+                cfg.favorite_tray_controls.retain(|favorite| favorite != id);
+                if star.is_active() {
+                    cfg.favorite_tray_controls.push(id.to_string());
+                }
+            });
+            if let Ok(mut shortcuts) = a2.tray_shortcuts.lock() {
+                *shortcuts = favorite_tray_shortcut_entries(&a2.cfg.borrow(), &a2.lang());
+            }
+            a2.refresh_tray();
+        });
+        a.stars.borrow_mut().insert(id, star);
+    }
+}
+
+fn run_shortcut(a: &Rc<App>, id: &str) {
+    let Some(&(_, _, action)) = SHORTCUTS.iter().find(|(known, _, _)| *known == id) else { return };
+    match action {
+        // Sliders are offered as ready values in the tray menu (see `select_shortcut_option`).
+        Shortcut::Slider(_) => {}
+        Shortcut::Toggle(code) => {
+            if !a.bindings.is_sensitive(code) {
+                return;
+            }
+            match a.bindings.control(code) {
+                Some(Control::Switch { row, .. }) => row.set_active(!row.is_active()),
+                Some(Control::Expander { row }) => row.set_enable_expansion(!row.enables_expansion()),
+                _ => {}
+            }
+        }
+        Shortcut::Choice(code) => {
+            if let Some(Control::Toggles { group, .. }) = a.bindings.control(code)
+                && a.bindings.is_sensitive(code)
+                && group.n_toggles() > 0
+            {
+                group.set_active((group.active().wrapping_add(1)) % group.n_toggles());
+            }
+        }
+    }
+}
+
+fn select_shortcut_option(a: &Rc<App>, id: &str, index: usize) {
+    let Some(&(_, row, action)) = SHORTCUTS.iter().find(|(known, _, _)| *known == id) else { return };
+    // Sliders: the tray menu offers ready values; `index` is the value.
+    if let Shortcut::Slider(adjustment) = action {
+        if a.ui.get::<gtk4::Widget>(row).is_sensitive() {
+            a.ui.get::<gtk4::Adjustment>(adjustment).set_value(index as f64);
+        }
+        return;
+    }
+    let Shortcut::Choice(code) = action else { return };
+    if let Some(Control::Toggles { group, .. }) = a.bindings.control(code)
+        && a.bindings.is_sensitive(code)
+        && (index as u32) < group.n_toggles()
+    {
+        group.set_active(index as u32);
+    }
+}
+
+fn setup_tray(app: &adw::Application, a: &Rc<App>) {
+    let style = a.cfg.borrow().tray_icon_style;
+    let select_favorite = {
+        let a = a.clone();
+        Rc::new(move |mode: u16| {
+            if let Some(index) = a.picture_order.borrow().iter().position(|&candidate| candidate == mode) {
+                a.ui.get::<adw::ComboRow>("picture_mode").set_selected(index as u32);
+            }
+        })
+    };
+    let shortcut = {
+        let a = a.clone();
+        Rc::new(move |id: &str| run_shortcut(&a, id))
+    };
+    let option = {
+        let a = a.clone();
+        Rc::new(move |id: &str, index: usize| select_shortcut_option(&a, id, index))
+    };
+    let control = tray::setup_tray(
+        app,
+        &a.ui.window,
+        app.hold(),
+        a.lang(),
+        a.tray_favorites.clone(),
+        a.tray_active_mode.clone(),
+        a.tray_shortcuts.clone(),
+        a.tray_window_visible.clone(),
+        a.tray_choices.clone(),
+        style,
+        select_favorite,
+        shortcut,
+        option,
+    );
+    *a.tray.borrow_mut() = Some(control.clone());
+    let a2 = a.clone();
+    a.ui.get::<adw::ComboRow>("pref_tray_icon").connect_selected_notify(move |combo| {
+        if bindings::suppressed() {
+            return;
+        }
+        let style = match combo.selected() {
+            1 => TrayIconStyle::Light,
+            2 => TrayIconStyle::Dark,
+            _ => TrayIconStyle::Theme,
+        };
+        a2.save_cfg(|cfg| cfg.tray_icon_style = style);
+        control.set_style(style);
+    });
 }

@@ -1,0 +1,91 @@
+/* Titan Control – styles of the main window (based on ui/main.css from the prototype). */
+
+.color-btn {
+  min-width: 34px;
+  min-height: 28px;
+  padding: 0;
+  background-image: none;
+  border: 1px solid alpha(@window_fg_color, 0.25);
+}
+
+/* Selected swatch: white and black inner rings, visible on every color (the buttons are linked, so nothing
+   can be drawn outside them). */
+.color-btn:checked {
+  box-shadow: inset 0 0 0 2px #ffffff, inset 0 0 0 4px #000000;
+  border-color: @window_fg_color;
+}
+
+.color-btn:disabled {
+  opacity: 0.35;
+}
+
+.color-red { background-color: #ff0000; }
+.color-yel { background-color: #ffff00; }
+.color-grn { background-color: #00ff00; }
+.color-cya { background-color: #00ffff; }
+.color-blu { background-color: #0066ff; }
+.color-pur { background-color: #cc00ff; }
+.color-wht { background-color: #ffffff; }
+.color-rainbow {
+  background-image: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0066ff, #cc00ff);
+}
+
+/* Star that adds a setting to the tray menu (visible while the favorites key is held).
+   Negative margins move it out of the card into the page margin and cancel its width,
+   so row titles stay where they are with or without the star. */
+.favorite-star {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  margin-left: -52px;
+  margin-right: 24px;
+}
+
+/* The row's prefix box of a star: cancels the gap between prefixes and title. */
+.favorite-prefixes {
+  /* Cancels the row's 12px spacing after the prefixes. The star keeps 6px of width (a zero-width box is not
+     drawn at all), so every row gets the same 6px spacer (`.row-spacer`) to keep titles aligned. */
+  margin-right: -12px;
+}
+
+.row-spacer {
+  min-width: 6px;
+}
+
+/* Expander rows add 6px of their own inside the prefix area. */
+.favorite-star.in-expander {
+  margin-right: 18px;
+}
+
+.row-spacer.in-expander {
+  min-width: 0;
+}
+
+.favorite-star:checked {
+  color: @accent_color;
+}
+
+/* Star of the picture mode (tray favorites), next to the combo. */
+.picture-star {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.picture-star:checked {
+  color: @accent_color;
+}
+
+.info-button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  opacity: 0.7;
+}
+
+
+/* The value label of a slider is as wide as its largest value, so sliders with other ranges would start elsewhere:
+   a common minimum width lines them all up. */
+scale > value {
+  min-width: 32px;
+}

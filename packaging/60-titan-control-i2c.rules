@@ -1,0 +1,3 @@
+# Titan Control talks to the monitor over DDC/CI on /dev/i2c-*: give the user at the console access to it, so the
+# user does not have to be in the "i2c" group.
+KERNEL=="i2c-[0-9]*", TAG+="uaccess"

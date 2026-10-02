@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Titan Control
+GenericName=Monitor control
+Comment=Control the Titan Army P275MV PLUS monitor
+Exec=titan_control
+Icon=titan_control
+Terminal=false
+Categories=Settings;HardwareSettings;GTK;
+Keywords=monitor;display;ddc;titan;hdr;brightness;
+StartupNotify=true
+StartupWMClass=io.github.mkarenko.titan_control

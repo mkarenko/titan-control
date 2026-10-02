@@ -1,402 +1,399 @@
-pub mod helpers;
-pub mod tabs;
+//! Main window built from the Blueprint file `window.blp` (compiled by build.rs).
 
-use crate::app_settings;
-use crate::i18n::{AppLang, LangUpdaters, tr};
+pub mod bindings;
+pub mod scroll;
+pub mod translate;
+
+use crate::app_settings::{self, StepModifier};
 use adw::prelude::*;
-use adw::{ActionRow, ComboRow, HeaderBar, ViewStack, ViewSwitcher};
-use gtk4::{Box as GtkBox, Button, Orientation, Revealer, Scale, Switch, ToggleButton};
-use libadwaita::{self as adw, ExpanderRow};
+use gtk4::{gdk, gdk_pixbuf, gio, glib};
+use libadwaita as adw;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-pub struct MainWidgets {
+const WINDOW_UI: &str = include_str!(concat!(env!("OUT_DIR"), "/window.ui"));
+const STYLE: &str = include_str!("style.css");
+/// Screen area of `assets/p275mv_plus.png` (x, y, width, height) for the wallpaper.
+const MONITOR_SCREEN: (i32, i32, i32, i32) = (3, 3, 504, 284);
+
+pub struct Ui {
+    builder: gtk4::Builder,
     pub window: adw::ApplicationWindow,
-    pub combo_lang: ComboRow,
-    pub combo_theme: ComboRow,
-    pub switch_auto_start: Switch,
-    pub switch_start_minimized: Switch,
-
-    // --- SYSTEM (tab_display) ---
-    pub row_info_model: ActionRow,
-    pub row_info_resolution: ActionRow,
-    pub row_info_hz: ActionRow,
-    pub row_info_firmware: ActionRow,
-    pub row_info_usage: ActionRow,
-    pub scale_audio_volume: Scale,
-    pub switch_audio_mute: Switch,
-    pub button_power_off: Button,
-    pub switch_rear_led: Switch,
-    pub button_power_save_off: ToggleButton,
-    pub button_power_save_lvl1: ToggleButton,
-    pub button_power_save_lvl2: ToggleButton,
-    pub button_led_off: ToggleButton,
-    pub button_led_lvl1: ToggleButton,
-    pub button_led_lvl2: ToggleButton,
-    pub button_led_lvl3: ToggleButton,
-    pub combo_input_source: ComboRow,
-    pub combo_output_range: ComboRow,
-    pub switch_quick_boot: Switch,
-    pub combo_osd_language: ComboRow,
-    pub scale_osd_time: Scale,
-    pub scale_osd_h_position: Scale,
-    pub scale_osd_v_position: Scale,
-    pub scale_osd_transparency: Scale,
-    pub button_reset_colors: Button,
-    pub button_reset_settings: Button,
-    pub button_reset_factory: Button,
-
-    // --- PROFILE (tab_profiles) ---
-    pub combo_picture_mode: ComboRow,
-    pub button_profile_default: ToggleButton,
-    pub button_profile_custom: ToggleButton,
-    pub custom_revealer: Revealer,
-    pub scale_custom_brightness: Scale,
-    pub scale_custom_contrast: Scale,
-    pub scale_custom_sharpness: Scale,
-    pub scale_custom_shadow_balance: Scale,
-    pub scale_custom_cr_enhance: Scale,
-    pub scale_custom_color_enhance: Scale,
-    pub scale_custom_super_res: Scale,
-    pub scale_custom_low_blue_light: Scale,
-    pub switch_custom_dcr: Switch,
-    pub combo_custom_color_temp: Vec<ToggleButton>,
-    pub scale_custom_red_gain: Scale,
-    pub scale_custom_green_gain: Scale,
-    pub scale_custom_blue_gain: Scale,
-    pub combo_custom_hdr: Vec<ToggleButton>,
-    pub combo_custom_gamma: Vec<ToggleButton>,
-    pub combo_custom_night_vision: Vec<ToggleButton>,
-    pub combo_custom_dynamic_od: Vec<ToggleButton>,
-    pub combo_custom_dyds: Vec<ToggleButton>,
-    pub hue_scales_vector: Vec<Scale>,
-    pub saturation_scales_vector: Vec<Scale>,
-
-    // --- GAMING (tab_gaming) ---
-    pub buttons_screen_size: Vec<ToggleButton>,
-    pub expander_fps_counter: ExpanderRow,
-    pub buttons_fps_pos: Vec<ToggleButton>,
-    pub expander_crosshair: ExpanderRow,
-    pub buttons_crosshair_shape: Vec<ToggleButton>,
-    pub buttons_crosshair_color: Vec<ToggleButton>,
-    pub expander_stopwatch: ExpanderRow,
-    pub buttons_stopwatch_time: Vec<ToggleButton>,
-    pub buttons_stopwatch_pos: Vec<ToggleButton>,
-    pub expander_game_time: ExpanderRow,
-    pub buttons_game_time_val: Vec<ToggleButton>,
-    pub buttons_game_time_pos: Vec<ToggleButton>,
-    pub expander_magnifier: ExpanderRow,
-    pub switch_magnifier_night_vision: Switch,
-    pub buttons_magnifier_zoom: Vec<ToggleButton>,
-    pub buttons_magnifier_size: Vec<ToggleButton>,
-    pub buttons_magnifier_pos: Vec<ToggleButton>,
-    pub switch_alignment: Switch,
-    pub expander_hawkeye: ExpanderRow,
-    pub buttons_hawkeye_size: Vec<ToggleButton>,
-    pub buttons_hawkeye_pos: Vec<ToggleButton>,
-    pub buttons_hawkeye_lvl: Vec<ToggleButton>,
-    pub switch_gaming_async: Switch,
-    pub switch_gaming_rush: Switch,
-    pub buttons_gaming_local_dimming: Vec<ToggleButton>,
-    pub buttons_gaming_dyds: Vec<ToggleButton>,
-    pub buttons_gaming_night_vision: Vec<ToggleButton>,
-    pub buttons_gaming_dynamic_od: Vec<ToggleButton>,
-    pub buttons_gaming_hdr: Vec<ToggleButton>,
-    pub scale_gaming_color_enhance: Scale,
-    pub scale_gaming_cr_enhance: Scale,
-    pub scale_gaming_shadow_enhance: Scale,
-    pub scale_gaming_super_res: Scale,
-    pub scale_gaming_halo_control: Scale,
+    pub prefs: adw::PreferencesDialog,
+    pub translator: translate::Translator,
+    /// Every slider of the window (sliders that share an adjustment show the same setting).
+    pub scales: Vec<gtk4::Scale>,
+    favorites: Rc<Favorites>,
 }
 
-pub fn build_ui(app: &adw::Application, lang: &AppLang, updaters: &LangUpdaters) -> MainWidgets {
-    if let Some(display) = gtk4::gdk::Display::default() {
-        let icon_theme = gtk4::IconTheme::for_display(&display);
-        for icon_path in app_settings::icon_search_paths() {
-            icon_theme.add_search_path(&icon_path);
+impl Ui {
+    pub fn new(app: &adw::Application) -> Self {
+        let builder = gtk4::Builder::from_string(WINDOW_UI);
+        let window: adw::ApplicationWindow = builder.object("window").expect("window in window.ui");
+        window.set_application(Some(app));
+        let prefs: adw::PreferencesDialog = builder.object("prefs_dialog").expect("prefs_dialog in window.ui");
+
+        let css = gtk4::CssProvider::new();
+        css.load_from_string(STYLE);
+        if let Some(display) = gdk::Display::default() {
+            gtk4::style_context_add_provider_for_display(&display, &css, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
+
+        let mut scales = Vec::new();
+        collect_scales(window.upcast_ref(), &mut scales);
+        for scale in &scales {
+            bindings::track_scale_pointer(scale);
+        }
+        scroll::install(&window);
+        scroll::install(&prefs);
+
+        let stack: gtk4::Stack = builder.object("stack").expect("stack in window.ui");
+        let translator = translate::Translator::collect(&[window.clone().upcast(), prefs.clone().upcast()], &[stack]);
+
+        let favorites = Rc::new(Favorites::default());
+        favorites.track(&window);
+
+        let ui = Self { builder, window, prefs, translator, scales, favorites };
+        ui.setup_crosshair_icons();
+        ui.show_wallpaper(None);
+        ui
+    }
+
+    /// Monitor picture of the overview with `wallpaper` on its screen; the plain (black) screen when there is no
+    /// wallpaper or it cannot be loaded.
+    pub fn show_wallpaper(&self, wallpaper: Option<PathBuf>) {
+        let Some(frame) = app_settings::resolve_assets_dir().map(|dir| dir.join("p275mv_plus.png")) else { return };
+        let image: gtk4::Image = self.get("ov_monitor_picture");
+        let Some(wallpaper) = wallpaper else {
+            image.set_from_file(Some(&frame));
+            return;
+        };
+        // Decoding a large wallpaper takes a moment: off the main thread.
+        glib::spawn_future_local(async move {
+            let frame_path = frame.clone();
+            let composed = gio::spawn_blocking(move || compose_wallpaper(&frame_path, &wallpaper)).await.ok().flatten();
+            match composed {
+                Some((bytes, width, height, stride)) => {
+                    let texture = gdk::MemoryTexture::new(width, height, gdk::MemoryFormat::R8g8b8a8, &bytes, stride);
+                    image.set_paintable(Some(&texture));
+                }
+                None => image.set_from_file(Some(&frame)),
+            }
+        });
+    }
+
+    /// Object of the Blueprint file by id (a missing id is a programming error).
+    pub fn get<T: IsA<glib::Object>>(&self, id: &str) -> T {
+        self.builder
+            .object(id)
+            .unwrap_or_else(|| panic!("object `{id}` missing in window.ui or of another type"))
+    }
+
+    /// Adds a star to a row: while the favorites key is held it shows whether the setting is in the tray menu.
+    pub fn add_favorite_star(&self, row_id: &str, active: bool) -> gtk4::ToggleButton {
+        let star = gtk4::ToggleButton::builder()
+            .icon_name("starred-symbolic")
+            .valign(gtk4::Align::Center)
+            .active(active)
+            .css_classes(["flat", "favorite-star"])
+            .build();
+        let row: glib::Object = self.get(row_id);
+        if let Some(row) = row.downcast_ref::<adw::ActionRow>() {
+            row.add_prefix(&star);
+        } else if let Some(row) = row.downcast_ref::<adw::ExpanderRow>() {
+            row.add_prefix(&star);
+        }
+        let expander = row.is::<adw::ExpanderRow>();
+        if expander {
+            star.add_css_class("in-expander");
+        }
+        mark_prefixes(star.upcast_ref(), expander);
+        self.favorites.watch(&star);
+        star
+    }
+
+    /// Gives every row without a star the same 6px prefix the star leaves, so all titles line up.
+    /// Call after the stars are added.
+    pub fn align_rows(&self) {
+        fn visit(widget: &gtk4::Widget) {
+            let row_prefix = |add: &dyn Fn(&gtk4::Widget), expander: bool| {
+                let spacer = gtk4::Box::builder().css_classes(["row-spacer"]).build();
+                if expander {
+                    spacer.add_css_class("in-expander");
+                }
+                add(spacer.upcast_ref());
+                mark_prefixes(spacer.upcast_ref(), expander);
+            };
+            let has_star = |widget: &gtk4::Widget| {
+                let mut found = false;
+                let mut stack = vec![widget.clone()];
+                while let Some(current) = stack.pop() {
+                    if current.has_css_class("favorite-star") {
+                        found = true;
+                        break;
+                    }
+                    // Only the row's own header, not nested rows of an expander.
+                    if !current.is::<adw::PreferencesRow>() || current == *widget {
+                        let mut child = current.first_child();
+                        while let Some(next) = child {
+                            stack.push(next.clone());
+                            child = next.next_sibling();
+                        }
+                    }
+                }
+                found
+            };
+            if let Some(row) = widget.downcast_ref::<adw::ExpanderRow>() {
+                if !has_star(widget) {
+                    row_prefix(&|spacer| row.add_prefix(spacer), true);
+                }
+            } else if let Some(row) = widget.downcast_ref::<adw::ActionRow>()
+                && !has_star(widget)
+            {
+                row_prefix(&|spacer| row.add_prefix(spacer), false);
+            }
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                visit(&current);
+                child = current.next_sibling();
+            }
+        }
+        visit(self.window.upcast_ref());
+    }
+
+    /// Moves the explanatory subtitle of each row behind an info button (popover and tooltip).
+    /// Returns the buttons, labels and the Polish source texts (for language changes).
+    pub fn subtitles_to_info(&self, ids: &[&str]) -> Vec<(gtk4::MenuButton, gtk4::Label, String)> {
+        let mut infos = Vec::new();
+        for id in ids {
+            let row: glib::Object = self.get(id);
+            let text = row.property::<Option<String>>("subtitle").unwrap_or_default();
+            if text.is_empty() {
+                continue;
+            }
+            row.set_property("subtitle", "");
+            let label = gtk4::Label::builder()
+                .label(&text)
+                .wrap(true)
+                .max_width_chars(40)
+                .xalign(0.0)
+                .margin_top(8)
+                .margin_bottom(8)
+                .margin_start(10)
+                .margin_end(10)
+                .build();
+            let popover = gtk4::Popover::builder().child(&label).build();
+            let button = gtk4::MenuButton::builder()
+                .icon_name("help-about-symbolic")
+                .tooltip_text(&text)
+                .valign(gtk4::Align::Center)
+                .css_classes(["flat", "circular", "info-button"])
+                .popover(&popover)
+                .build();
+            place_after_title(row.downcast_ref::<gtk4::Widget>().expect("rows are widgets"), &button);
+            infos.push((button, label, text));
+        }
+        infos
+    }
+
+    /// Development aid: shows the stars without holding the key.
+    pub fn show_favorite_stars(&self, visible: bool) {
+        self.favorites.forced.set(visible);
+        self.favorites.set_active(visible);
+    }
+
+    pub fn set_favorite_modifier(&self, modifier: StepModifier) {
+        self.favorites.binding.set(modifier);
+        self.favorites.set_active(false);
+    }
+
+    /// Crosshair shapes from assets/crosshairs as icons (white strokes recolored for the light theme).
+    fn setup_crosshair_icons(&self) {
+        let group: adw::ToggleGroup = self.get("crosshair_shape");
+        let Some(dir) = crosshair_icon_dir() else {
+            // No assets: number the shapes instead.
+            for index in 0..group.n_toggles() {
+                if let Some(toggle) = group.toggle(index) {
+                    toggle.set_label(Some(&(index + 1).to_string()));
+                }
+            }
+            return;
+        };
+        if let Some(display) = gdk::Display::default() {
+            gtk4::IconTheme::for_display(&display).add_search_path(&dir);
+        }
+        let apply = move |dark: bool| {
+            for index in 0..group.n_toggles() {
+                if let Some(toggle) = group.toggle(index) {
+                    toggle.set_icon_name(Some(&format!(
+                        "titan-crosshair-{}-{}",
+                        index + 1,
+                        if dark { "dark" } else { "light" }
+                    )));
+                }
+            }
+        };
+        let style = adw::StyleManager::default();
+        apply(style.is_dark());
+        style.connect_dark_notify(move |style| apply(style.is_dark()));
+    }
+}
+
+/// Puts the info button right after the row's title text: the title box stops taking the free space, the button
+/// takes it instead (an expander row's own header comes first in its widget tree).
+fn place_after_title(row: &gtk4::Widget, button: &gtk4::MenuButton) {
+    let mut stack = vec![row.clone()];
+    while let Some(widget) = stack.pop() {
+        if widget.has_css_class("title")
+            && widget.is::<gtk4::Box>()
+            && let Some(header) = widget.parent().and_downcast::<gtk4::Box>()
+        {
+            widget.set_hexpand(false);
+            button.set_hexpand(true);
+            button.set_halign(gtk4::Align::Start);
+            header.insert_child_after(button, Some(&widget));
+            return;
+        }
+        // Depth first, in widget order.
+        let mut children = Vec::new();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            children.push(current);
+        }
+        stack.extend(children.into_iter().rev());
+    }
+}
+
+/// Monitor picture with the wallpaper scaled to cover its screen: RGBA bytes, width, height and row stride.
+fn compose_wallpaper(frame: &Path, wallpaper: &Path) -> Option<(glib::Bytes, i32, i32, usize)> {
+    let (x, y, width, height) = MONITOR_SCREEN;
+    let frame = gdk_pixbuf::Pixbuf::from_file(frame).ok()?;
+    if !frame.has_alpha() {
+        return None;
+    }
+    let (_, source_width, source_height) = gdk_pixbuf::Pixbuf::file_info(wallpaper)?;
+    let scale = (width as f64 / source_width as f64).max(height as f64 / source_height as f64);
+    let scaled_width = ((source_width as f64 * scale).ceil() as i32).max(width);
+    let scaled_height = ((source_height as f64 * scale).ceil() as i32).max(height);
+    let picture = gdk_pixbuf::Pixbuf::from_file_at_scale(wallpaper, scaled_width, scaled_height, false).ok()?;
+    let frame = frame.copy()?;
+    picture.copy_area((scaled_width - width) / 2, (scaled_height - height) / 2, width, height, &frame, x, y);
+    Some((frame.read_pixel_bytes(), frame.width(), frame.height(), frame.rowstride() as usize))
+}
+
+fn collect_scales(widget: &gtk4::Widget, scales: &mut Vec<gtk4::Scale>) {
+    if let Some(scale) = widget.downcast_ref::<gtk4::Scale>() {
+        scales.push(scale.clone());
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        collect_scales(&current, scales);
+        child = current.next_sibling();
+    }
+}
+
+/// Writes `titan-crosshair-N-dark.svg` (white) and `-light.svg` (black) into a temporary icon directory.
+fn crosshair_icon_dir() -> Option<PathBuf> {
+    let source_dir = app_settings::resolve_assets_dir()?.join("crosshairs");
+    let dir = std::env::temp_dir().join("titan_control_icons");
+    std::fs::create_dir_all(&dir).ok()?;
+    for index in 1..=6 {
+        let svg = std::fs::read_to_string(source_dir.join(format!("crosshair_{index}.svg"))).ok()?;
+        std::fs::write(dir.join(format!("titan-crosshair-{index}-dark.svg")), &svg).ok()?;
+        std::fs::write(dir.join(format!("titan-crosshair-{index}-light.svg")), svg.replace("white", "black")).ok()?;
+    }
+    Some(dir)
+}
+
+/// Marks the box that holds a row's prefixes (cancels the gap to the title). An expander row keeps its prefixes
+/// in an extra box inside its header row, so the box one level up is the one with the gap.
+fn mark_prefixes(prefix: &gtk4::Widget, expander: bool) {
+    let mut prefixes = prefix.parent();
+    if expander {
+        prefixes = prefixes.and_then(|inner| inner.parent());
+    }
+    if let Some(prefixes) = prefixes {
+        prefixes.add_css_class("favorite-prefixes");
+    }
+}
+
+/// The star stays in the layout (so row titles never move) and is only faded in while the key is held.
+fn show_star(star: &gtk4::ToggleButton, visible: bool) {
+    star.set_opacity(if visible { 1.0 } else { 0.0 });
+    star.set_can_target(visible);
+    star.set_can_focus(visible);
+}
+
+/// Shows the favorite stars while the configured key is held.
+#[derive(Default)]
+struct Favorites {
+    binding: Cell<StepModifier>,
+    active: Cell<bool>,
+    /// Shown regardless of the key (UI check only).
+    forced: Cell<bool>,
+    stars: RefCell<Vec<glib::WeakRef<gtk4::ToggleButton>>>,
+}
+
+impl Favorites {
+    fn watch(&self, star: &gtk4::ToggleButton) {
+        show_star(star, self.active.get());
+        self.stars.borrow_mut().push(star.downgrade());
+    }
+
+    fn set_active(&self, active: bool) {
+        let active = active || self.forced.get();
+        if self.active.replace(active) == active {
+            return;
+        }
+        for star in self.stars.borrow().iter().filter_map(|star| star.upgrade()) {
+            show_star(&star, active);
         }
     }
 
-    let css = gtk4::CssProvider::new();
-    css.load_from_data(concat!(
-        ".linked > button.toggle {",
-        "  min-height: 32px;",
-        "  min-width: 0;",
-        "  padding: 4px 12px;",
-        "  font-size: 13px;",
-        "}",
-        ".scale-stepper > button {",
-        "  min-height: 32px;",
-        "  min-width: 32px;",
-        "  padding: 0;",
-        "}",
-        ".linked > button.color-btn.toggle {",
-        "  min-width: 42px;",
-        "  padding: 0;",
-        "  border: 1px solid alpha(@window_fg_color, 0.3);",
-        "}",
-        ".crosshair-shape-btn image {",
-        "  min-width: 28px;",
-        "  min-height: 28px;",
-        "}",
-        ".crosshair-shape-btn { padding: 2px 8px; }",
-        ".color-btn.color-red { background-color: #ff0000; }",
-        ".color-btn.color-yel { background-color: #ffff00; }",
-        ".color-btn.color-grn { background-color: #00ff00; }",
-        ".color-btn.color-cya { background-color: #00ffff; }",
-        ".color-btn.color-blu { background-color: #0066ff; }",
-        ".color-btn.color-pur { background-color: #cc00ff; }",
-        ".color-btn.color-wht { background-color: #ffffff; }",
-        ".color-btn:checked { outline: 2px solid @accent_color; outline-offset: -2px; }",
-        ".profile-grid-frame {",
-        "  background-color: @card_bg_color;",
-        "  border-radius: 12px;",
-        "  padding: 18px 24px;",
-        "}",
-    ));
-    gtk4::style_context_add_provider_for_display(
-        &gtk4::gdk::Display::default().expect("display"),
-        &css,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-
-    let stack = ViewStack::new();
-    let header = HeaderBar::builder()
-        .decoration_layout(":minimize,maximize,close")
-        .build();
-    let switcher = ViewSwitcher::builder()
-        .stack(&stack)
-        .policy(adw::ViewSwitcherPolicy::Wide)
-        .build();
-    header.set_title_widget(Some(&switcher));
-
-    // 1. SYSTEM
-    let (
-        p_main,
-        sv,
-        sw_mute,
-        im,
-        ir,
-        rh,
-        rf,
-        ru,
-        bo,
-        sw_rear_led,
-        bps_off,
-        bps_l1,
-        bps_l2,
-        bpl_off,
-        bpl_l1,
-        bpl_l2,
-        bpl_l3,
-        ci,
-        cr,
-        swb,
-        cl,
-        st,
-        sh,
-        sv_osd,
-        str_osd,
-        bcol,
-        bbc,
-        b1,
-    ) = tabs::tab_display::build(lang, updaters);
-
-    // 2. PROFILE
-    let (
-        p_pre,
-        cm,
-        bdef,
-        bcust,
-        rev,
-        sb,
-        sc,
-        ss,
-        sshb,
-        sce,
-        scoe,
-        ssr,
-        slbl,
-        sw_dcr,
-        ct,
-        sr,
-        sg,
-        sbl,
-        chdr,
-        cgam,
-        cnv,
-        cod,
-        cdyds,
-        h_v,
-        s_v,
-        sw_a,
-        sw_r,
-        b_dim,
-        s_halo_e,
-    ) = tabs::tab_profiles::build(lang, updaters);
-
-    // 3. GAMING
-    let (
-        p_gam,
-        _e_size,
-        b_size,
-        e_hz,
-        b_hz,
-        e_cr,
-        b_cr_s,
-        b_cr_c,
-        e_st,
-        b_st_t,
-        b_st_p,
-        e_gt,
-        b_gt_t,
-        b_gt_p,
-        e_mag,
-        s_mag_n,
-        b_mag_z,
-        b_mag_s,
-        b_mag_p,
-        sw_al,
-        e_hawk,
-        b_hawk_s,
-        b_hawk_p,
-        b_hawk_l,
-    ) = tabs::tab_gaming::build(lang, updaters);
-
-    let (p_inf, c_lang, c_theme, sw_auto_start, sw_start_minimized) =
-        tabs::tab_info::build(lang, updaters);
-
-    stack
-        .add_titled(&p_main, Some("main"), &tr(lang, "tab_display"))
-        .set_icon_name(Some("tab-monitor-symbolic"));
-    stack
-        .add_titled(&p_pre, Some("profiles"), &tr(lang, "tab_profiles"))
-        .set_icon_name(Some("tab-profiles-symbolic"));
-    stack
-        .add_titled(&p_gam, Some("gaming"), &tr(lang, "tab_gaming"))
-        .set_icon_name(Some("tab-gaming-symbolic"));
-    stack
-        .add_titled(&p_inf, Some("info"), &tr(lang, "tab_info"))
-        .set_icon_name(Some("tab-info-symbolic"));
-
-    {
-        let s = stack.clone();
-        updaters.borrow_mut().push(Box::new(move |l| {
-            if let Some(pg) = s.child_by_name("main") {
-                s.page(&pg).set_title(Some(&tr(l, "tab_display")));
-            }
-            if let Some(pg) = s.child_by_name("profiles") {
-                s.page(&pg).set_title(Some(&tr(l, "tab_profiles")));
-            }
-            if let Some(pg) = s.child_by_name("gaming") {
-                s.page(&pg).set_title(Some(&tr(l, "tab_gaming")));
-            }
-            if let Some(pg) = s.child_by_name("info") {
-                s.page(&pg).set_title(Some(&tr(l, "tab_info")));
-            }
-        }));
+    fn held(&self, state: gdk::ModifierType) -> bool {
+        state.contains(match self.binding.get() {
+            StepModifier::Ctrl => gdk::ModifierType::CONTROL_MASK,
+            StepModifier::Shift => gdk::ModifierType::SHIFT_MASK,
+            StepModifier::Alt => gdk::ModifierType::ALT_MASK,
+            StepModifier::Super => gdk::ModifierType::SUPER_MASK,
+        })
     }
 
-    let layout = GtkBox::new(Orientation::Vertical, 0);
-    layout.append(&header);
-    layout.append(&stack);
+    fn is_key(&self, key: gdk::Key) -> bool {
+        match self.binding.get() {
+            StepModifier::Ctrl => matches!(key, gdk::Key::Control_L | gdk::Key::Control_R),
+            StepModifier::Shift => matches!(key, gdk::Key::Shift_L | gdk::Key::Shift_R),
+            StepModifier::Alt => matches!(key, gdk::Key::Alt_L | gdk::Key::Alt_R | gdk::Key::Meta_L | gdk::Key::Meta_R),
+            StepModifier::Super => matches!(key, gdk::Key::Super_L | gdk::Key::Super_R),
+        }
+    }
 
-    let window = adw::ApplicationWindow::builder()
-        .application(app)
-        .icon_name(app_settings::APP_ICON_NAME)
-        .default_width(650)
-        .default_height(800)
-        .content(&layout)
-        .build();
-
-    MainWidgets {
-        window,
-        combo_lang: c_lang,
-        combo_theme: c_theme,
-        switch_auto_start: sw_auto_start,
-        switch_start_minimized: sw_start_minimized,
-        row_info_model: im,
-        row_info_resolution: ir,
-        row_info_hz: rh,
-        row_info_firmware: rf,
-        row_info_usage: ru,
-        scale_audio_volume: sv,
-        switch_audio_mute: sw_mute,
-        button_power_off: bo,
-        switch_rear_led: sw_rear_led,
-        button_power_save_off: bps_off,
-        button_power_save_lvl1: bps_l1,
-        button_power_save_lvl2: bps_l2,
-        button_led_off: bpl_off,
-        button_led_lvl1: bpl_l1,
-        button_led_lvl2: bpl_l2,
-        button_led_lvl3: bpl_l3,
-        combo_input_source: ci,
-        combo_output_range: cr,
-        switch_quick_boot: swb,
-        combo_osd_language: cl,
-        scale_osd_time: st,
-        scale_osd_h_position: sh,
-        scale_osd_v_position: sv_osd,
-        scale_osd_transparency: str_osd,
-        button_reset_colors: bcol,
-        button_reset_settings: bbc,
-        button_reset_factory: b1,
-        combo_picture_mode: cm,
-        button_profile_default: bdef,
-        button_profile_custom: bcust,
-        custom_revealer: rev,
-        scale_custom_brightness: sb,
-        scale_custom_contrast: sc,
-        scale_custom_sharpness: ss,
-        scale_custom_shadow_balance: sshb.clone(),
-        scale_custom_cr_enhance: sce.clone(),
-        scale_custom_color_enhance: scoe.clone(),
-        scale_custom_super_res: ssr.clone(),
-        scale_custom_low_blue_light: slbl,
-        switch_custom_dcr: sw_dcr,
-        combo_custom_color_temp: ct,
-        scale_custom_red_gain: sr,
-        scale_custom_green_gain: sg,
-        scale_custom_blue_gain: sbl,
-        combo_custom_hdr: chdr.clone(),
-        combo_custom_gamma: cgam,
-        combo_custom_night_vision: cnv.clone(),
-        combo_custom_dynamic_od: cod.clone(),
-        combo_custom_dyds: cdyds.clone(),
-        hue_scales_vector: h_v,
-        saturation_scales_vector: s_v,
-        buttons_screen_size: b_size,
-        expander_fps_counter: e_hz,
-        buttons_fps_pos: b_hz,
-        expander_crosshair: e_cr,
-        buttons_crosshair_shape: b_cr_s,
-        buttons_crosshair_color: b_cr_c,
-        expander_stopwatch: e_st,
-        buttons_stopwatch_time: b_st_t,
-        buttons_stopwatch_pos: b_st_p,
-        expander_game_time: e_gt,
-        buttons_game_time_val: b_gt_t,
-        buttons_game_time_pos: b_gt_p,
-        expander_magnifier: e_mag,
-        switch_magnifier_night_vision: s_mag_n,
-        buttons_magnifier_zoom: b_mag_z,
-        buttons_magnifier_size: b_mag_s,
-        buttons_magnifier_pos: b_mag_p,
-        switch_alignment: sw_al,
-        expander_hawkeye: e_hawk,
-        buttons_hawkeye_size: b_hawk_s,
-        buttons_hawkeye_pos: b_hawk_p,
-        buttons_hawkeye_lvl: b_hawk_l,
-        switch_gaming_async: sw_a,
-        switch_gaming_rush: sw_r,
-        buttons_gaming_local_dimming: b_dim,
-        buttons_gaming_dyds: cdyds.clone(),
-        buttons_gaming_night_vision: cnv.clone(),
-        buttons_gaming_dynamic_od: cod.clone(),
-        buttons_gaming_hdr: chdr.clone(),
-        scale_gaming_color_enhance: scoe.clone(),
-        scale_gaming_cr_enhance: sce.clone(),
-        scale_gaming_shadow_enhance: sshb.clone(),
-        scale_gaming_super_res: ssr.clone(),
-        scale_gaming_halo_control: s_halo_e,
+    fn track(self: &Rc<Self>, window: &adw::ApplicationWindow) {
+        let keys = gtk4::EventControllerKey::new();
+        keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let this = self.clone();
+        keys.connect_key_pressed(move |_, key, _, state| {
+            this.set_active(this.is_key(key) || this.held(state));
+            glib::Propagation::Proceed
+        });
+        let this = self.clone();
+        keys.connect_key_released(move |_, key, _, state| {
+            this.set_active(!this.is_key(key) && this.held(state));
+        });
+        let this = self.clone();
+        keys.connect_modifiers(move |_, state| {
+            this.set_active(this.held(state));
+            glib::Propagation::Proceed
+        });
+        window.add_controller(keys);
+        // Releasing the key outside the window must not leave the stars visible.
+        let this = self.clone();
+        window.connect_is_active_notify(move |window| {
+            if !window.is_active() {
+                this.set_active(false);
+            }
+        });
     }
 }

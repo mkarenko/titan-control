@@ -49,7 +49,12 @@ impl Ui {
         scroll::install(&prefs);
 
         let stack: gtk4::Stack = builder.object("stack").expect("stack in window.ui");
-        let translator = translate::Translator::collect(&[window.clone().upcast(), prefs.clone().upcast()], &[stack]);
+        // The dialog builds its inner widgets only when it is first shown, so its page is given directly.
+        let prefs_page: adw::PreferencesPage = builder.object("prefs_page").expect("prefs_page in window.ui");
+        let translator = translate::Translator::collect(
+            &[window.clone().upcast(), prefs.clone().upcast(), prefs_page.upcast()],
+            &[stack],
+        );
 
         let favorites = Rc::new(Favorites::default());
         favorites.track(&window);

@@ -1,6 +1,6 @@
 [package]
 name = "titan_control"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "Control the Titan Army P275MV PLUS monitor over DDC/CI"
 license = "MIT"

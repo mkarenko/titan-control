@@ -19,7 +19,7 @@ RETRY_WAIT = 0.324   # pause after a failed reply (as VMW)
 WRITE_GAP = 0.060    # SET 99 -> SET code
 TABLE_SELECTORS = range(0x00, 0x1F)
 # Codes whose working register is the plain one although [99] answers with data (confirmed by tests).
-PLAIN_CODES = {0x39, 0x04, 0x05, 0x06, 0x08, 0x0A, 0xB0}  # 39: LED; MCCS resets work only with a plain SET (C7 works with 99)
+PLAIN_CODES = {0x02, 0x39, 0x04, 0x05, 0x06, 0x08, 0x0A, 0xB0}  # 02: clears the OSD-change flag; 39: LED; MCCS resets work only with a plain SET (C7 works with 99)
 
 # Confirmed or documented names (p275mv_plus.md). "99"/"plain" marks the register when both exist.
 NAMES = {
@@ -196,6 +196,10 @@ def describe(maximum, current, code=None):
     """Human readable value. Manufacturer registers answer maximum = 0xFF<max>."""
     if code == 0xDC:  # Display Application: 00ff/0000 is a real value here (0 = Standard)
         return f"{current} (0 Standard, 3 Movie, 5 Games)"
+    if code == 0x52 and maximum == 0x00FF:  # plain register: code of the last setting changed in the OSD
+        if current == 0:
+            return "no change recorded (cleared)"
+        return f"last changed in the OSD: code 0x{current & 0xFF:02X} ({NAMES.get(current & 0xFF, 'unknown')})"
     if maximum == 0x00FF and current == 0:
         return "placeholder (no data)"
     if code == 0xAC:  # horizontal frequency: 24 bits = ml, sh, sl

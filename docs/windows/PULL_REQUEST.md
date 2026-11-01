@@ -53,9 +53,9 @@ Windows 10 Pro x64, 150 % scaling, release build, monitor connected:
 
 | State | Working set | Private bytes | CPU, 5 min |
 | --- | --- | --- | --- |
-| Idle in the tray | 4.0 – 4.8 MB | 3.35 – 3.45 MB | 0.000 s (0 % of one core) |
+| Idle in the tray | 0.19 MB (peak 1.93 MB while sampling) | 2.43 – 2.49 MB | 0.000 s (0 % of one core) |
 | Idle in the tray right after closing the window | 0.6 MB | 3.3 MB | — |
-| Settings window open, idle | 4.0 MB (trimmed) / 15–18 MB warm | 3.34 MB | — |
+| Settings window open | 1.6 – 20.9 MB, depending on how much was just painted | 3.6 – 4.7 MB | — |
 | Startup (first scan of the monitor) | ≈ 15 MB | ≈ 3.4 MB | ≈ 0.7 s |
 
 Linux comparison, same repository, built and started in a Debian 13 container with Xvfb (`GSK_RENDERER=cairo`):
@@ -82,6 +82,13 @@ Raw samples: `docs/windows/measure-windows-idle.txt`, `docs/windows/measure-wind
 - **DPI:** per-monitor v2, layout verified at 150 % scaling; `WM_DPICHANGED` rebuilds the fonts and re-flows the pages.
 - **No idle bus traffic:** the log of an idle run contains no DDC lines after the startup scan, and the CPU time over
   five minutes is 0.016 s.
+- **Tray:** with `--minimized` no window exists; the left click opens it, a second left click hides it, closing it
+  with the title bar button destroys it, the left click recreates it, and the right click opens the menu with the
+  favourite modes, sliders, options, toggles, show/hide and quit. The callbacks are the ones of
+  `NOTIFYICON_VERSION_4` (`NIN_SELECT`, `WM_CONTEXTMENU`, event in the low word of `lParam`); the legacy mouse
+  messages are handled as well.
+- **Rendering:** scrolling with the wheel and with the scroll bar, minimising and restoring, and switching pages leave
+  no stale pixels, and the colours stay identical through all of it.
 
 ## Known limitations (documented in `docs/windows/README.md`)
 

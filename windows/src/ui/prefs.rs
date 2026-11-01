@@ -126,7 +126,9 @@ fn run_modal(app: &mut App, class: &str, title: &str, height: i32, build: Builde
     }
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, app as *mut App as isize);
-        win::set_dark_frame(hwnd, app.dark());
+        if app.settings.theme != 0 {
+            win::set_dark_frame(hwnd, app.dark_caption());
+        }
         EnableWindow(owner, 0);
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, app.icon_small as isize);
     }
@@ -410,7 +412,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             app.needs_rebuild = true;
             win::set_process_dark_mode(app.dark());
             unsafe {
-                win::set_dark_frame(hwnd, app.dark());
+                if app.settings.theme != 0 {
+            win::set_dark_frame(hwnd, app.dark_caption());
+        }
                 InvalidateRect(hwnd, ptr::null(), 1);
             }
         }
@@ -490,9 +494,9 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
             0
         }
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
-            let dark = app.dark();
-            let background: u32 = if dark { 0x0020_2020 } else { 0x00F3_F3F3 };
-            let text: u32 = if dark { 0x00F0_F0F0 } else { 0x0020_2020 };
+            let palette = crate::ui::palette_for(app.settings.theme);
+            let background = palette.background;
+            let text = palette.text;
             unsafe {
                 SetTextColor(wparam as _, text);
                 SetBkColor(wparam as _, background);
@@ -508,8 +512,8 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
             }
         }
         WM_ERASEBKGND => {
-            let dark = app.dark();
-            let background: u32 = if dark { 0x0020_2020 } else { 0x00F3_F3F3 };
+            let palette = crate::ui::palette_for(app.settings.theme);
+            let background = palette.background;
             unsafe {
                 use windows_sys::Win32::Graphics::Gdi::{CreateSolidBrush, FillRect};
                 let brush = CreateSolidBrush(background);

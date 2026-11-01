@@ -51,7 +51,8 @@ use, so the artwork stays in sync with the Linux build, and embeds the executabl
   preferences (Ctrl, Shift, Alt or Super; `Ctrl+Alt+1…5` by default).
 - **Autostart:** "Start with the system" writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; the entry starts
   the application with `--minimized`, so only the tray icon appears.
-- **Single instance:** a named mutex; starting a second copy brings the running window to the front.
+- **Single instance:** a named mutex; starting a second copy brings the running window to the front, and
+  `titan-control.exe --quit` stops the running instance (handy for scripts and updates).
 
 Paths:
 
@@ -149,9 +150,12 @@ These are deliberate, and each one is a Windows constraint or a consequence of t
    the value the application wrote.
 6. **The overview page has no monitor picture or wallpaper.** Those were compositor integrations on Linux; the page
    shows the model, resolution, refresh rate and usage time instead.
-7. **Dark theme is partial.** The window background, separators, frames and scroll bars follow the theme; classic
-   Win32 controls (combo boxes, check boxes, track bars) keep the rendering Windows gives them, because their dark
-   variant is not part of the documented API. The `Theme` preference chooses between System, Light and Dark.
+7. **Themes.** `System` and `Light` use the colours of the standard controls (white window, black text, grey lines), so
+   the window, its labels and every control agree and a repaint can never mix two palettes. `Dark` paints the window
+   surface and separators dark and asks Windows for the dark caption bar and dark control theme; the classic controls
+   keep whatever rendering Windows gives them, because a real dark variant of them is not part of the documented API.
+   That is why `System` on a dark Windows still shows a light window: it is the only look in which nothing is
+   half-themed. The caption bar follows the Windows light/dark setting for `System` and the chosen value otherwise.
 8. **The log file and the configuration live in the Windows paths** listed above instead of the XDG directories.
 9. **Notifications use tray balloons** for the errors the Linux splash window showed (for example "monitor not found").
 
@@ -162,9 +166,9 @@ attached:
 
 | State | Working set | Private bytes | CPU over 5 min |
 | --- | --- | --- | --- |
-| Idle in the tray, five minutes after the start | 3.98 – 4.83 MB | 3.35 – 3.45 MB | 0.000 s |
+| Idle in the tray, five minutes after the start | 0.19 MB (peak 1.93 MB at the sampling moments) | 2.43 – 2.49 MB | 0.000 s |
 | Idle in the tray right after closing the window | 0.6 MB | 3.3 MB | — |
-| Settings window open, idle | 4.0 MB (trimmed) / 15–18 MB while the window is being painted | 3.34 MB | — |
+| Settings window open | 1.6 – 20.9 MB, depending on how much of the window was just painted | 3.6 – 4.7 MB | — |
 | Startup, first read of the monitor | ≈ 15 MB | ≈ 3.4 MB | 0.7 s for the start-up scan |
 
 "The working set is trimmed once 30 s after the start (and whenever the window is closed): the pages of the window and
@@ -189,8 +193,9 @@ machine, measured inside a Debian 13 container with an Xvfb display (`GSK_RENDER
 | Windows (Win32) | settings window open (after the trim) | 4.0 MB |
 | Windows (Win32) | idle in the tray | 4.0 – 4.8 MB |
 
-That is roughly thirty times less resident memory than the GTK build, and the Windows build is not just smaller but
-also silent: the idle process makes no bus traffic and uses no measurable CPU.
+That is two orders of magnitude less memory than the GTK build (compare the 2.4 MB of private bytes with the 122 MB of
+resident memory), and the Windows build is not just smaller but also silent: the idle process makes no bus traffic and
+uses no measurable CPU.
 
 The Linux figures were collected with [`linux-baseline.sh`](linux-baseline.sh), which builds the Linux crate and samples
 `/proc/<pid>/status` while the application builds its window inside a Debian 13 container with an Xvfb display:

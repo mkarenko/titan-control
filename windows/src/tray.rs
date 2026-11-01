@@ -135,13 +135,23 @@ pub fn notify(app: &App, title: &str, text: &str, warning: bool) {
 }
 
 /// Handles the callback of the icon.
-pub fn on_callback(app: &mut App, event: u32) {
-    match event {
+///
+/// With `NOTIFYICON_VERSION_4` the shell puts the event in the low word of `lParam` (the high word is the icon id) and
+/// reports a left click as `NIN_SELECT` and a right click as `WM_CONTEXTMENU`. Older versions pass the mouse message
+/// itself. Both forms are accepted here.
+pub fn on_callback(app: &mut App, _x: i32, _y: i32, lparam: isize) {
+    let event = (lparam as usize) & 0xFFFF;
+    match event as u32 {
+        NIN_SELECT | NIN_KEYSELECT => toggle_window(app),
         WM_LBUTTONUP | WM_LBUTTONDBLCLK => toggle_window(app),
-        WM_RBUTTONUP | WM_CONTEXTMENU => show_menu(app),
+        WM_CONTEXTMENU | WM_RBUTTONUP => show_menu(app),
         _ => {}
     }
 }
+
+/// `NIN_SELECT` and `NIN_KEYSELECT`: the select notifications of version 4 (`WM_USER + 0` / `WM_USER + 1`).
+const NIN_SELECT: u32 = 0x0400;
+const NIN_KEYSELECT: u32 = 0x0401;
 
 /// Shows or hides the settings window.
 pub fn toggle_window(app: &mut App) {
@@ -306,7 +316,7 @@ fn show_menu(app: &mut App) {
     let mut point: POINT = unsafe { std::mem::zeroed() };
     unsafe {
         GetCursorPos(&mut point);
-        // The menu has to be usable while another window is in front.
+        // The menu needs the foreground: otherwise it stays on screen when the user clicks somewhere else.
         SetForegroundWindow(app.host);
         let choice = TrackPopupMenu(
             menu,
@@ -317,6 +327,8 @@ fn show_menu(app: &mut App) {
             app.host,
             ptr::null(),
         );
+        // The notification-area documentation asks for this empty message so the menu really goes away.
+        PostMessageW(app.host, WM_NULL, 0, 0);
         DestroyMenu(menu);
         if choice > 0 {
             if let Some(command) = commands.get(choice as usize - 1) {

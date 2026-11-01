@@ -42,6 +42,8 @@ pub const WM_UI_COMMAND: u32 = WM_APP + 1;
 pub const WM_TRAY: u32 = WM_APP + 2;
 /// A second instance asks the first one to show its window.
 pub const WM_SHOW_WINDOW: u32 = WM_APP + 3;
+/// A second instance started with `--quit` asks the first one to stop.
+pub const WM_QUIT_APP: u32 = WM_APP + 4;
 
 const HOST_CLASS: &str = "TitanControlHost";
 const MUTEX_NAME: &str = "Local\\TitanControl-single-instance";
@@ -102,6 +104,7 @@ fn main() {
         bold: ui_font(dpi, true),
         host,
         tray_added: false,
+        start_minimized: false,
         needs_rebuild: false,
         quit: false,
         lang,
@@ -112,6 +115,7 @@ fn main() {
         SetWindowLongPtrW(host, GWLP_USERDATA, app as isize);
     }
     let app = unsafe { &mut *app };
+    // Only the explicit dark theme switches uxtheme to dark; with `System` the standard controls stay as Windows draws them.
     win::set_process_dark_mode(app.dark());
     app.sync_startup_state();
 
@@ -123,8 +127,8 @@ fn main() {
     app::sync_autostart(app);
     app::schedule_trim(app);
     // `--minimized` starts in the tray; the autostart entry passes it.
-    let minimize = app.settings.start_minimized || std::env::args().any(|argument| argument == "--minimized");
-    if !minimize {
+    app.start_minimized = app.settings.start_minimized || std::env::args().any(|argument| argument == "--minimized");
+    if !app.start_minimized {
         ui::open(app);
     }
 
@@ -154,10 +158,12 @@ fn main() {
     }
 }
 
-/// Creates the named mutex; `false` when another instance already runs (it was told to show its window).
+/// Creates the named mutex; `false` when another instance already runs (it was told to show its window or to quit).
 fn single_instance() -> bool {
     use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
     let name = win::wide(MUTEX_NAME);
+    // A second start with `--quit` stops the running instance instead of showing it: handy for scripts and updates.
+    let quit = std::env::args().any(|argument| argument == "--quit");
     unsafe {
         let handle = CreateMutexW(ptr::null_mut(), 0, name.as_ptr());
         if handle.is_null() {
@@ -168,7 +174,8 @@ fn single_instance() -> bool {
             let title = win::wide(settings::APP_DISPLAY_NAME);
             let existing = FindWindowW(class.as_ptr(), title.as_ptr());
             if !existing.is_null() {
-                PostMessageW(existing, WM_SHOW_WINDOW, 0, 0);
+                let message = if quit { WM_QUIT_APP } else { WM_SHOW_WINDOW };
+                PostMessageW(existing, message, 0, 0);
             }
             return false;
         }
@@ -279,7 +286,10 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
     let app = unsafe { &mut *raw };
     match message {
         WM_TRAY => {
-            tray::on_callback(app, lparam as u32);
+            // Version 4 packs the cursor position into `wParam` and the event into the low word of `lParam`.
+            let x = (wparam as u32 & 0xFFFF) as u16 as i16 as i32;
+            let y = ((wparam as u32) >> 16) as u16 as i16 as i32;
+            tray::on_callback(app, x, y, lparam);
             0
         }
         WM_UI_COMMAND => {
@@ -288,6 +298,11 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
         }
         WM_SHOW_WINDOW => {
             ui::open(app);
+            0
+        }
+        WM_QUIT_APP => {
+            app.quit = true;
+            ui::close(app);
             0
         }
         WM_HOTKEY => {

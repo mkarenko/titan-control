@@ -180,6 +180,8 @@ pub struct App {
     /// Hidden window that owns the tray icon, the timers and the worker notifications.
     pub host: HWND,
     pub tray_added: bool,
+    /// The application was started in the tray (`--minimized` or the preference): the window only opens on request.
+    pub start_minimized: bool,
     /// A language or theme change needs the settings window to be built again.
     pub needs_rebuild: bool,
     pub quit: bool,
@@ -194,8 +196,15 @@ impl App {
         i18n::tr(&self.lang, text)
     }
 
-    /// System, light or dark, from the preference and the Windows setting.
+    /// The dark theme of the application itself, not the Windows setting: only an explicit "Dark" paints the window
+    /// dark, because the classic Win32 controls always render light and a dark window around them looks broken.
     pub fn dark(&self) -> bool {
+        self.settings.theme == 2
+    }
+
+    /// Whether the caption bar should be drawn dark: the explicit dark theme, or the Windows setting when the theme is
+    /// `System`.
+    pub fn dark_caption(&self) -> bool {
         match self.settings.theme {
             1 => false,
             2 => true,
@@ -470,7 +479,8 @@ pub fn drain_messages(app: &mut App) {
                 app.info = Some(info);
                 ui::apply_state(app);
                 crate::tray::refresh(app);
-                if !app.settings.start_minimized {
+                // A start in the tray stays in the tray: the monitor being found does not open the window.
+                if !app.start_minimized {
                     ui::open(app);
                 }
             }

@@ -8,8 +8,9 @@ use std::{collections::HashMap, ffi::c_void, ptr};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, FillRect, GetStockObject, InvalidateRect, MoveToEx,
-    Rectangle, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow, HBRUSH, HFONT, NULL_BRUSH,
+    CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, FillRect, GetStockObject, GetSysColorBrush,
+    InvalidateRect, MoveToEx, Rectangle, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow,
+    COLOR_WINDOW, HBRUSH, HFONT, NULL_BRUSH,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
@@ -91,8 +92,30 @@ pub struct Palette {
     pub line: u32,
 }
 
-pub const LIGHT: Palette = Palette { background: 0x00F3_F3F3, text: 0x0020_2020, line: 0x00C0_C0C0 };
+/// The colours of the standard controls: white background, black text, grey dividing lines. Used for the `System` and
+/// `Light` themes, so that the window, its labels and the classic controls always render with the same palette.
+pub fn system_palette() -> Palette {
+    use windows_sys::Win32::Graphics::Gdi::{GetSysColor, COLOR_3DSHADOW, COLOR_WINDOW, COLOR_WINDOWTEXT};
+    unsafe {
+        Palette {
+            background: GetSysColor(COLOR_WINDOW),
+            text: GetSysColor(COLOR_WINDOWTEXT),
+            line: GetSysColor(COLOR_3DSHADOW),
+        }
+    }
+}
+
+/// Our own dark colours, used only when the user asks for the dark theme: the classic controls keep the light
+/// rendering Windows gives them, so this is a best-effort look, not a full dark mode.
 pub const DARK: Palette = Palette { background: 0x0020_2020, text: 0x00F0_F0F0, line: 0x0050_5050 };
+
+/// Palette of a theme: `0` = system, `1` = light, `2` = dark.
+pub fn palette_for(theme: u32) -> Palette {
+    match theme {
+        2 => DARK,
+        _ => system_palette(),
+    }
+}
 
 // ───────────────────────────── model ─────────────────────────────
 
@@ -228,8 +251,7 @@ fn create_shell(app: &mut App) -> Window {
         win::scaled(1060, dpi),
         win::scaled(800, dpi)
     ));
-    let dark = app.dark();
-    let palette = if dark { DARK } else { LIGHT };
+    let palette = palette_for(app.settings.theme);
     let font = make_font(dpi, false);
     let bold = make_font(dpi, true);
     let brush = unsafe { CreateSolidBrush(palette.background) };
@@ -287,7 +309,12 @@ fn create_shell(app: &mut App) -> Window {
         if dpi != window.dpi {
             rescale(&mut window, dpi);
         }
-        win::set_dark_frame(hwnd, dark);
+        // The caption follows the light or dark choice; with `System` Windows decides.
+        if app.settings.theme != 0 {
+            win::set_dark_frame(hwnd, app.dark_caption());
+        }
+        // Erasing uses the class brush, so it keeps working while the application state is momentarily taken.
+        SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, window.brush as isize);
         SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, app.icon_large as isize);
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, app.icon_small as isize);
         win::center(hwnd, win::scaled(1060, dpi), win::scaled(800, dpi));
@@ -317,6 +344,11 @@ fn rebuild(app: &mut App) {
             ShowWindow(window.hwnd, SW_SHOW);
             SetForegroundWindow(window.hwnd);
             UpdateWindow(window.hwnd);
+            crate::log::write(format_args!(
+                "[UI] window {:?} shown, visible={}",
+                window.hwnd,
+                IsWindowVisible(window.hwnd)
+            ));
         }
         app.window = Some(window);
     }
@@ -362,7 +394,8 @@ fn register_classes(instance: *mut c_void) {
             class.lpfnWndProc = proc_;
             class.hInstance = instance;
             class.hCursor = LoadCursorW(ptr::null_mut(), IDC_ARROW);
-            class.hbrBackground = ptr::null_mut();
+            // Fallback for the first paint; the themes replace it per class below.
+            class.hbrBackground = GetSysColorBrush(COLOR_WINDOW) as _;
             class.lpszClassName = class_name.as_ptr();
             if RegisterClassExW(&class) == 0 {
                 crate::log::write(format_args!("[UI] RegisterClassExW({name}): {}", win::last_error()));
@@ -469,6 +502,10 @@ fn build(app: &mut App, window: &mut Window) {
                 ptr::null_mut(),
             );
             window.pages.push(PageUi { window: page_window, scroll: 0, content_height: 0 });
+            if index == 0 {
+                // The pages share one window class; its brush is what erases them while they scroll.
+                SetClassLongPtrW(page_window, GCLP_HBRBACKGROUND, window.brush as isize);
+            }
         }
         build_page(app, window, index, page);
     }
@@ -1068,6 +1105,8 @@ fn reflow(window: &mut Window, _app: &mut App) {
             info.nPage = viewport as u32;
             info.nPos = scroll;
             SetScrollInfo(page_window, SB_VERT, &info, 1);
+            // The rows moved: repaint the page behind them, or the old positions stay visible while scrolling.
+            InvalidateRect(page_window, ptr::null(), 1);
         }
     }
 }
@@ -1839,9 +1878,16 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
             },
             None => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
         },
-        WM_ERASEBKGND => match app.window.as_ref() {
-            Some(window) => unsafe { fill_background(hwnd, wparam as _, window.brush) },
-            None => 1,
+        // Always paint: a message that arrives while the application state is taken (during a re-layout or a worker
+        // update) must not leave the previous pixels behind, which looked like duplicated rows while scrolling.
+        WM_ERASEBKGND => unsafe {
+            let brush = app
+                .window
+                .as_ref()
+                .map(|window| window.brush)
+                .filter(|brush| !brush.is_null())
+                .unwrap_or_else(|| GetSysColorBrush(COLOR_WINDOW));
+            fill_background(hwnd, wparam as _, brush)
         },
         WM_CLOSE => {
             close(app);
@@ -1904,9 +1950,16 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
             },
             None => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
         },
-        WM_ERASEBKGND => match app.window.as_ref() {
-            Some(window) => unsafe { fill_background(hwnd, wparam as _, window.brush) },
-            None => 1,
+        // Always paint: a message that arrives while the application state is taken (during a re-layout or a worker
+        // update) must not leave the previous pixels behind, which looked like duplicated rows while scrolling.
+        WM_ERASEBKGND => unsafe {
+            let brush = app
+                .window
+                .as_ref()
+                .map(|window| window.brush)
+                .filter(|brush| !brush.is_null())
+                .unwrap_or_else(|| GetSysColorBrush(COLOR_WINDOW));
+            fill_background(hwnd, wparam as _, brush)
         },
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }

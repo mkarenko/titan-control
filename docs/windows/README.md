@@ -192,18 +192,21 @@ machine, measured inside a Debian 13 container with an Xvfb display (`GSK_RENDER
 That is roughly thirty times less resident memory than the GTK build, and the Windows build is not just smaller but
 also silent: the idle process makes no bus traffic and uses no measurable CPU.
 
-The Linux figures were collected with:
+The Linux figures were collected with [`linux-baseline.sh`](linux-baseline.sh), which builds the Linux crate and samples
+`/proc/<pid>/status` while the application builds its window inside a Debian 13 container with an Xvfb display:
 
 ```bash
 # inside a Debian 13 container with libgtk-4-dev, libadwaita-1-dev, blueprint-compiler and rustup
-cargo build --release
-Xvfb :99 -screen 0 1920x1200x24 &
-DISPLAY=:99 GSK_RENDERER=cairo TITAN_CHECK_UI=1 ./target/release/titan_control
-# RSS of the process from /proc/<pid>/status (VmRSS / VmHWM)
+./docs/windows/linux-baseline.sh
 ```
 
-The Windows figures come from `Get-Process` (`WorkingSet64`, `PrivateMemorySize64`, `TotalProcessorTime`), sampled
-once a minute for five minutes with the window closed.
+The Windows figures come from [`measure-windows.ps1`](measure-windows.ps1), which samples `Get-Process`
+(`WorkingSet64`, `PrivateMemorySize64`, `TotalProcessorTime`) once a minute for five minutes with the window closed and
+then with it open:
+
+```powershell
+powershell -File docs\windows\measure-windows.ps1
+```
 
 ## Where the memory goes
 

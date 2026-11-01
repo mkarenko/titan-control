@@ -75,10 +75,10 @@ fn rebuild_main_window(app: &mut App) {
         return;
     }
     app.needs_rebuild = false;
-    let reopen = crate::ui::is_open(app);
-    crate::ui::close(app);
-    if reopen {
-        crate::ui::open(app);
+    if crate::ui::is_open(app) {
+        crate::ui::rebuild_preserving_view(app);
+    } else {
+        crate::ui::close(app);
     }
 }
 
@@ -126,13 +126,12 @@ fn run_modal(app: &mut App, class: &str, title: &str, height: i32, build: Builde
     }
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, app as *mut App as isize);
-        if app.settings.theme != 0 {
-            win::set_dark_frame(hwnd, app.dark_caption());
-        }
+        win::set_dark_frame(hwnd, app.dark_caption());
         EnableWindow(owner, 0);
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, app.icon_small as isize);
     }
     build(app, hwnd, dpi);
+    theme_dialog_children(hwnd, app.dark());
     unsafe {
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
@@ -411,10 +410,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             app.save_settings();
             app.needs_rebuild = true;
             win::set_process_dark_mode(app.dark());
+            theme_dialog_children(hwnd, app.dark());
             unsafe {
-                if app.settings.theme != 0 {
-            win::set_dark_frame(hwnd, app.dark_caption());
-        }
+                win::set_dark_frame(hwnd, app.dark_caption());
                 InvalidateRect(hwnd, ptr::null(), 1);
             }
         }
@@ -495,25 +493,30 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
         }
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             let palette = crate::ui::palette_for(app.settings.theme);
-            let background = palette.background;
+            let background = palette.card;
             let text = palette.text;
             unsafe {
                 SetTextColor(wparam as _, text);
                 SetBkColor(wparam as _, background);
                 use windows_sys::Win32::Graphics::Gdi::CreateSolidBrush;
-                let brush = DLG_BRUSH.with(|brush| {
-                    let mut brush = brush.borrow_mut();
-                    if brush.is_none() {
-                        *brush = Some(CreateSolidBrush(background));
+                let brush = DLG_BRUSH.with(|cell| {
+                    let mut entry = cell.borrow_mut();
+                    if let Some((cached_color, cached_brush)) = *entry {
+                        if cached_color == background && !cached_brush.is_null() {
+                            return cached_brush;
+                        }
+                        DeleteObject(cached_brush as _);
                     }
-                    brush.unwrap()
+                    let new_brush = CreateSolidBrush(background);
+                    *entry = Some((background, new_brush));
+                    new_brush
                 });
                 brush as LRESULT
             }
         }
         WM_ERASEBKGND => {
             let palette = crate::ui::palette_for(app.settings.theme);
-            let background = palette.background;
+            let background = palette.card;
             unsafe {
                 use windows_sys::Win32::Graphics::Gdi::{CreateSolidBrush, FillRect};
                 let brush = CreateSolidBrush(background);
@@ -528,7 +531,24 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
     }
 }
 
+fn theme_dialog_children(hwnd: HWND, dark: bool) {
+    unsafe {
+        let mut child = GetWindow(hwnd, GW_CHILD);
+        while !child.is_null() {
+            let mut class_buf = [0u16; 32];
+            let len = GetClassNameW(child, class_buf.as_mut_ptr(), class_buf.len() as i32) as usize;
+            let class_name = String::from_utf16_lossy(&class_buf[..len]);
+            if class_name.eq_ignore_ascii_case("ComboBox") {
+                win::set_combo_theme(child, dark);
+            } else {
+                win::set_control_theme(child, dark);
+            }
+            child = GetWindow(child, GW_HWNDNEXT);
+        }
+    }
+}
+
 thread_local! {
-    /// Background brush of the dialogs (one per thread, freed when the process ends).
-    static DLG_BRUSH: std::cell::RefCell<Option<windows_sys::Win32::Graphics::Gdi::HBRUSH>> = const { std::cell::RefCell::new(None) };
+    /// Background brush of the dialogs (`(color, HBRUSH)`), updated automatically if the theme changes.
+    static DLG_BRUSH: std::cell::RefCell<Option<(u32, windows_sys::Win32::Graphics::Gdi::HBRUSH)>> = const { std::cell::RefCell::new(None) };
 }

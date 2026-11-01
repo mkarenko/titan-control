@@ -210,6 +210,8 @@ pub struct MsiDdc {
     /// Handles returned by `dxva2`; destroyed together with the connection.
     physical: Vec<PhysicalMonitor>,
     monitor: HANDLE,
+    target_name: String,
+    target_connector: String,
     last_request: Option<Instant>,
     /// Set after a failed exchange: the next operation first waits for the monitor to answer again.
     needs_settle: bool,
@@ -270,13 +272,73 @@ impl MsiDdc {
         Ok(Self {
             physical,
             monitor: handle,
+            target_name: monitor.name.clone(),
+            target_connector: monitor.connector.clone(),
             last_request: None,
             needs_settle: true,
             last_reply: None,
         })
     }
 
+    /// Re-enumerates displays and re-opens the `dxva2` physical monitor handle after a display mode or link reset
+    /// (such as toggling Adaptive-Sync or PIP/PBP) invalidates the previous `HMONITOR` / `HANDLE`.
+    fn reconnect(&mut self) -> bool {
+        if !self.physical.is_empty() {
+            unsafe {
+                DestroyPhysicalMonitors(self.physical.len() as u32, self.physical.as_ptr());
+            }
+            self.physical.clear();
+        }
+        self.monitor = ptr::null_mut();
 
+        for attempt in 0..16 {
+            if attempt > 0 {
+                thread::sleep(Duration::from_millis(250));
+            }
+            let monitors = enumerate_monitors();
+            let candidate = monitors
+                .iter()
+                .find(|m| !self.target_name.is_empty() && m.name.eq_ignore_ascii_case(&self.target_name))
+                .or_else(|| monitors.iter().find(|m| m.name.eq_ignore_ascii_case("P275MV PLUS")))
+                .or_else(|| monitors.iter().find(|m| m.connector == self.target_connector));
+
+            let Some(found) = candidate else {
+                continue;
+            };
+
+            let mut count = 0u32;
+            if unsafe { GetNumberOfPhysicalMonitorsFromHMONITOR(found.monitor, &mut count) } == 0 || count == 0 {
+                continue;
+            }
+            let mut physical =
+                vec![PhysicalMonitor { handle: ptr::null_mut(), description: [0; 128] }; count as usize];
+            if unsafe { GetPhysicalMonitorsFromHMONITOR(found.monitor, count, physical.as_mut_ptr()) } == 0 {
+                continue;
+            }
+            let handle = physical[0].handle;
+            if handle.is_null() {
+                unsafe {
+                    DestroyPhysicalMonitors(count, physical.as_ptr());
+                }
+                continue;
+            }
+            log!(
+                "[DDC] Reconnected {} on {} (attempt {})",
+                found.name,
+                found.connector,
+                attempt + 1
+            );
+            self.target_connector = found.connector.clone();
+            self.physical = physical;
+            self.monitor = handle;
+            self.last_reply = None;
+            self.needs_settle = true;
+            self.last_request = Some(Instant::now());
+            return true;
+        }
+        log!("[DDC] Reconnect failed for {}", self.target_name);
+        false
+    }
 }
 
 impl Link for MsiDdc {
@@ -290,33 +352,60 @@ impl Link for MsiDdc {
     }
 
     fn write_frame(&mut self, code: u8, value: u16) -> Result<(), FrameError> {
+        if self.monitor.is_null() && !self.reconnect() {
+            return Err(FrameError::Io(io::Error::other(describe(MONITOR_NO_LONGER_EXISTS))));
+        }
         self.pace();
         let ok = unsafe { SetVCPFeature(self.monitor, code, value as u32) };
         if ok == 0 {
-            return Err(FrameError::Io(io::Error::other(describe(unsafe { GetLastError() }))));
+            let error = unsafe { GetLastError() };
+            if error == MONITOR_NO_LONGER_EXISTS && self.reconnect() {
+                self.pace();
+                let retry_ok = unsafe { SetVCPFeature(self.monitor, code, value as u32) };
+                if retry_ok != 0 {
+                    return Ok(());
+                }
+                return Err(FrameError::Io(io::Error::other(describe(unsafe { GetLastError() }))));
+            }
+            return Err(FrameError::Io(io::Error::other(describe(error))));
         }
         Ok(())
     }
 
     fn read_frame(&mut self, code: u8, vendor: bool) -> Result<VcpReply, FrameError> {
+        if self.monitor.is_null() && !self.reconnect() {
+            return Err(FrameError::Io(io::Error::other(describe(MONITOR_NO_LONGER_EXISTS))));
+        }
         self.pace();
         let mut kind = 0u32;
         let mut current = 0u32;
         let mut maximum = 0u32;
-        let ok = unsafe { GetVCPFeatureAndVCPFeatureReply(self.monitor, code, &mut kind, &mut current, &mut maximum) };
+        let mut ok =
+            unsafe { GetVCPFeatureAndVCPFeatureReply(self.monitor, code, &mut kind, &mut current, &mut maximum) };
         let last_reply = self.last_reply;
         if ok == 0 {
-            let error = unsafe { GetLastError() };
-            return Err(match error {
-                DDCCI_VCP_NOT_SUPPORTED => FrameError::Unsupported,
-                DDCCI_INVALID_MESSAGE_CHECKSUM
-                | DDCCI_INVALID_MESSAGE_LENGTH
-                | DDCCI_INVALID_MESSAGE_COMMAND
-                | DDCCI_INVALID_DATA => FrameError::Garbage,
-                I2C_ERROR_RECEIVING_DATA | I2C_ERROR_TRANSMITTING_DATA => FrameError::Null,
-                MONITOR_NO_LONGER_EXISTS => FrameError::Io(io::Error::other(describe(error))),
-                other => FrameError::Io(io::Error::other(describe(other))),
-            });
+            let mut error = unsafe { GetLastError() };
+            if error == MONITOR_NO_LONGER_EXISTS && self.reconnect() {
+                self.pace();
+                ok = unsafe {
+                    GetVCPFeatureAndVCPFeatureReply(self.monitor, code, &mut kind, &mut current, &mut maximum)
+                };
+                if ok == 0 {
+                    error = unsafe { GetLastError() };
+                }
+            }
+            if ok == 0 {
+                return Err(match error {
+                    DDCCI_VCP_NOT_SUPPORTED => FrameError::Unsupported,
+                    DDCCI_INVALID_MESSAGE_CHECKSUM
+                    | DDCCI_INVALID_MESSAGE_LENGTH
+                    | DDCCI_INVALID_MESSAGE_COMMAND
+                    | DDCCI_INVALID_DATA => FrameError::Garbage,
+                    I2C_ERROR_RECEIVING_DATA | I2C_ERROR_TRANSMITTING_DATA => FrameError::Null,
+                    MONITOR_NO_LONGER_EXISTS => FrameError::Io(io::Error::other(describe(error))),
+                    other => FrameError::Io(io::Error::other(describe(other))),
+                });
+            }
         }
         let reply = VcpReply { maximum: maximum as u16, current: current as u16 };
         // A reply that never arrived reaches us as a zero pair (NULL frame of the monitor).
@@ -340,14 +429,23 @@ impl Link for MsiDdc {
     /// `00–1E` right after `GET 99 -> GET 22` would start a profile table stream.
     fn settle(&mut self) -> bool {
         let mut good = 0;
-        for _ in 0..30 {
+        let mut io_errors = 0;
+        for _ in 0..10 {
             match self.read_frame(VCP_VERSION, false) {
                 // VCP version 2.x: neither an empty nor a stale reply can produce this for `DF`.
                 Ok(reply) if reply.current >> 8 == 0x02 => {
                     good += 1;
+                    io_errors = 0;
                     if good == 2 {
                         self.needs_settle = false;
                         return true;
+                    }
+                }
+                Err(FrameError::Io(_)) => {
+                    good = 0;
+                    io_errors += 1;
+                    if io_errors == 2 {
+                        let _ = self.reconnect();
                     }
                 }
                 _ => good = 0,

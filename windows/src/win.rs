@@ -175,9 +175,12 @@ pub fn center(window: HWND, width: i32, height: i32) {
 
 // ───────────────────────────── dark mode ─────────────────────────────
 
-/// Lets the window manager paint the frame and the title bar dark (or like the rest of the system).
+/// Lets the window manager paint the frame and the title bar dark (or like the rest of the system),
+/// and requests rounded window corners on Windows 11.
 pub fn set_dark_frame(window: HWND, dark: bool) {
     let value: i32 = if dark { 1 } else { 0 };
+    let corner_round: i32 = 2; // DWMWCP_ROUND
+    const DWMWA_WINDOW_CORNER_PREFERENCE_ID: u32 = 33;
     unsafe {
         DwmSetWindowAttribute(
             window,
@@ -185,23 +188,45 @@ pub fn set_dark_frame(window: HWND, dark: bool) {
             &value as *const i32 as *const c_void,
             mem::size_of::<i32>() as u32,
         );
+        DwmSetWindowAttribute(
+            window,
+            DWMWA_WINDOW_CORNER_PREFERENCE_ID,
+            &corner_round as *const i32 as *const c_void,
+            mem::size_of::<i32>() as u32,
+        );
     }
 }
 
-/// Applies the explorer dark theme to a control, which covers scroll bars, combo boxes and edit fields.
+/// Applies the modern Explorer visual style (or DarkMode_Explorer) to a child control.
+/// Passing `ptr::null()` for `sub_id_list` preserves ComCtl32 v6 / UxTheme visual styles.
 pub fn set_control_theme(window: HWND, dark: bool) {
+    if window.is_null() {
+        return;
+    }
     #[link(name = "uxtheme")]
     unsafe extern "system" {
         fn SetWindowTheme(hwnd: HWND, sub_app_name: *const u16, sub_id_list: *const u16) -> i32;
     }
-    let theme = if dark { wide("DarkMode_Explorer") } else { wide("") };
-    let empty = wide("");
+    let theme = if dark { wide("DarkMode_Explorer") } else { wide("Explorer") };
     unsafe {
-        // `AllowDarkModeForWindow` (ordinal 133) is what makes the classic controls accept the dark theme.
-        if dark {
-            allow_dark_mode(window, true);
-        }
-        SetWindowTheme(window, theme.as_ptr(), empty.as_ptr());
+        allow_dark_mode(window, dark);
+        SetWindowTheme(window, theme.as_ptr(), ptr::null());
+    }
+}
+
+/// Applies `DarkMode_CFD` or `Explorer` to a ComboBox so its dropdown and frame use modern styling.
+pub fn set_combo_theme(window: HWND, dark: bool) {
+    if window.is_null() {
+        return;
+    }
+    #[link(name = "uxtheme")]
+    unsafe extern "system" {
+        fn SetWindowTheme(hwnd: HWND, sub_app_name: *const u16, sub_id_list: *const u16) -> i32;
+    }
+    let theme = if dark { wide("DarkMode_CFD") } else { wide("Explorer") };
+    unsafe {
+        allow_dark_mode(window, dark);
+        SetWindowTheme(window, theme.as_ptr(), ptr::null());
     }
 }
 
@@ -223,15 +248,26 @@ fn allow_dark_mode(window: HWND, allow: bool) {
 
 /// Whether the system asks applications for a dark look ("Settings → Personalisation → Colours").
 pub fn system_prefers_dark() -> bool {
+    registry_personalize_dword("AppsUseLightTheme").is_some_and(|data| data == 0)
+}
+
+/// Whether the Windows taskbar uses a dark surface ("SystemUsesLightTheme" == 0).
+pub fn system_taskbar_prefers_dark() -> bool {
+    registry_personalize_dword("SystemUsesLightTheme")
+        .map(|data| data == 0)
+        .unwrap_or_else(system_prefers_dark)
+}
+
+fn registry_personalize_dword(value_name: &str) -> Option<u32> {
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, REG_DWORD,
     };
     let key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
-    let value = wide("AppsUseLightTheme");
+    let value = wide(value_name);
     unsafe {
         let mut handle: HKEY = ptr::null_mut();
         if RegOpenKeyExW(HKEY_CURRENT_USER, key.as_ptr(), 0, KEY_QUERY_VALUE, &mut handle) != 0 {
-            return false;
+            return None;
         }
         let mut data = 0u32;
         let mut size = mem::size_of::<u32>() as u32;
@@ -245,7 +281,7 @@ pub fn system_prefers_dark() -> bool {
             &mut size,
         );
         RegCloseKey(handle);
-        status == 0 && data == 0
+        if status == 0 { Some(data) } else { None }
     }
 }
 

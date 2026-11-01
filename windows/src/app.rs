@@ -20,6 +20,8 @@ pub const TIMER_PROFILE: usize = 1;
 pub const TIMER_OUTPUT_RANGE: usize = 2;
 /// One-shot timer that trims the working set once the startup burst is over.
 pub const TIMER_TRIM: usize = 3;
+/// Polls the modifier key state while the settings window is open so favorite stars appear on hold.
+pub const TIMER_FAV_KEY: usize = 4;
 /// Delay before the working set is trimmed after the start (the startup scan and the first profile read are done).
 const TRIM_DELAY: u32 = 30_000;
 
@@ -196,20 +198,18 @@ impl App {
         i18n::tr(&self.lang, text)
     }
 
-    /// The dark theme of the application itself, not the Windows setting: only an explicit "Dark" paints the window
-    /// dark, because the classic Win32 controls always render light and a dark window around them looks broken.
+    /// Whether the application should use the dark theme (`System` follows the Windows app theme).
     pub fn dark(&self) -> bool {
-        self.settings.theme == 2
-    }
-
-    /// Whether the caption bar should be drawn dark: the explicit dark theme, or the Windows setting when the theme is
-    /// `System`.
-    pub fn dark_caption(&self) -> bool {
         match self.settings.theme {
             1 => false,
             2 => true,
             _ => crate::win::system_prefers_dark(),
         }
+    }
+
+    /// Whether the caption bar should be drawn dark.
+    pub fn dark_caption(&self) -> bool {
+        self.dark()
     }
 
     pub fn tray_icon_style(&self) -> TrayIconStyle {
@@ -238,6 +238,7 @@ impl App {
     pub fn set(&mut self, code: u8, value: u16) {
         match code {
             monitor::VCP_OUTPUT_RANGE => {
+                self.local_change(code, value);
                 // The monitor needs Auto before it takes another range.
                 self.send(monitor::VCP_OUTPUT_RANGE, 0);
                 if value != 0 {
@@ -274,6 +275,7 @@ impl App {
                     return;
                 };
                 let target = [codes.0, codes.1, codes.2][channel];
+                self.local_change(code, value);
                 self.local_change(target, value);
                 self.send(target, value);
                 return;
@@ -281,6 +283,7 @@ impl App {
             monitor::VCP_MODE => self.start_profile_load(),
             _ => {}
         }
+        self.local_change(code, value);
         self.send(code, value);
     }
 
@@ -426,6 +429,8 @@ impl App {
         }
         allow(VCP_PIP_SOURCE, pip != values::PIP_OFF);
         allow(VCP_AUDIO_SOURCE, pip != values::PIP_OFF);
+        allow(VCP_PIP_SWAP, pip != values::PIP_OFF);
+        allow(VCP_PIP_RESET, pip != values::PIP_OFF);
         allow(VCP_PIP_POSITION, pip == 1);
         allow(VCP_PIP_SIZE, pip == 1);
 
@@ -436,8 +441,7 @@ impl App {
         }
 
         // Firmware 2025-09-20: with HDR on the monitor locks these settings.
-        let hdr_locked =
-            self.settings.firmware_package.dyds_with_adaptive_sync() && get(VCP_HDR).is_some_and(|value| value != HDR_VALUES[0]);
+        let hdr_locked = self.hdr_locked();
         if hdr_locked {
             for code in [
                 VCP_BRIGHTNESS,
@@ -456,7 +460,41 @@ impl App {
             }
             allow(VCP_MAGNIFIER, false);
         }
+
+        // Gaming overlay sub-rows require their parent overlay toggle to be active and unlocked.
+        let overlay_active = |parent: u8| -> bool {
+            get(parent) == Some(1) && allowed.get(&parent).copied().unwrap_or(true)
+        };
+        let fps_on = overlay_active(VCP_FPS_COUNTER);
+        let crosshair_on = overlay_active(VCP_CROSSHAIR);
+        let stopwatch_on = overlay_active(VCP_STOPWATCH);
+        let game_time_on = overlay_active(VCP_GAME_TIME);
+        let magnifier_on = overlay_active(VCP_MAGNIFIER);
+        let hawkeye_on = overlay_active(VCP_HAWKEYE);
+
+        let mut allow = |code: u8, ok: bool| {
+            *allowed.entry(code).or_insert(true) &= ok;
+        };
+        allow(VCP_FPS_POS, fps_on);
+        allow(VCP_CROSSHAIR_SHAPE, crosshair_on);
+        allow(VCP_CROSSHAIR_COLOR, crosshair_on);
+        allow(VCP_STOPWATCH_TIME, stopwatch_on);
+        allow(VCP_STOPWATCH_POS, stopwatch_on);
+        allow(VCP_GAME_TIME_VAL, game_time_on);
+        allow(VCP_GAME_TIME_POS, game_time_on);
+        allow(VCP_MAGNIFIER_ZOOM, magnifier_on);
+        allow(VCP_MAGNIFIER_SIZE, magnifier_on);
+        allow(VCP_MAGNIFIER_POS, magnifier_on);
+        allow(VCP_HAWKEYE_SIZE, hawkeye_on);
+        allow(VCP_HAWKEYE_POS, hawkeye_on);
+        allow(VCP_HAWKEYE_LEVEL, hawkeye_on);
+
         allowed
+    }
+
+    pub fn hdr_locked(&self) -> bool {
+        self.settings.firmware_package.dyds_with_adaptive_sync()
+            && self.get(monitor::VCP_HDR).is_some_and(|value| value != monitor::HDR_VALUES[0])
     }
 }
 
@@ -513,7 +551,7 @@ pub fn drain_messages(app: &mut App) {
             }
             UiCmd::Progress(text) => {
                 log!("[APP] {text}");
-                ui::apply_state(app);
+                ui::set_status_progress(app, &text);
             }
             UiCmd::Error(error) => {
                 log!("[APP] {error}");
@@ -548,7 +586,12 @@ pub fn handle_timer(app: &mut App, timer: usize) {
             unsafe {
                 windows_sys::Win32::UI::WindowsAndMessaging::KillTimer(app.host, TIMER_TRIM);
             }
-            trim_working_set();
+            if !ui::is_open(app) {
+                trim_working_set();
+            }
+        }
+        TIMER_FAV_KEY => {
+            ui::poll_favorites_key(app);
         }
         _ => {}
     }
@@ -577,16 +620,27 @@ pub fn schedule_trim(app: &App) {
 pub fn handle_page_scroll(app: &mut App, page_window: HWND, request: WPARAM) {
     let code = (request as u32) & 0xFFFF;
     let current = ui::scroll_of(app, page_window);
-    let step = 40;
+    let dpi = crate::win::dpi_of(page_window);
+    let step = crate::win::scaled(48, dpi);
     let next = match code {
         SOCB_LINEUP_CODE => current - step,
         SOCB_LINEDOWN_CODE => current + step,
         SOCB_PAGEUP_CODE => current - step * 6,
         SOCB_PAGEDOWN_CODE => current + step * 6,
-        SOCB_THUMBTRACK_CODE => ((request as u32) >> 16) as i32,
+        SOCB_THUMBPOSITION_CODE | SOCB_THUMBTRACK_CODE => {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{GetScrollInfo, SB_VERT, SCROLLINFO, SIF_TRACKPOS};
+            let mut info: SCROLLINFO = unsafe { std::mem::zeroed() };
+            info.cbSize = std::mem::size_of::<SCROLLINFO>() as u32;
+            info.fMask = SIF_TRACKPOS;
+            if unsafe { GetScrollInfo(page_window, SB_VERT, &mut info) } != 0 {
+                info.nTrackPos
+            } else {
+                ((request as u32) >> 16) as i32
+            }
+        }
         SOCB_TOP_CODE => 0,
         SOCB_BOTTOM_CODE => i32::MAX / 2,
-        _ => current,
+        _ => return,
     };
     ui::set_scroll(app, page_window, next);
 }
@@ -596,13 +650,22 @@ const SOCB_LINEUP_CODE: u32 = 0;
 const SOCB_LINEDOWN_CODE: u32 = 1;
 const SOCB_PAGEUP_CODE: u32 = 2;
 const SOCB_PAGEDOWN_CODE: u32 = 3;
+const SOCB_THUMBPOSITION_CODE: u32 = 4;
 const SOCB_THUMBTRACK_CODE: u32 = 5;
 const SOCB_TOP_CODE: u32 = 6;
 const SOCB_BOTTOM_CODE: u32 = 7;
 
 pub fn handle_wheel(app: &mut App, page_window: HWND, delta: i32) {
+    if delta == 0 {
+        return;
+    }
     let current = ui::scroll_of(app, page_window);
-    let step = if delta > 0 { -60 } else { 60 };
+    let dpi = crate::win::dpi_of(page_window);
+    let base = crate::win::scaled(64, dpi);
+    let mut step = -(delta * base / 120);
+    if step == 0 {
+        step = if delta > 0 { -16 } else { 16 };
+    }
     ui::set_scroll(app, page_window, current + step);
 }
 
@@ -646,6 +709,10 @@ pub fn refresh_modes(app: &mut App) {
         (left.width, left.height, left.refresh).cmp(&(right.width, right.height, right.refresh))
     });
     modes.dedup();
+    if let (Some(info), Some(cur)) = (app.info.as_mut(), current.as_ref()) {
+        info.resolution = format!("{}x{}", cur.width, cur.height);
+        info.hz = cur.refresh as u16;
+    }
     app.modes = modes;
     app.current_mode = current;
 }

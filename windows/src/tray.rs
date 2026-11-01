@@ -19,7 +19,6 @@ use crate::{
 };
 
 /// Icon files generated from `assets/titan_control.svg` by the build script.
-const ICON_THEME: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-theme.ico"));
 const ICON_LIGHT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-light.ico"));
 const ICON_DARK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-dark.ico"));
 
@@ -36,15 +35,16 @@ enum Command {
 }
 
 /// Icon data for the chosen style.
-fn icon_bytes(style: TrayIconStyle, app: &App) -> &'static [u8] {
+fn icon_bytes(style: TrayIconStyle, _app: &App) -> &'static [u8] {
     match style {
         TrayIconStyle::Light => ICON_LIGHT,
         TrayIconStyle::Dark => ICON_DARK,
         TrayIconStyle::Theme => {
-            // The reference colour of the Linux logo is light enough for both taskbar colours, and the dark taskbar
-            // is the common case; on a light taskbar the explicit styles are one click away in the preferences.
-            let _ = app;
-            ICON_THEME
+            if win::system_taskbar_prefers_dark() {
+                ICON_LIGHT
+            } else {
+                ICON_DARK
+            }
         }
     }
 }
@@ -137,14 +137,13 @@ pub fn notify(app: &App, title: &str, text: &str, warning: bool) {
 /// Handles the callback of the icon.
 ///
 /// With `NOTIFYICON_VERSION_4` the shell puts the event in the low word of `lParam` (the high word is the icon id) and
-/// reports a left click as `NIN_SELECT` and a right click as `WM_CONTEXTMENU`. Older versions pass the mouse message
-/// itself. Both forms are accepted here.
+/// reports a left click as `NIN_SELECT` and a right click as `WM_CONTEXTMENU`. Note that `WM_LBUTTONUP` and
+/// `WM_RBUTTONUP` are also sent right before `NIN_SELECT` and `WM_CONTEXTMENU`, so they must not be handled separately.
 pub fn on_callback(app: &mut App, _x: i32, _y: i32, lparam: isize) {
     let event = (lparam as usize) & 0xFFFF;
     match event as u32 {
         NIN_SELECT | NIN_KEYSELECT => toggle_window(app),
-        WM_LBUTTONUP | WM_LBUTTONDBLCLK => toggle_window(app),
-        WM_CONTEXTMENU | WM_RBUTTONUP => show_menu(app),
+        WM_CONTEXTMENU => show_menu(app),
         _ => {}
     }
 }
@@ -198,23 +197,25 @@ fn show_menu(app: &mut App) {
 
     // Shortcuts, grouped like the Linux menu.
     let shortcuts = app.settings.favorite_tray_control_set();
-    let kinds = ["tray_sliders", "tray_options", "tray_toggles"];
+    let kinds = ["Suwaki", "Opcje", "Przełączniki"];
+    let mut separator_added = false;
     for title in kinds {
         let selected: Vec<&String> = shortcuts
             .iter()
             .filter(|id| match title {
-                "tray_sliders" => matches!(app::shortcut(id), Some(Shortcut::Slider(_))),
-                "tray_options" => matches!(app::shortcut(id), Some(Shortcut::Choice(_))),
+                "Suwaki" => matches!(app::shortcut(id), Some(Shortcut::Slider(_))),
+                "Opcje" => matches!(app::shortcut(id), Some(Shortcut::Choice(_))),
                 _ => matches!(app::shortcut(id), Some(Shortcut::Toggle(_))),
             })
             .collect();
         if selected.is_empty() {
             continue;
         }
-        if !favorites.is_empty() {
+        if !favorites.is_empty() && !separator_added {
             unsafe {
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             }
+            separator_added = true;
         }
         let submenu = unsafe { CreatePopupMenu() };
         for id in selected {
@@ -227,13 +228,20 @@ fn show_menu(app: &mut App) {
             let label = shortcut_label(app, id);
             let action = app::shortcut(id).copied();
             match action {
-                Some(Shortcut::Slider(_)) => {
+                Some(Shortcut::Slider(key)) => {
                     let values = unsafe { CreatePopupMenu() };
                     let (max, step) = app::slider_range(id);
+                    let current = slider_vcp_code(key).and_then(|c| app.get(c));
                     for value in (0..=max).step_by(step.max(1) as usize) {
+                        let checked = current == Some(value);
                         let text = win::wide(&value.to_string());
                         unsafe {
-                            AppendMenuW(values, MF_STRING, next_id as usize, text.as_ptr());
+                            AppendMenuW(
+                                values,
+                                MF_STRING | if checked { MF_CHECKED } else { 0 },
+                                next_id as usize,
+                                text.as_ptr(),
+                            );
                         }
                         next_id += 1;
                         commands.push(Command::SliderValue(id, value));
@@ -274,14 +282,21 @@ fn show_menu(app: &mut App) {
                         commands.push(Command::ToggleShortcut(id));
                     }
                 }
-                Some(Shortcut::Toggle(_)) | None => {
+                Some(Shortcut::Toggle(code)) => {
+                    let checked = app.get(code) == Some(1);
                     let text = win::wide(&label);
                     unsafe {
-                        AppendMenuW(submenu, MF_STRING, next_id as usize, text.as_ptr());
+                        AppendMenuW(
+                            submenu,
+                            MF_STRING | if checked { MF_CHECKED } else { 0 },
+                            next_id as usize,
+                            text.as_ptr(),
+                        );
                     }
                     next_id += 1;
                     commands.push(Command::ToggleShortcut(id));
                 }
+                None => {}
             }
         }
         let text = win::wide(&app.tr(title));
@@ -339,19 +354,83 @@ fn show_menu(app: &mut App) {
 }
 
 fn shortcut_label(app: &App, id: &str) -> String {
-    let axis = |prefix: &str, key: &str| format!("{}: {}", app.tr(prefix), app.tr(key));
+    let axis_name = |color: &str| match color {
+        "red" => app.tr("Czerwony (R)"),
+        "green" => app.tr("Zielony (G)"),
+        "blue" => app.tr("Niebieski (B)"),
+        "cyan" => app.tr("Cyjan (C)"),
+        "magenta" => app.tr("Magenta (M)"),
+        "yellow" => app.tr("Żółty (Y)"),
+        _ => app.tr(color),
+    };
     match id {
-        "color_temp_red" => axis("rgb_gain", "red"),
-        "color_temp_green" => axis("rgb_gain", "green"),
-        "color_temp_blue" => axis("rgb_gain", "blue"),
+        "brightness" => app.tr("Jasność"),
+        "contrast" => app.tr("Kontrast"),
+        "sharpness" => app.tr("Ostrość"),
+        "low_blue_light" => "Low Blue Light".to_string(),
+        "dcr" => "DCR".to_string(),
+        "hdr" => "HDR".to_string(),
+        "local_dimming" => app.tr("Lokalne przyciemnianie"),
+        "color_enhance" => "Color Enhance".to_string(),
+        "cr_enhance" => "CR Enhance".to_string(),
+        "shadow_balance" => "Shadow Balance".to_string(),
+        "super_res" => "Super Res".to_string(),
+        "halo_control" => "Halo Control".to_string(),
+        "color_temp_profile" => app.tr("Temperatura barwowa"),
+        "color_temp_red" => format!("RGB: {}", axis_name("red")),
+        "color_temp_green" => format!("RGB: {}", axis_name("green")),
+        "color_temp_blue" => format!("RGB: {}", axis_name("blue")),
+        "gamma" => "Gamma".to_string(),
+        "adaptive_sync" => "Adaptive-Sync".to_string(),
+        "dynamic_od" => "Dynamic OD".to_string(),
+        "dyds" => "DyDs".to_string(),
+        "night_vision" => "Night Vision".to_string(),
+        "screen_size" => app.tr("Rozmiar ekranu (DualMode)"),
+        "fps_counter" => app.tr("Licznik FPS/Hz"),
+        "crosshair" => app.tr("Celownik"),
+        "stopwatch" => app.tr("Stoper"),
+        "game_time" => app.tr("Czas gry"),
+        "magnifier" => app.tr("Lupa"),
+        "hawkeye" => "Hawkeye Vision".to_string(),
         _ => {
-            for prefix in ["hue", "saturation"] {
-                if let Some(color) = id.strip_prefix(prefix).and_then(|rest| rest.strip_prefix('_')) {
-                    return axis(prefix, &format!("axis_{color}"));
-                }
+            if let Some(color) = id.strip_prefix("hue_") {
+                return format!("{}: {}", app.tr("Odcień (Hue)"), axis_name(color));
+            }
+            if let Some(color) = id.strip_prefix("saturation_") {
+                return format!("{}: {}", app.tr("Nasycenie (Saturation)"), axis_name(color));
             }
             app.tr(id)
         }
+    }
+}
+
+fn slider_vcp_code(key: &str) -> Option<u8> {
+    match key {
+        "brightness" => Some(monitor::VCP_BRIGHTNESS),
+        "contrast" => Some(monitor::VCP_CONTRAST),
+        "sharpness" => Some(monitor::VCP_SHARPNESS),
+        "low_blue_light" => Some(monitor::VCP_LOW_BLUE),
+        "color_enhance" => Some(monitor::VCP_COLOR_ENHANCE),
+        "cr_enhance" => Some(monitor::VCP_CR_ENHANCE),
+        "shadow_balance" => Some(monitor::VCP_SHADOW_BALANCE),
+        "super_res" => Some(monitor::VCP_SUPER_RES),
+        "halo_control" => Some(monitor::VCP_HALO_CONTROL),
+        "color_temp_red" => Some(monitor::VCP_RED),
+        "color_temp_green" => Some(monitor::VCP_GREEN),
+        "color_temp_blue" => Some(monitor::VCP_BLUE),
+        "hue_red" => Some(monitor::VCP_HUE_RED),
+        "hue_green" => Some(monitor::VCP_HUE_GREEN),
+        "hue_blue" => Some(monitor::VCP_HUE_BLUE),
+        "hue_cyan" => Some(monitor::VCP_HUE_CYAN),
+        "hue_magenta" => Some(monitor::VCP_HUE_MAGENTA),
+        "hue_yellow" => Some(monitor::VCP_HUE_YELLOW),
+        "saturation_red" => Some(monitor::VCP_SATURATION_RED),
+        "saturation_green" => Some(monitor::VCP_SATURATION_GREEN),
+        "saturation_blue" => Some(monitor::VCP_SATURATION_BLUE),
+        "saturation_cyan" => Some(monitor::VCP_SATURATION_CYAN),
+        "saturation_magenta" => Some(monitor::VCP_SATURATION_MAGENTA),
+        "saturation_yellow" => Some(monitor::VCP_SATURATION_YELLOW),
+        _ => None,
     }
 }
 
@@ -378,27 +457,13 @@ fn run(app: &mut App, command: &Command) {
         }
         Command::SliderValue(id, value) => {
             let code = match app::shortcut(id) {
-                Some(Shortcut::Slider(code)) => match *code {
-                    "brightness" => Some(monitor::VCP_BRIGHTNESS),
-                    "contrast" => Some(monitor::VCP_CONTRAST),
-                    "sharpness" => Some(monitor::VCP_SHARPNESS),
-                    "low_blue_light" => Some(monitor::VCP_LOW_BLUE),
-                    "color_enhance" => Some(monitor::VCP_COLOR_ENHANCE),
-                    "cr_enhance" => Some(monitor::VCP_CR_ENHANCE),
-                    "shadow_balance" => Some(monitor::VCP_SHADOW_BALANCE),
-                    "super_res" => Some(monitor::VCP_SUPER_RES),
-                    "halo_control" => Some(monitor::VCP_HALO_CONTROL),
-                    _ => monitor::SATURATION_CODES
-                        .get(0)
-                        .copied()
-                        .filter(|_| code.starts_with("saturation")),
-                },
+                Some(Shortcut::Slider(key)) => slider_vcp_code(key),
                 _ => None,
             };
             if let Some(code) = code {
                 app.set(code, *value);
-                app.local_change(code, *value);
                 crate::ui::apply_state(app);
+                crate::ui::refresh_availability(app);
             }
         }
         Command::ChoiceValue(id, index) => {
@@ -408,12 +473,15 @@ fn run(app: &mut App, command: &Command) {
             {
                 app.set(*code, value);
                 crate::ui::apply_state(app);
+                crate::ui::refresh_availability(app);
             }
         }
         Command::ToggleShortcut(id) => {
             if let Some(Shortcut::Toggle(code)) = app::shortcut(id) {
                 let on = app.get(*code).unwrap_or(0) == 0;
                 app.set(*code, if on { 1 } else { 0 });
+                crate::ui::apply_state(app);
+                crate::ui::refresh_availability(app);
             }
         }
     }

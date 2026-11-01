@@ -11,9 +11,11 @@ pub enum Kind {
     /// monitor page, and the status line of the window.
     Text(DynText),
     /// Trackbar with a value label. `factor` multiplies the position (OSD transparency: 20 per step).
-    Slider { max: i32, factor: u16 },
-    /// Check box that writes `on` or `off`.
+    Slider { min: i32, max: i32, factor: u16 },
+    /// Check box / pill toggle switch that writes `on` or `off`.
     Switch { on: u16, off: u16 },
+    /// Inline segmented toggle pills (like `Adw.ToggleGroup`).
+    ToggleGroup { values: &'static [u16], options: &'static [&'static str] },
     /// Drop-down list of option values.
     Choice { values: &'static [u16], options: &'static [&'static str] },
     /// Colour buttons, one per value.
@@ -75,15 +77,23 @@ const fn row(label: &'static str, kind: Kind, code: Option<u8>) -> Row {
 }
 
 const fn slider(label: &'static str, code: u8, max: i32) -> Row {
-    row(label, Kind::Slider { max, factor: 1 }, Some(code))
+    row(label, Kind::Slider { min: 0, max, factor: 1 }, Some(code))
+}
+
+const fn slider_range(label: &'static str, code: u8, min: i32, max: i32) -> Row {
+    row(label, Kind::Slider { min, max, factor: 1 }, Some(code))
 }
 
 const fn slider_factor(label: &'static str, code: u8, max: i32, factor: u16) -> Row {
-    row(label, Kind::Slider { max, factor }, Some(code))
+    row(label, Kind::Slider { min: 0, max, factor }, Some(code))
 }
 
 const fn switch(label: &'static str, code: u8, on: u16, off: u16) -> Row {
     row(label, Kind::Switch { on, off }, Some(code))
+}
+
+const fn toggles(label: &'static str, code: u8, values: &'static [u16], options: &'static [&'static str]) -> Row {
+    row(label, Kind::ToggleGroup { values, options }, Some(code))
 }
 
 const fn choice(label: &'static str, code: u8, values: &'static [u16], options: &'static [&'static str]) -> Row {
@@ -243,13 +253,13 @@ fn picture() -> Page {
         star(slider("Low Blue Light", monitor::VCP_LOW_BLUE, 4), "low_blue_light"),
         star(slider("Ostrość", monitor::VCP_SHARPNESS, 5), "sharpness"),
         star(
-            choice("Gamma", monitor::VCP_GAMMA, &monitor::GAMMA_VALUES, &GAMMA_OPTIONS),
+            toggles("Gamma", monitor::VCP_GAMMA, &monitor::GAMMA_VALUES, &GAMMA_OPTIONS),
             "gamma",
         ),
         header("Efekty"),
         tooltip(
             star(
-                choice("HDR", monitor::VCP_HDR, &monitor::HDR_VALUES, &HDR_OPTIONS),
+                toggles("HDR", monitor::VCP_HDR, &monitor::HDR_VALUES, &HDR_OPTIONS),
                 "hdr",
             ),
             "W KDE Plasma (Wayland) włącza i wyłącza też HDR w systemie. Z firmware 2025-09-20 przy HDR włączonym w monitorze i w systemie zablokowane są: tryb obrazu, jasność, kontrast, DCR, Low Blue Light, Color Enhance, CR Enhance, Shadow Balance, Night Vision, DyDs, wyłączenie lokalnego przyciemniania, zakres RGB i lupa",
@@ -259,7 +269,7 @@ fn picture() -> Page {
         star(slider("Shadow Balance", monitor::VCP_SHADOW_BALANCE, 100), "shadow_balance"),
         star(slider("Super Res", monitor::VCP_SUPER_RES, 5), "super_res"),
         star(
-            choice(
+            toggles(
                 "Night Vision",
                 monitor::VCP_NIGHT_VISION,
                 &monitor::NIGHT_VISION_VALUES,
@@ -268,7 +278,7 @@ fn picture() -> Page {
             "night_vision",
         ),
         star(
-            choice(
+            toggles(
                 "Dynamic OD",
                 monitor::VCP_DYNAMIC_OD,
                 &monitor::DYNAMIC_OD_VALUES,
@@ -278,7 +288,7 @@ fn picture() -> Page {
         ),
         header("Podświetlenie"),
         star(
-            choice(
+            toggles(
                 "Lokalne przyciemnianie",
                 monitor::VCP_LOCAL_DIMMING,
                 &monitor::LOCAL_DIMMING_VALUES,
@@ -291,12 +301,12 @@ fn picture() -> Page {
             "Tylko przy włączonym lokalnym przyciemnianiu",
         ),
         star(
-            choice("DyDs", monitor::VCP_DYDS, &monitor::DYDS_VALUES, &DYDS_OPTIONS),
+            toggles("DyDs", monitor::VCP_DYDS, &monitor::DYDS_VALUES, &DYDS_OPTIONS),
             "dyds",
         ),
         header("Kolor"),
         star(
-            choice(
+            toggles(
                 "Temperatura barwowa",
                 monitor::VCP_COLOR_TEMP,
                 &monitor::COLOR_TEMP_VALUES,
@@ -333,7 +343,7 @@ fn gaming() -> Page {
             header("Wydajność"),
             star(switch("Adaptive-Sync", monitor::VCP_ADAPTIVE_SYNC, 1, 0), "adaptive_sync"),
             star(
-                choice(
+                toggles(
                     "Rozmiar ekranu (DualMode)",
                     monitor::VCP_SCREEN_SIZE,
                     &[0, 1],
@@ -342,10 +352,10 @@ fn gaming() -> Page {
                 "screen_size",
             ),
             header("Nakładki"),
-            sub(star(switch("Licznik FPS/Hz", monitor::VCP_FPS_COUNTER, 1, 0), "fps_counter")),
-            sub(choice("Pozycja", monitor::VCP_FPS_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
-            sub(star(switch("Celownik", monitor::VCP_CROSSHAIR, 1, 0), "crosshair")),
-            sub(choice("Kształt", monitor::VCP_CROSSHAIR_SHAPE, &[1, 2, 3, 4, 5, 6], &SHAPE_OPTIONS)),
+            star(switch("Licznik FPS/Hz", monitor::VCP_FPS_COUNTER, 1, 0), "fps_counter"),
+            sub(toggles("Pozycja", monitor::VCP_FPS_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
+            star(switch("Celownik", monitor::VCP_CROSSHAIR, 1, 0), "crosshair"),
+            sub(toggles("Kształt", monitor::VCP_CROSSHAIR_SHAPE, &[1, 2, 3, 4, 5, 6], &SHAPE_OPTIONS)),
             sub(row(
                 "Kolor",
                 Kind::Swatches {
@@ -355,23 +365,23 @@ fn gaming() -> Page {
                 },
                 Some(monitor::VCP_CROSSHAIR_COLOR),
             )),
-            sub(star(switch("Stoper", monitor::VCP_STOPWATCH, 1, 0), "stopwatch")),
-            sub(choice("Czas (min)", monitor::VCP_STOPWATCH_TIME, &[1, 2, 3, 4], &TIME_OPTIONS)),
-            sub(choice("Pozycja", monitor::VCP_STOPWATCH_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
-            sub(star(switch("Czas gry", monitor::VCP_GAME_TIME, 1, 0), "game_time")),
-            sub(choice("Czas (min)", monitor::VCP_GAME_TIME_VAL, &[1, 2, 3, 4], &TIME_OPTIONS)),
-            sub(choice("Pozycja", monitor::VCP_GAME_TIME_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
-            sub(tooltip(
+            star(switch("Stoper", monitor::VCP_STOPWATCH, 1, 0), "stopwatch"),
+            sub(toggles("Czas (min)", monitor::VCP_STOPWATCH_TIME, &[1, 2, 3, 4], &TIME_OPTIONS)),
+            sub(toggles("Pozycja", monitor::VCP_STOPWATCH_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
+            star(switch("Czas gry", monitor::VCP_GAME_TIME, 1, 0), "game_time"),
+            sub(toggles("Czas (min)", monitor::VCP_GAME_TIME_VAL, &[1, 2, 3, 4], &TIME_OPTIONS)),
+            sub(toggles("Pozycja", monitor::VCP_GAME_TIME_POS, &CORNER_VALUES, &CORNER_OPTIONS)),
+            tooltip(
                 star(switch("Lupa", monitor::VCP_MAGNIFIER, 1, 0), "magnifier"),
                 "Niedostępna przy włączonym Adaptive-Sync",
-            )),
-            sub(choice("Powiększenie", monitor::VCP_MAGNIFIER_ZOOM, &[0, 1, 2], &ZOOM_OPTIONS)),
-            sub(choice("Rozmiar", monitor::VCP_MAGNIFIER_SIZE, &[1, 2, 3], &SMALL_MEDIUM_LARGE)),
-            sub(choice("Pozycja", monitor::VCP_MAGNIFIER_POS, &MAGNIFIER_POS_VALUES, &CENTER_OPTIONS)),
-            sub(star(switch("Hawkeye Vision", monitor::VCP_HAWKEYE, 1, 0), "hawkeye")),
-            sub(choice("Rozmiar", monitor::VCP_HAWKEYE_SIZE, &[0, 1, 2], &SMALL_MEDIUM_LARGE)),
-            sub(choice("Pozycja", monitor::VCP_HAWKEYE_POS, &HAWKEYE_POS_VALUES, &CENTER_OPTIONS)),
-            sub(choice("Poziom", monitor::VCP_HAWKEYE_LEVEL, &[0, 1, 2, 3, 4], &LEVEL_OPTIONS)),
+            ),
+            sub(toggles("Powiększenie", monitor::VCP_MAGNIFIER_ZOOM, &[0, 1, 2], &ZOOM_OPTIONS)),
+            sub(toggles("Rozmiar", monitor::VCP_MAGNIFIER_SIZE, &[1, 2, 3], &SMALL_MEDIUM_LARGE)),
+            sub(toggles("Pozycja", monitor::VCP_MAGNIFIER_POS, &MAGNIFIER_POS_VALUES, &CENTER_OPTIONS)),
+            star(switch("Hawkeye Vision", monitor::VCP_HAWKEYE, 1, 0), "hawkeye"),
+            sub(toggles("Rozmiar", monitor::VCP_HAWKEYE_SIZE, &[0, 1, 2], &SMALL_MEDIUM_LARGE)),
+            sub(toggles("Pozycja", monitor::VCP_HAWKEYE_POS, &HAWKEYE_POS_VALUES, &CENTER_OPTIONS)),
+            sub(toggles("Poziom", monitor::VCP_HAWKEYE_LEVEL, &[0, 1, 2, 3, 4], &LEVEL_OPTIONS)),
             tooltip(
                 switch("Przypomnienie o przerwie", monitor::VCP_EYESHIELD_REMINDER, 1, 0),
                 "Eyeshield Reminder. Przez DDC można je tylko włączyć (co 30 min) lub wyłączyć; inny odstęp ustawisz w OSD",
@@ -398,7 +408,7 @@ fn inputs() -> Page {
                 &OUTPUT_RANGE_OPTIONS,
             ),
             tooltip(
-                choice(
+                toggles(
                     "Hub USB",
                     monitor::VCP_USB_HUB_SOURCE,
                     &monitor::values::USB_HUB_SOURCE,
@@ -430,11 +440,11 @@ fn inputs() -> Page {
                 "Dźwięk przy włączonym PIP/PBP; dostępne tylko podłączone wejścia",
             ),
             tooltip(
-                choice("Pozycja", monitor::VCP_PIP_POSITION, &CORNER_VALUES, &CORNER_OPTIONS),
+                toggles("Pozycja", monitor::VCP_PIP_POSITION, &CORNER_VALUES, &CORNER_OPTIONS),
                 "Tylko w trybie PIP",
             ),
             tooltip(
-                choice("Rozmiar", monitor::VCP_PIP_SIZE, &monitor::values::PIP_SIZE, &PIP_SIZE_OPTIONS),
+                toggles("Rozmiar", monitor::VCP_PIP_SIZE, &monitor::values::PIP_SIZE, &PIP_SIZE_OPTIONS),
                 "Tylko w trybie PIP",
             ),
             row("Zamień obrazy", Kind::Action(Action::PipSwap), Some(monitor::VCP_PIP_SWAP)),
@@ -462,7 +472,7 @@ fn lighting() -> Page {
                 },
                 Some(monitor::VCP_LED_COLOR),
             ),
-            choice(
+            toggles(
                 "Intensywność",
                 monitor::VCP_LED_STRENGTH,
                 &monitor::values::LED_STRENGTH,
@@ -487,7 +497,7 @@ fn lighting() -> Page {
                 &LED_SIDE_OPTIONS,
             )),
             header("Dioda zasilania"),
-            choice(
+            toggles(
                 "Jasność diody",
                 monitor::VCP_POWER_LED,
                 &monitor::values::POWER_LED,
@@ -513,13 +523,13 @@ fn monitor_page() -> Page {
                 &OSD_LANGUAGE_VALUES,
                 &OSD_LANGUAGE_OPTIONS,
             ),
-            slider("Czas wyświetlania (s)", monitor::VCP_OSD_TIME, 60),
+            slider_range("Czas wyświetlania (s)", monitor::VCP_OSD_TIME, 5, 60),
             section("Położenie i przezroczystość"),
             sub(slider("Pozycja pozioma", monitor::VCP_OSD_H_POS, 100)),
             sub(slider("Pozycja pionowa", monitor::VCP_OSD_V_POS, 100)),
-            sub(slider_factor("Przezroczystość", monitor::VCP_OSD_TRANS, 100, 20)),
+            sub(slider_factor("Przezroczystość", monitor::VCP_OSD_TRANS, 5, 20)),
             header("Zasilanie"),
-            choice(
+            toggles(
                 "Oszczędzanie energii",
                 monitor::VCP_POWER_SAVING,
                 &monitor::POWER_SAVING_VALUES,

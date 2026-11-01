@@ -371,6 +371,11 @@ pub fn route(key: u8) -> Route {
             VCP_DPMS,
             VCP_PIP_SWAP,
             VCP_PIP_RESET,
+            VCP_ADAPTIVE_SYNC,
+            VCP_ADAPTIVE_SYNC_ALT,
+            VCP_PIP_MODE,
+            VCP_SCREEN_SIZE,
+            VCP_INPUT_SELECT,
         ]
         .contains(&key);
     Route { code: key, access, verify }
@@ -434,13 +439,25 @@ impl<L: Link> MsiDdc<L> {
     pub fn send_vcp(&mut self, key: u8, value: u16) -> io::Result<()> {
         check_write(key, value)?;
         let route = route(key);
-        if let Err(error) = self.send_write(route, value) {
-            log!("[DDC] VCP 0x{:02X} write failed: {error}, retrying", route.code);
-            self.link.set_needs_settle(true);
-            thread::sleep(RETRY_WAIT);
-            return self.send_write(route, value);
+        let mut last_err = None;
+        for attempt in 0..3 {
+            if attempt > 0 {
+                self.link.set_needs_settle(true);
+                thread::sleep(RETRY_WAIT);
+            }
+            match self.send_write(route, value) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    log!(
+                        "[DDC] VCP 0x{:02X} write failed (attempt {}): {error}",
+                        route.code,
+                        attempt + 1
+                    );
+                    last_err = Some(error);
+                }
+            }
         }
-        Ok(())
+        Err(last_err.unwrap())
     }
 
     /// Reads a written setting back (some time after the write, see `VERIFY_DELAY`).
@@ -715,7 +732,7 @@ pub const DYNAMIC_OD_VALUES: [u16; 5] = [0, 1, 2, 3, 4];
 /// Local Dimming Off, Low, Smooth, Medium, High (the monitor accepts only 2-6).
 pub const LOCAL_DIMMING_VALUES: [u16; 5] = [2, 3, 4, 5, 6];
 pub const DYDS_VALUES: [u16; 7] = [2, 3, 4, 5, 6, 7, 8];
-pub const POWER_SAVING_VALUES: [u16; 4] = [0, 1, 2, 3];
+pub const POWER_SAVING_VALUES: [u16; 3] = [0, 1, 2];
 pub const SATURATION_CODES: [u8; 6] = [
     VCP_SATURATION_RED,
     VCP_SATURATION_GREEN,
@@ -815,7 +832,7 @@ pub mod values {
     /// Audio source (0x52): auto, USB-C, HDMI-1, HDMI-2.
     pub const AUDIO_SOURCE: [u16; 4] = [0, 3, 4, 5];
     /// Input selection (0x57): auto, DP, USB-C, HDMI-1, HDMI-2.
-    pub const INPUT_SELECT: [u16; 6] = [0, 1, 2, 3, 5, 6];
+    pub const INPUT_SELECT: [u16; 5] = [0, 1, 3, 5, 6];
     /// USB hub follows (0x5F): USB-C, USB-B.
     pub const USB_HUB_SOURCE: [u16; 2] = [0, 1];
 
@@ -1160,11 +1177,12 @@ const PROFILE_SETTING_KEYS: &[u8] = &[
 
 /// Settings outside the profile table, read from the monitor after connecting.
 const GLOBAL_SETTING_KEYS: &[u8] = &[
-    // Picture (global); Halo Control is not read, its register does not return the set value.
+    // Picture (global) & PIP mode first so lock rules (Adaptive-Sync, PIP/PBP, DCR, Local Dimming) are up to date right away.
+    VCP_ADAPTIVE_SYNC,
+    VCP_PIP_MODE,
     VCP_DCR,
     VCP_LOCAL_DIMMING,
     VCP_DYDS,
-    VCP_ADAPTIVE_SYNC,
     VCP_RATIO,
     VCP_EYESHIELD_REMINDER,
     // Game Aid
@@ -1192,7 +1210,6 @@ const GLOBAL_SETTING_KEYS: &[u8] = &[
     VCP_INPUT_SOURCE,
     VCP_INPUT_SELECT,
     VCP_OUTPUT_RANGE,
-    VCP_PIP_MODE,
     VCP_PIP_SOURCE,
     VCP_PIP_POSITION,
     VCP_PIP_SIZE,
@@ -1415,11 +1432,18 @@ impl<L: Link> Worker<L> {
 
     /// Sends a write and schedules its read-back.
     fn write(&mut self, code: u8, value: u16) {
-        // A newer value replaces the one still waiting for its read-back (and a newer profile its table read).
-        self.tasks.retain(|scheduled| match scheduled.task {
-            Task::Verify { code: pending, .. } => pending != code,
+        // A newer value replaces the one still waiting for its read-back (and a newer profile its table read),
+        // and strips `code` from any pending background `Task::Read` so an old queued read cannot overwrite it.
+        for scheduled in &mut self.tasks {
+            if let Task::Read(keys) = &mut scheduled.task {
+                keys.retain(|&k| k != code);
+            }
+        }
+        self.tasks.retain(|scheduled| match &scheduled.task {
+            Task::Verify { code: pending, .. } => *pending != code,
             Task::RefreshProfile | Task::ConfirmProfile => code != VCP_MODE,
-            Task::Read(_) | Task::ProfileLoaded => true,
+            Task::Read(keys) => !keys.is_empty(),
+            Task::ProfileLoaded => true,
         });
 
         // DyDs profiles need Adaptive-Sync off on firmware older than 2025-09-20.
@@ -1458,13 +1482,31 @@ impl<L: Link> Worker<L> {
             // A profile change loads that profile's picture settings (after the profile write is confirmed).
             self.tasks.push_front(Scheduled { task: Task::RefreshProfile, due: Instant::now() + VERIFY_DELAY });
         }
+
+        let is_link_reset = matches!(
+            code,
+            VCP_ADAPTIVE_SYNC | VCP_ADAPTIVE_SYNC_ALT | VCP_PIP_MODE | VCP_SCREEN_SIZE | VCP_INPUT_SELECT
+        );
+        if is_link_reset {
+            // Mode-switching writes reset the video link for ~1.5-2.0s; postpone background reads until the link settles.
+            let min_due = Instant::now() + Duration::from_millis(2000);
+            for scheduled in &mut self.tasks {
+                if scheduled.due < min_due {
+                    scheduled.due = min_due;
+                }
+            }
+        }
+
         // Settings the monitor changes by itself after this one (e.g. DCR turns local dimming off).
         let dependents = dependent_reads(code);
         if !dependents.is_empty() {
-            self.tasks.push_front(Scheduled {
-                task: Task::Read(dependents.to_vec()),
-                due: Instant::now() + DEPENDENT_READ_DELAY,
-            });
+            let dep_due = Instant::now()
+                + if is_link_reset {
+                    Duration::from_millis(2000)
+                } else {
+                    DEPENDENT_READ_DELAY
+                };
+            self.queue_reads(dependents, dep_due);
         }
         if is_verifiable(code) {
             self.tasks.push_front(Scheduled {
@@ -1773,9 +1815,9 @@ pub fn connect<L: Link>(
     let mins = read_vcp(&mut ddc, VCP_USAGE_TIME).unwrap_or(0);
 
     // Cached values are shown at once; the worker then reads every setting from the monitor.
-    ui.send(UiCmd::Progress("Loading cached settings...".into()));
+    ui.send(UiCmd::Progress("Wczytuję zapisane ustawienia...".into()));
     let mut settings = cache_store::load_settings(name);
-    ui.send(UiCmd::Progress("Reading picture profile...".into()));
+    ui.send(UiCmd::Progress("Odczytuję profil obrazu...".into()));
     let table_read = match ddc.read_active_profile(TABLE_CONFIRMATIONS) {
         Ok(ActiveProfile::Custom(table)) => {
             log!("[DDC] Active profile table 0x{:02X} read", table.scene_id);
@@ -1841,7 +1883,7 @@ where
         .name("ddc".into())
         .stack_size(256 * 1024)
         .spawn(move || {
-            ui.send(UiCmd::Progress("Detecting monitors...".into()));
+            ui.send(UiCmd::Progress("Wykrywam monitory...".into()));
             let monitors = crate::ddc::enumerate_monitors();
             let cached_name = cache_store::load_last_monitor();
 
@@ -1858,7 +1900,7 @@ where
             };
             log!("[DISPLAY] Target monitor: {} ({})", monitor.name, monitor.connector);
 
-            ui.send(UiCmd::Progress("Searching for monitor...".into()));
+            ui.send(UiCmd::Progress("Szukam monitora...".into()));
             let Some(link) = open(&monitor) else {
                 ui.send(UiCmd::Error("Monitor not found".into()));
                 return;

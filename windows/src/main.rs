@@ -235,15 +235,15 @@ fn create_host() -> HWND {
     }
 }
 
-/// Registers the favorite hotkeys: `<favorites key>+Alt+1..5` select the favorite picture modes.
+/// Registers the favorite hotkeys: `<favorites key>+Alt+1..5` (or `Alt+1..5`) select the favorite picture modes.
 pub fn register_hotkeys(app: &mut App) {
     unregister_hotkeys(app);
     let modifier = match app.settings.favorite_modifier {
-        StepModifier::Ctrl => MOD_CONTROL,
-        StepModifier::Shift => MOD_SHIFT,
-        StepModifier::Alt => MOD_CONTROL,
-        StepModifier::Super => MOD_WIN,
-    } | MOD_ALT;
+        StepModifier::Ctrl => MOD_CONTROL | MOD_ALT,
+        StepModifier::Shift => MOD_SHIFT | MOD_ALT,
+        StepModifier::Alt => MOD_ALT,
+        StepModifier::Super => MOD_WIN | MOD_ALT,
+    };
     let favorites = app.settings.favorite_picture_mode_set();
     for (index, _mode) in favorites.iter().enumerate().take(5) {
         let key = '1' as u32 + index as u32;
@@ -325,6 +325,14 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
         }
         WM_TIMER => {
             app::handle_timer(app, wparam as usize);
+            0
+        }
+        WM_SETTINGCHANGE => {
+            win::set_process_dark_mode(app.dark());
+            tray::refresh(app);
+            if app.settings.theme == 0 && ui::is_open(app) {
+                ui::refresh_theme(app);
+            }
             0
         }
         WM_ENDSESSION | WM_QUERYENDSESSION => {

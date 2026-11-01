@@ -150,6 +150,23 @@ Start **Titan Control** from the application menu (or run `titan_control`).
   app allows.
 - Preferences (menu ⋮): language, theme, tray icon style, autostart, start minimized, favorites key.
 
+## Windows
+
+A native Windows build lives in [`windows/`](windows): the same monitor control over the same DDC/CI protocol, written
+against Win32 and `dxva2.dll` instead of GTK, so it runs in a few megabytes and keeps monitor polling at zero while it
+idles in the notification area.
+
+```powershell
+cd windows
+cargo build --release
+# windows\target\release\titan-control.exe
+```
+
+It has the same pages, rows, tray menu, favourites, preferences and protocol handling as the Linux application, and it
+reads and writes the same JSON settings file. See [`docs/windows/README.md`](docs/windows/README.md) for the
+architecture, the measured memory and CPU figures, the comparison with the GTK build and the few limitations Windows
+imposes (no periodic OSD polling, read-only display scaling, no system-HDR mirroring).
+
 ## Reporting a problem
 
 The app keeps a log of what it does, so a problem can be debugged. Open it with *menu ⋮ → Show the log file* or find it

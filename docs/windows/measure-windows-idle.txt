@@ -1,0 +1,19 @@
+# Titan Control (Windows) - idle in the tray
+
+sampled: 2026-11-01 11:31:09
+binary:  569856 bytes
+note:    the working set is trimmed once 30 s after the start; see docs/windows/README.md
+
+| minute | working set (MB) | private bytes (MB) | CPU time (s) | threads |
+| --- | --- | --- | --- | --- |
+| 0 | 0.19 | 2.43 | 0 | 2 |
+| 1 | 0.19 | 2.43 | 0 | 2 |
+| 2 | 0.19 | 2.43 | 0 | 2 |
+| 3 | 0.19 | 2.43 | 0 | 2 |
+| 4 | 0.19 | 2.43 | 0 | 2 |
+| 5 | 1.93 | 2.49 | 0 | 4 |
+
+peak working set: 1.93 MB
+peak private bytes: 2.49 MB
+CPU time over 5 min: 0 s = 0 % of one core
+threads: 4

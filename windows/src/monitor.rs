@@ -169,10 +169,6 @@ pub const VCP_VERSION: u8 = 0xDF;
 const VCP_USAGE_TIME: u8 = 0xF3;
 const VCP_FIRMWARE: u8 = 0xFE;
 const VCP_DDCCI_INIT: u8 = 0x99;
-const PROFILE_TABLE_LEN: usize = 38;
-/// Profile code reply plus nine FE fragments, four bytes each.
-const PROFILE_TABLE_CHUNKS: usize = 10;
-const VCP_RESEND: u8 = 0xFF;
 /// Minimum start-to-start interval of requests (reads and writes); shorter gaps produce many lost replies.
 pub const REQUEST_GAP: Duration = Duration::from_millis(100);
 /// Pause after a failed reply (as the manufacturer's program).
@@ -181,80 +177,11 @@ const UNSUPPORTED_WAIT: Duration = Duration::from_millis(200);
 /// Pause between a write and its read-back.
 const VERIFY_DELAY: Duration = Duration::from_millis(50);
 const READ_TRIES: usize = 4;
-const TABLE_RESEND_WAIT: Duration = Duration::from_millis(150);
-const TABLE_RESEND_TRIES: usize = 12;
-const TABLE_BUDGET: Duration = Duration::from_secs(60);
-/// Two consecutive identical reads are required before the table is trusted.
-const TABLE_CONFIRMATIONS: usize = 2;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VcpReply {
     pub maximum: u16,
     pub current: u16,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProfileTable {
-    pub scene_id: u8,
-    pub bytes: [u8; PROFILE_TABLE_LEN],
-}
-
-impl ProfileTable {
-    pub fn settings(&self) -> HashMap<u8, u16> {
-        let mut settings = HashMap::new();
-
-        settings.insert(VCP_BRIGHTNESS, self.bytes[2] as u16);
-        settings.insert(VCP_CONTRAST, self.bytes[3] as u16);
-        settings.insert(VCP_SHARPNESS, self.bytes[4] as u16);
-        settings.insert(VCP_COLOR_ENHANCE, self.bytes[5] as u16);
-        settings.insert(VCP_CR_ENHANCE, self.bytes[6] as u16);
-        settings.insert(VCP_SHADOW_BALANCE, self.bytes[7] as u16);
-        settings.insert(VCP_COLOR_TEMP, self.bytes[8] as u16);
-        settings.insert(VCP_USER1_RED, self.bytes[9] as u16);
-        settings.insert(VCP_USER1_GREEN, self.bytes[10] as u16);
-        settings.insert(VCP_USER1_BLUE, self.bytes[11] as u16);
-        settings.insert(VCP_USER2_RED, self.bytes[12] as u16);
-        settings.insert(VCP_USER2_GREEN, self.bytes[13] as u16);
-        settings.insert(VCP_USER2_BLUE, self.bytes[14] as u16);
-        settings.insert(VCP_USER3_RED, self.bytes[15] as u16);
-        settings.insert(VCP_USER3_GREEN, self.bytes[16] as u16);
-        settings.insert(VCP_USER3_BLUE, self.bytes[17] as u16);
-        settings.insert(VCP_HUE_RED, self.bytes[18] as u16);
-        settings.insert(VCP_HUE_GREEN, self.bytes[19] as u16);
-        settings.insert(VCP_HUE_BLUE, self.bytes[20] as u16);
-        settings.insert(VCP_HUE_YELLOW, self.bytes[21] as u16);
-        settings.insert(VCP_HUE_CYAN, self.bytes[22] as u16);
-        settings.insert(VCP_HUE_MAGENTA, self.bytes[23] as u16);
-        settings.insert(VCP_SATURATION_RED, self.bytes[24] as u16);
-        settings.insert(VCP_SATURATION_GREEN, self.bytes[25] as u16);
-        settings.insert(VCP_SATURATION_BLUE, self.bytes[26] as u16);
-        settings.insert(VCP_SATURATION_YELLOW, self.bytes[27] as u16);
-        settings.insert(VCP_SATURATION_CYAN, self.bytes[28] as u16);
-        settings.insert(VCP_SATURATION_MAGENTA, self.bytes[29] as u16);
-        // The table keeps Low Blue Light as 0-100 in steps of 25; the setting (0xD8) is the level 0-4.
-        settings.insert(VCP_LOW_BLUE, (self.bytes[30] as u16 + 12) / 25);
-        settings.insert(VCP_HDR, self.bytes[31] as u16);
-        settings.insert(VCP_GAMMA, self.bytes[33] as u16);
-        settings.insert(VCP_SUPER_RES, self.bytes[34] as u16);
-        settings.insert(VCP_NIGHT_VISION, self.bytes[35] as u16);
-        settings.insert(VCP_DYNAMIC_OD, self.bytes[36] as u16);
-
-        settings
-    }
-}
-
-/// Active picture profile as read from the monitor.
-#[derive(Clone, Debug)]
-pub enum ActiveProfile {
-    /// Custom profile with its settings table.
-    Custom(ProfileTable),
-    /// Default profile (odd code): its settings are read one by one.
-    Default(u8),
-}
-
-enum TableRead {
-    Table(u8, [u8; PROFILE_TABLE_CHUNKS * 4]),
-    Default(u8),
 }
 
 /// Custom profiles have even codes (Standard Custom = 2 ... DyDs/LD Custom = 0x1E), Default profiles odd ones.
@@ -365,6 +292,7 @@ pub fn route(key: u8) -> Route {
     };
     let verify = !RESET_CODES.contains(&key)
         && ![
+            VCP_MODE,
             VCP_NEW_CONTROL_VALUE,
             0xB0,
             VCP_VENDOR_FACTORY_RESET,
@@ -560,159 +488,12 @@ impl<L: Link> MsiDdc<L> {
         if route.code == VCP_MODE {
             // GET 99 -> GET 22 -> GET 00..1E would read a profile table: close the sequence.
             let _ = self.link.read_frame(VCP_VERSION, false);
+            // Reject the plain fallback reply (0xFFFF / 0x0001) that the monitor returns mid-switch or when [99] lapses.
+            if reply.maximum != 0x0026 || !(1..=30).contains(&reply.current) {
+                return Err(FrameError::Garbage);
+            }
         }
         Ok(reply)
-    }
-
-    /// Reads the active profile. A Custom profile comes with its table, returned only after
-    /// `TABLE_CONFIRMATIONS` identical reads.
-    pub fn read_active_profile(&mut self, confirmations: usize) -> io::Result<ActiveProfile> {
-        let deadline = Instant::now() + TABLE_BUDGET;
-        let mut previous: Option<(u8, [u8; PROFILE_TABLE_CHUNKS * 4])> = None;
-        let mut matches = 1;
-        let mut attempts = 0;
-        let mut default_seen: Option<u8> = None;
-        let mut last_error = String::from("no attempt made");
-
-        while Instant::now() < deadline {
-            attempts += 1;
-            match self.read_profile_table_once() {
-                Ok(TableRead::Default(scene_id)) => {
-                    // `dxva2` can hand out a stale reply; a Default profile changes what the UI allows, so it is
-                    // only believed after a second read agrees (the transport note in `ddc.rs`).
-                    if default_seen == Some(scene_id) || confirmations <= 1 {
-                        return Ok(ActiveProfile::Default(scene_id));
-                    }
-                    default_seen = Some(scene_id);
-                    previous = None;
-                    matches = 1;
-                }
-                Ok(TableRead::Table(scene_id, data)) if confirmations <= 1 || previous == Some((scene_id, data)) => {
-                    matches += 1;
-                    if matches >= confirmations {
-                        let mut bytes = [0u8; PROFILE_TABLE_LEN];
-                        for (slot, value) in bytes.iter_mut().skip(2).zip(data.iter()) {
-                            *slot = *value;
-                        }
-                        return Ok(ActiveProfile::Custom(ProfileTable { scene_id, bytes }));
-                    }
-                }
-                Ok(TableRead::Table(scene_id, data)) => {
-                    previous = Some((scene_id, data));
-                    matches = 1;
-                    default_seen = None;
-                }
-                Err(error) => {
-                    previous = None;
-                    matches = 1;
-                    default_seen = None;
-                    last_error = error;
-                }
-            }
-            thread::sleep(Duration::from_millis(500));
-        }
-
-        Err(io::Error::other(format!(
-            "profile table read failed after {attempts} attempts: {last_error}"
-        )))
-    }
-
-    /// GET 99 -> GET 22 -> GET profile -> GET FE ... -> 0000/5101.
-    ///
-    /// `dxva2` reports a lost fragment and a consumed fragment the same way, so the sequence is restarted from the
-    /// beginning after any error instead of repeating one request: a restart is indistinguishable from a fresh read
-    /// and the table is only accepted after two identical reads.
-    fn read_profile_table_once(&mut self) -> Result<TableRead, String> {
-        let mut entered = false;
-        for _ in 0..8 {
-            if !self.link.settle() {
-                continue;
-            }
-            match self.link.read_frame(VCP_DDCCI_INIT, false) {
-                Ok(reply) if reply.maximum == 0xFAFA && reply.current == 0xFAFA => {
-                    entered = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if !entered {
-            return Err("GET 0x99 did not return FAFA/FAFA".into());
-        }
-
-        let mode = self
-            .link
-            .read_frame(VCP_MODE, true)
-            .map_err(|error| format!("GET 0x22: {}", error.describe()))?;
-        if mode.maximum != 0x0026 {
-            return Err(format!("GET 0x22: unexpected maximum 0x{:04X}", mode.maximum));
-        }
-
-        let scene_id = u8::try_from(mode.current)
-            .ok()
-            .filter(|id| (1..=30).contains(id))
-            .ok_or_else(|| format!("GET 0x22: unknown profile {}", mode.current))?;
-        if !is_custom_profile(scene_id) {
-            // Close the sequence: GET 00..1E right after GET 99 -> GET 22 would start a table stream.
-            let _ = self.link.read_frame(VCP_VERSION, false);
-            return Ok(TableRead::Default(scene_id));
-        }
-
-        let mut chunks: Vec<[u8; 4]> = Vec::with_capacity(PROFILE_TABLE_CHUNKS);
-        let mut code = scene_id;
-        loop {
-            let reply = self.next_table_chunk(code, chunks.len())?;
-            let chunk = [
-                (reply.maximum >> 8) as u8,
-                reply.maximum as u8,
-                (reply.current >> 8) as u8,
-                reply.current as u8,
-            ];
-            code = VCP_FIRMWARE;
-            if !chunks.is_empty() && chunk == [0, 0, 0x51, 0x01] {
-                break;
-            }
-            if chunks.len() >= PROFILE_TABLE_CHUNKS {
-                return Err("table stream did not end".into());
-            }
-            chunks.push(chunk);
-        }
-        if chunks.len() != PROFILE_TABLE_CHUNKS {
-            return Err(format!("table has {} fragments instead of {}", chunks.len(), PROFILE_TABLE_CHUNKS));
-        }
-
-        let mut data = [0u8; PROFILE_TABLE_CHUNKS * 4];
-        for (index, chunk) in chunks.iter().enumerate() {
-            data[index * 4..index * 4 + 4].copy_from_slice(chunk);
-        }
-        Ok(TableRead::Table(scene_id, data))
-    }
-
-    /// One fragment, retried; `FF` resends the last fragment the monitor delivered.
-    fn next_table_chunk(&mut self, code: u8, received: usize) -> Result<VcpReply, String> {
-        let mut request = code;
-        let mut error = match self.link.read_frame(request, true) {
-            Ok(reply) => return Ok(reply),
-            Err(error) => error,
-        };
-        for _ in 0..TABLE_RESEND_TRIES {
-            thread::sleep(TABLE_RESEND_WAIT);
-            if !matches!(error, FrameError::Null) {
-                request = VCP_RESEND;
-            }
-            match self.link.read_frame(request, true) {
-                // FF outside a stream answers 0000/0200: the lost reply was the 0000/5101 terminator.
-                Ok(reply) if request == VCP_RESEND && reply.maximum == 0 && reply.current == 0x0200 => {
-                    if received == PROFILE_TABLE_CHUNKS {
-                        return Ok(VcpReply { maximum: 0, current: 0x5101 });
-                    }
-                    return Err(format!("stream ended after {received} fragments"));
-                }
-                Ok(reply) => return Ok(reply),
-                Err(next) => error = next,
-            }
-        }
-        Err(format!("fragment {received}: {}", error.describe()))
     }
 }
 
@@ -1151,10 +932,10 @@ const PROFILE_SETTING_KEYS: &[u8] = &[
     VCP_BRIGHTNESS,
     VCP_CONTRAST,
     VCP_SHARPNESS,
+    VCP_COLOR_TEMP,
     VCP_COLOR_ENHANCE,
     VCP_CR_ENHANCE,
     VCP_SHADOW_BALANCE,
-    VCP_COLOR_TEMP,
     VCP_HUE_RED,
     VCP_HUE_GREEN,
     VCP_HUE_BLUE,
@@ -1243,6 +1024,8 @@ const GLOBAL_SETTING_KEYS: &[u8] = &[
 const READ_CHUNK: usize = 4;
 /// Pause after a reset before its results are read back.
 const RESET_SETTLE: Duration = Duration::from_millis(1500);
+/// Pause after a picture-mode switch (`0x22`) before reading its profile table back (measured ~810 ms on hardware).
+const MODE_SETTLE: Duration = Duration::from_millis(950);
 /// Read-backs of one write: the first mismatch resends the value, the last one reports what the monitor keeps.
 const VERIFY_ATTEMPTS: u8 = 3;
 /// Pause before the last read-back of a write.
@@ -1265,8 +1048,6 @@ enum Task {
     Read(Vec<u8>),
     /// Tells the UI that the profile settings queued before it have been read.
     ProfileLoaded,
-    /// Reads the profile table again until two reads agree and corrects the settings if the first read was wrong.
-    ConfirmProfile,
 }
 
 struct Scheduled {
@@ -1389,7 +1170,7 @@ impl<L: Link> Worker<L> {
                     self.refresh_info();
                     let now = Instant::now();
                     self.tasks.retain(|scheduled| {
-                        !matches!(scheduled.task, Task::Read(_) | Task::RefreshProfile | Task::ConfirmProfile)
+                        !matches!(scheduled.task, Task::Read(_) | Task::RefreshProfile)
                     });
                     self.tasks.push_front(Scheduled { task: Task::RefreshProfile, due: now });
                     self.queue_reads(GLOBAL_SETTING_KEYS, now);
@@ -1441,7 +1222,7 @@ impl<L: Link> Worker<L> {
         }
         self.tasks.retain(|scheduled| match &scheduled.task {
             Task::Verify { code: pending, .. } => *pending != code,
-            Task::RefreshProfile | Task::ConfirmProfile => code != VCP_MODE,
+            Task::RefreshProfile => code != VCP_MODE,
             Task::Read(keys) => !keys.is_empty(),
             Task::ProfileLoaded => true,
         });
@@ -1479,8 +1260,14 @@ impl<L: Link> Worker<L> {
         // Optimistic: the value counts as set; the read-back corrects it if the monitor disagrees.
         self.apply_written(code, value);
         if code == VCP_MODE {
-            // A profile change loads that profile's picture settings (after the profile write is confirmed).
-            self.tasks.push_front(Scheduled { task: Task::RefreshProfile, due: Instant::now() + VERIFY_DELAY });
+            // A profile change loads that profile's picture settings once the monitor finishes switching (~800 ms).
+            let mode_due = Instant::now() + MODE_SETTLE;
+            for scheduled in &mut self.tasks {
+                if scheduled.due < mode_due {
+                    scheduled.due = mode_due;
+                }
+            }
+            self.tasks.push_front(Scheduled { task: Task::RefreshProfile, due: mode_due });
         }
 
         let is_link_reset = matches!(
@@ -1537,13 +1324,6 @@ impl<L: Link> Worker<L> {
             Task::RefreshProfile => self.refresh_profile(),
             Task::Read(keys) => self.read_keys(keys),
             Task::ProfileLoaded => self.ui.send(UiCmd::ProfileLoaded),
-            Task::ConfirmProfile => {
-                if let Ok(ActiveProfile::Custom(table)) = self.ddc.read_active_profile(TABLE_CONFIRMATIONS) {
-                    let mut settings = table.settings();
-                    settings.insert(VCP_MODE, table.scene_id as u16);
-                    self.store(settings);
-                }
-            }
         }
     }
 
@@ -1593,38 +1373,37 @@ impl<L: Link> Worker<L> {
     }
 
     /// Reads the active profile number and its table (picture settings).
+    ///
+    /// Note: on Windows (`dxva2`), entering the `0x02..0x1E -> 0xFE` table stream causes `P275MV PLUS` firmware to
+    /// reset `VCP_MODE` (`0x22`) back to `0x01` (`Standard Default`), so we read `VCP_MODE` safely with
+    /// `GET 99 -> GET 22 -> GET DF` and read `PROFILE_SETTING_KEYS` individually instead.
     fn refresh_profile(&mut self) {
-        match self.ddc.read_active_profile(1) {
-            Ok(ActiveProfile::Custom(table)) => {
-                let mut settings = table.settings();
-                settings.insert(VCP_MODE, table.scene_id as u16);
-                self.store(settings);
-                self.ui.send(UiCmd::ProfileLoaded);
-                self.tasks.push_back(Scheduled { task: Task::ConfirmProfile, due: Instant::now() });
-            }
-            Ok(ActiveProfile::Default(scene_id)) => {
-                self.store(HashMap::from([(VCP_MODE, scene_id as u16)]));
-                self.read_profile_settings(PROFILE_SETTING_KEYS);
-            }
-            Err(error) => {
-                log!("[DDC] Profile table read failed: {error}; reading settings one by one");
-                let mut keys = vec![VCP_MODE];
-                keys.extend_from_slice(PROFILE_SETTING_KEYS);
-                self.read_profile_settings(&keys);
-            }
+        if let Some(mode) = read_vcp(&mut self.ddc, VCP_MODE) {
+            log!("[DDC] Active profile 0x{mode:02X}");
+            self.store(HashMap::from([(VCP_MODE, mode)]));
+            self.read_profile_settings(PROFILE_SETTING_KEYS);
+        } else {
+            log!("[DDC] Profile read failed; reading settings one by one");
+            let mut keys = vec![VCP_MODE];
+            keys.extend_from_slice(PROFILE_SETTING_KEYS);
+            self.read_profile_settings(&keys);
         }
     }
 
-    /// Reads the profile settings one by one, ahead of everything else in the queue, then tells the UI.
+    /// Reads the core profile settings first so controls unlock quickly, then finishes the remaining ones.
     fn read_profile_settings(&mut self, keys: &[u8]) {
         self.tasks.retain(|scheduled| !matches!(scheduled.task, Task::ProfileLoaded));
-        let mut chunks: VecDeque<Scheduled> = keys
-            .chunks(READ_CHUNK)
-            .map(|chunk| Scheduled { task: Task::Read(chunk.to_vec()), due: Instant::now() })
-            .collect();
-        chunks.push_back(Scheduled { task: Task::ProfileLoaded, due: Instant::now() });
-        for task in chunks.into_iter().rev() {
+        let (first, rest) = keys.split_at(keys.len().min(READ_CHUNK));
+        let mut front: VecDeque<Scheduled> = VecDeque::new();
+        if !first.is_empty() {
+            front.push_back(Scheduled { task: Task::Read(first.to_vec()), due: Instant::now() });
+        }
+        front.push_back(Scheduled { task: Task::ProfileLoaded, due: Instant::now() });
+        for task in front.into_iter().rev() {
             self.tasks.push_front(task);
+        }
+        if !rest.is_empty() {
+            self.queue_reads(rest, Instant::now());
         }
     }
 
@@ -1685,7 +1464,14 @@ impl<L: Link> Worker<L> {
         match changed {
             Some(VCP_MODE) => self.tasks.push_back(Scheduled { task: Task::RefreshProfile, due: now }),
             Some(code) if PROFILE_SETTING_KEYS.contains(&code) || GLOBAL_SETTING_KEYS.contains(&code) => {
-                self.queue_reads(&[code], now);
+                // An OSD profile switch alters multiple registers so `0x52` only holds the last one (e.g. `0x14`).
+                let mode_changed = read_vcp(&mut self.ddc, VCP_MODE)
+                    .is_some_and(|mode| self.cache.get(&VCP_MODE).copied() != Some(mode));
+                if mode_changed {
+                    self.tasks.push_back(Scheduled { task: Task::RefreshProfile, due: now });
+                } else {
+                    self.queue_reads(&[code], now);
+                }
             }
             _ => {
                 self.tasks.push_back(Scheduled { task: Task::RefreshProfile, due: now });
@@ -1818,20 +1604,14 @@ pub fn connect<L: Link>(
     ui.send(UiCmd::Progress("Wczytuję zapisane ustawienia...".into()));
     let mut settings = cache_store::load_settings(name);
     ui.send(UiCmd::Progress("Odczytuję profil obrazu...".into()));
-    let table_read = match ddc.read_active_profile(TABLE_CONFIRMATIONS) {
-        Ok(ActiveProfile::Custom(table)) => {
-            log!("[DDC] Active profile table 0x{:02X} read", table.scene_id);
-            settings.insert(VCP_MODE, table.scene_id as u16);
-            settings.extend(table.settings());
-            true
-        }
-        Ok(ActiveProfile::Default(scene_id)) => {
-            log!("[DDC] Active profile 0x{scene_id:02X} (Default): settings are read one by one");
-            settings.insert(VCP_MODE, scene_id as u16);
+    let table_read = match ddc.get_vcp(VCP_MODE) {
+        Ok(scene_id) => {
+            log!("[DDC] Active profile 0x{scene_id:02X}: reading settings one by one");
+            settings.insert(VCP_MODE, scene_id);
             false
         }
         Err(error) => {
-            log!("[DDC] Active profile table read failed: {}", error);
+            log!("[DDC] Active profile read failed: {}", error);
             false
         }
     };
@@ -1927,3 +1707,17 @@ const _: () = {
 
 /// Placeholder for the unused constant list above.
 const VCP_RESIZE_UNUSED: u8 = 0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_route_and_check_write() {
+        assert!(!is_verifiable(VCP_MODE));
+        assert!(check_write(VCP_MODE, 0).is_err());
+        assert!(check_write(VCP_MODE, 26).is_ok());
+        assert!(is_custom_profile(26));
+        assert!(!is_custom_profile(25));
+    }
+}

@@ -34,8 +34,6 @@ pub enum Kind {
     SystemResolution,
     SystemRefresh,
     SystemScaling,
-    /// Installed firmware package: an application setting, not a monitor code.
-    FirmwarePackage,
 }
 
 /// Text rows whose content is set at run time.
@@ -543,10 +541,6 @@ fn monitor_page() -> Page {
             row("Wyłącz monitor", Kind::Action(Action::PowerOff), None),
             header("Informacje"),
             text("Model", DynText::Model),
-            tooltip(
-                row("Wgrany pakiet firmware", Kind::FirmwarePackage, None),
-                "Monitor nie zgłasza pakietu, wybierz ręcznie. Z pakietem 2025-09-20 DyDs działa razem z Adaptive-Sync",
-            ),
             text("Czas pracy", DynText::Usage),
             header("Przywracanie"),
             row("Resetuj kolory", Kind::Action(Action::ResetColors), None),

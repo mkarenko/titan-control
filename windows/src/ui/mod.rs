@@ -18,7 +18,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
     DRAWITEMSTRUCT, ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
     MEASUREITEMSTRUCT, ODS_DISABLED, ODS_SELECTED, ODT_BUTTON, ODT_LISTBOX, SetScrollInfo, TBM_SETPAGESIZE,
-    TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTS_ALWAYSTIP, TTS_NOPREFIX,
+    TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
@@ -56,7 +56,7 @@ use crate::{
     app::{App, SystemKind, TIMER_FAV_KEY},
     i18n::{AppLang, tr, usage_minutes},
     monitor,
-    settings::{FirmwarePackage, StepModifier},
+    settings::StepModifier,
     win,
 };
 
@@ -76,7 +76,6 @@ const SECTION_HEIGHT: i32 = 36;
 const SLIDER_WIDTH: i32 = 220;
 const VALUE_WIDTH: i32 = 46;
 const COMBO_WIDTH: i32 = 240;
-const SHORT_COMBO_WIDTH: i32 = 160;
 const BUTTON_WIDTH: i32 = 220;
 const SWITCH_WIDTH: i32 = 44;
 const SWITCH_HEIGHT: i32 = 24;
@@ -217,9 +216,6 @@ enum KindUi {
         buttons: Vec<HWND>,
         selected: usize,
     },
-    Firmware {
-        combo: HWND,
-    },
     System {
         combo: HWND,
         which: SystemKind,
@@ -307,7 +303,6 @@ pub struct Window {
     fav_key_held: bool,
     active: usize,
     applying: bool,
-    firmware: usize,
     dpi: u32,
     last_slider_send: Option<(u8, Instant)>,
 }
@@ -519,10 +514,6 @@ fn create_shell(app: &mut App) -> Window {
         fav_key_held: false,
         active: 0,
         applying: false,
-        firmware: FirmwarePackage::ALL
-            .iter()
-            .position(|package| *package == app.settings.firmware_package)
-            .unwrap_or(0),
         dpi,
         last_slider_send: None,
     };
@@ -690,6 +681,7 @@ fn build(app: &mut App, window: &mut Window) {
             ptr::null_mut(),
         );
         SendMessageW(window.tooltip, WM_SETFONT, window.font as usize, 1);
+        SendMessageW(window.tooltip, TTM_SETMAXTIPWIDTH, 0, win::scaled(360, dpi) as isize);
     }
 
     let pages = rows::pages();
@@ -773,7 +765,6 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
     let slider_width = scale(SLIDER_WIDTH);
     let value_width = scale(VALUE_WIDTH);
     let combo_width = scale(COMBO_WIDTH);
-    let short_combo = scale(SHORT_COMBO_WIDTH);
     let button_width = scale(BUTTON_WIDTH);
     let swatch = scale(SWATCH_SIZE);
     let swatch_gap = scale(SWATCH_GAP);
@@ -1104,21 +1095,6 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                     buttons,
                     selected: 0,
                 }
-            }
-            Kind::FirmwarePackage => {
-                let combo = create_combo(window, page_window);
-                for label in ["2024-12-11", "2025-09-20"] {
-                    add_combo_string(combo, label);
-                }
-                elements.push(Element {
-                    window: combo,
-                    x: control_x,
-                    dy: scale(7),
-                    width: short_combo,
-                    height: scale(200),
-                    right_aligned: true,
-                });
-                KindUi::Firmware { combo }
             }
             Kind::SystemResolution | Kind::SystemRefresh | Kind::SystemScaling => {
                 let which = match spec_row.kind {
@@ -1623,7 +1599,6 @@ pub fn apply_state(app: &mut App) {
     let values = app.state.clone();
     let info = app.info.clone();
     let language = app.lang;
-    let firmware = window.firmware;
 
     let active_mode_idx = values
         .get(&monitor::VCP_MODE)
@@ -1738,9 +1713,6 @@ pub fn apply_state(app: &mut App) {
                     }
                 }
             }
-            KindUi::Firmware { combo } => unsafe {
-                SendMessageW(*combo, CB_SETCURSEL, firmware, 0);
-            },
             KindUi::Text { label, which } => {
                 let text = match which {
                     DynText::MonitorTitle => info
@@ -1924,7 +1896,6 @@ pub fn refresh_availability(app: &mut App) {
                 connected && code_ok
             }
             KindUi::PictureMode { .. } | KindUi::Variant { .. } => connected && !loading && !hdr_locked,
-            KindUi::Firmware { .. } => true,
             KindUi::System { which, .. } => !matches!(which, SystemKind::Scaling),
             KindUi::Section { .. } => true,
             _ => {
@@ -1970,7 +1941,7 @@ fn control_windows(kind: &KindUi) -> Vec<HWND> {
         KindUi::Choice { combo, .. } => vec![*combo],
         KindUi::Swatches { buttons, .. } => buttons.clone(),
         KindUi::Action { button, .. } => vec![*button],
-        KindUi::PictureMode { combo } | KindUi::Firmware { combo } => vec![*combo],
+        KindUi::PictureMode { combo } => vec![*combo],
         KindUi::System { combo, .. } => vec![*combo],
         KindUi::Text { .. } | KindUi::Section { .. } => Vec::new(),
     }
@@ -2124,9 +2095,14 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
                         .iter()
                         .find_map(|c| match &c.kind {
                             KindUi::PictureMode { combo } => {
-                                Some(unsafe { SendMessageW(*combo, CB_GETCURSEL, 0, 0) } as usize)
+                                usize::try_from(unsafe { SendMessageW(*combo, CB_GETCURSEL, 0, 0) }).ok()
                             }
                             _ => None,
+                        })
+                        .or_else(|| {
+                            app.get(monitor::VCP_MODE)
+                                .and_then(monitor::picture_mode_from_vcp)
+                                .map(|(mode, _)| mode)
                         })
                         .unwrap_or(0);
                     app.window = Some(window);
@@ -2280,7 +2256,6 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             }
             Some(ControlChange::Action(action)) => run_action(app, action),
             Some(ControlChange::System(which, selection)) => change_system_mode(app, which, selection),
-            Some(ControlChange::Firmware(selection)) => change_firmware(app, selection),
             Some(ControlChange::Profile(custom, mode)) => {
                 if let Some(value) = monitor::picture_mode_vcp_value(mode, custom) {
                     app.start_profile_load();
@@ -2298,7 +2273,6 @@ enum ControlChange {
     Value(u8, u16),
     Action(Action),
     System(SystemKind, usize),
-    Firmware(usize),
     Profile(bool, usize),
 }
 
@@ -2329,13 +2303,6 @@ fn read_control(window: &Window, index: usize, notification: u32) -> Option<Cont
                 })
                 .unwrap_or(false);
             Some(ControlChange::Profile(custom, mode))
-        }
-        KindUi::Firmware { combo } => {
-            if notification != CBN_SELCHANGE as u32 {
-                return None;
-            }
-            let selection = unsafe { SendMessageW(*combo, CB_GETCURSEL, 0, 0) } as usize;
-            Some(ControlChange::Firmware(selection))
         }
         KindUi::System { combo, which } => {
             if notification != CBN_SELCHANGE as u32 {
@@ -2461,35 +2428,6 @@ fn change_system_mode(app: &mut App, which: SystemKind, selection: usize) {
             }
         }
         SystemKind::Scaling => {}
-    }
-}
-
-fn change_firmware(app: &mut App, selection: usize) {
-    let Some(&package) = FirmwarePackage::ALL.get(selection) else {
-        return;
-    };
-    app.settings.firmware_package = package;
-    app.save_settings();
-    let _ = app.worker.send(monitor::WorkerCmd::DydsWithAdaptiveSync(
-        package.dyds_with_adaptive_sync(),
-    ));
-    if let Some(window) = app.window.as_mut() {
-        window.firmware = selection;
-    }
-    show_firmware(app);
-    refresh_availability(app);
-}
-
-fn show_firmware(app: &mut App) {
-    let Some(window) = app.window.as_ref() else {
-        return;
-    };
-    for control in &window.controls {
-        if let KindUi::Firmware { combo } = &control.kind {
-            unsafe {
-                SendMessageW(*combo, CB_SETCURSEL, window.firmware, 0);
-            }
-        }
     }
 }
 

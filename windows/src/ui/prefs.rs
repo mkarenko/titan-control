@@ -8,13 +8,18 @@ use std::{ffi::c_void, ptr};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{DeleteObject, InvalidateRect, SetBkColor, SetTextColor};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::Controls::BST_CHECKED;
+use windows_sys::Win32::UI::Controls::{
+    BST_CHECKED, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
+    TTTOOLINFOW,
+};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 /// Static control styles and combo box styles (`WinUser.h`).
 #[allow(non_upper_case_globals)]
 const SS_LEFT: u32 = 0x0000;
+#[allow(non_upper_case_globals)]
+const SS_NOTIFY: u32 = 0x0100;
 #[allow(non_upper_case_globals)]
 const BS_PUSHBUTTON: u32 = 0x0000;
 #[allow(non_upper_case_globals)]
@@ -46,7 +51,7 @@ const ID_ISSUES: u16 = 221;
 const ID_COFFEE: u16 = 222;
 
 const MARGIN: i32 = 16;
-const LABEL_WIDTH: i32 = 230;
+const LABEL_WIDTH: i32 = 250;
 const CONTROL_WIDTH: i32 = 190;
 const ROW_HEIGHT: i32 = 32;
 
@@ -100,7 +105,7 @@ fn run_modal(app: &mut App, class: &str, title: &str, height: i32, build: Builde
     }
 
     let dpi = win::system_dpi();
-    let width = win::scaled(560, dpi);
+    let width = win::scaled(580, dpi);
     let dialog_height = win::scaled(height, dpi);
     let (screen_width, screen_height) = win::screen_size();
     let title = win::wide(&app.tr(title));
@@ -174,12 +179,13 @@ fn build_preferences(app: &mut App, hwnd: HWND, dpi: u32) {
     let combo_width = scale(CONTROL_WIDTH);
     let mut y = scale(MARGIN);
 
-    let add_label = |text: &str, y: i32| unsafe {
+    let add_label = |text: &str, y: i32, notify: bool| unsafe {
+        let style = WS_CHILD | WS_VISIBLE | SS_LEFT | if notify { SS_NOTIFY } else { 0 };
         let label = CreateWindowExW(
             0,
             win::wide("STATIC").as_ptr(),
             win::wide(text).as_ptr(),
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            style,
             scale(MARGIN),
             y + scale(6),
             label_width,
@@ -192,6 +198,27 @@ fn build_preferences(app: &mut App, hwnd: HWND, dpi: u32) {
         SendMessageW(label, WM_SETFONT, app.font as usize, 1);
         label
     };
+    let tooltip = unsafe {
+        let tip = CreateWindowExW(
+            WS_EX_TOPMOST,
+            win::wide("tooltips_class32").as_ptr(),
+            ptr::null(),
+            WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+            0,
+            0,
+            0,
+            0,
+            hwnd,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+        SendMessageW(tip, WM_SETFONT, app.font as usize, 1);
+        SendMessageW(tip, TTM_SETMAXTIPWIDTH, 0, scale(340) as isize);
+        win::set_control_theme(tip, app.dark());
+        tip
+    };
+    PREFS_TOOLTIP.with(|cell| *cell.borrow_mut() = tooltip);
     let add_combo = |options: &[&str], selected: usize, id: u16, y: i32| unsafe {
         let combo = CreateWindowExW(
             0,
@@ -216,7 +243,7 @@ fn build_preferences(app: &mut App, hwnd: HWND, dpi: u32) {
         combo
     };
 
-    add_label(&app.tr("Język aplikacji"), y);
+    add_label(&app.tr("Język aplikacji"), y, false);
     let language = match app.settings.language {
         None => 0,
         Some(index) if lang_from_index(index) == AppLang::PL => 2,
@@ -228,21 +255,21 @@ fn build_preferences(app: &mut App, hwnd: HWND, dpi: u32) {
     add_combo(&translated, language, ID_LANGUAGE, y);
     y += scale(ROW_HEIGHT);
 
-    add_label(&app.tr("Motyw"), y);
+    add_label(&app.tr("Motyw"), y, false);
     let theme_options = ["Systemowy", "Jasny", "Ciemny"];
     let translated: Vec<String> = theme_options.iter().map(|option| app.tr(option)).collect();
     let translated: Vec<&str> = translated.iter().map(String::as_str).collect();
     add_combo(&translated, app.settings.theme as usize, ID_THEME, y);
     y += scale(ROW_HEIGHT);
 
-    add_label(&app.tr("Ikona w zasobniku"), y);
+    add_label(&app.tr("Ikona w zasobniku"), y, false);
     let tray_options = ["Kolory motywu", "Jasna", "Ciemna"];
     let translated: Vec<String> = tray_options.iter().map(|option| app.tr(option)).collect();
     let translated: Vec<&str> = translated.iter().map(String::as_str).collect();
     add_combo(&translated, app.settings.tray_icon_style as usize, ID_TRAY_ICON, y);
     y += scale(ROW_HEIGHT);
 
-    add_label(&app.tr("Klawisz ulubionych"), y);
+    add_label(&app.tr("Klawisz ulubionych"), y, false);
     let modifiers = ["Ctrl", "Shift", "Alt", "Super"];
     add_combo(
         &modifiers,
@@ -252,7 +279,13 @@ fn build_preferences(app: &mut App, hwnd: HWND, dpi: u32) {
     );
     y += scale(ROW_HEIGHT);
 
-    add_label(&app.tr("Wgrany pakiet firmware"), y);
+    let firmware_label_text = format!("{}  \u{24d8}", app.tr("Wgrany pakiet firmware"));
+    let firmware_label = add_label(&firmware_label_text, y, true);
+    add_dialog_tooltip(
+        tooltip,
+        firmware_label,
+        &app.tr("Monitor nie zgłasza pakietu, wybierz ręcznie. Z pakietem 2025-09-20 DyDs działa razem z Adaptive-Sync"),
+    );
     let selected = FirmwarePackage::ALL
         .iter()
         .position(|package| *package == app.settings.firmware_package)
@@ -486,6 +519,7 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
             0
         }
         WM_CLOSE => {
+            PREFS_TOOLTIP.with(|cell| *cell.borrow_mut() = ptr::null_mut());
             unsafe {
                 DestroyWindow(hwnd);
             }
@@ -532,6 +566,12 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
 }
 
 fn theme_dialog_children(hwnd: HWND, dark: bool) {
+    PREFS_TOOLTIP.with(|cell| {
+        let tip = *cell.borrow();
+        if !tip.is_null() {
+            win::set_control_theme(tip, dark);
+        }
+    });
     unsafe {
         let mut child = GetWindow(hwnd, GW_CHILD);
         while !child.is_null() {
@@ -548,7 +588,24 @@ fn theme_dialog_children(hwnd: HWND, dark: bool) {
     }
 }
 
+fn add_dialog_tooltip(tooltip: HWND, target: HWND, text: &str) {
+    if tooltip.is_null() || target.is_null() {
+        return;
+    }
+    let mut wide_text = win::wide(text);
+    let mut info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<TTTOOLINFOW>() as u32;
+    info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    info.hwnd = target;
+    info.uId = target as usize;
+    info.lpszText = wide_text.as_mut_ptr();
+    unsafe {
+        SendMessageW(tooltip, TTM_ADDTOOLW, 0, &info as *const TTTOOLINFOW as isize);
+    }
+}
+
 thread_local! {
     /// Background brush of the dialogs (`(color, HBRUSH)`), updated automatically if the theme changes.
     static DLG_BRUSH: std::cell::RefCell<Option<(u32, windows_sys::Win32::Graphics::Gdi::HBRUSH)>> = const { std::cell::RefCell::new(None) };
+    static PREFS_TOOLTIP: std::cell::RefCell<HWND> = const { std::cell::RefCell::new(ptr::null_mut()) };
 }

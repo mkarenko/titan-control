@@ -63,6 +63,25 @@ of the P275MV PLUS (`MT9802` controller, board `TKJT2023`, panel `M270QAN07.6`, 
   `Firmware burning procedure.pdf` for flashing the firmware directly over GPU DDC/I2C on Windows. Read the included
   PDF guide carefully before starting, keep the monitor powered throughout the process, and do not interrupt flashing.
 
+## Checking the installed firmware version & controller (Factory Menu)
+
+While the standard OSD and DDC/CI (`VCP FE`) report only the USB firmware version (`5.1.1`), the monitor has a hidden
+service menu that shows the exact firmware version, build date, controller chip, and panel model:
+
+1. Set monitor **Brightness** to **`88`** (via the OSD or Titan Control).
+2. Press and hold the **down button** on the monitor for **5 seconds or more**.
+3. A blue service menu appears in the top-left corner displaying:
+   - **`FW:`** firmware branch (e.g. `M001`) and **build date** on the right (e.g. `20250612`);
+   - **Controller chip** (e.g. `MT9802`);
+   - **Panel** and **Size** (e.g. `Panel:M270QAN07.6`, `Size: 27.0`);
+   - **`LD FW:`** local dimming firmware version and **Backlight Time** (`BlightTime`).
+
+<p align="center"><img src="factory_menu.jpg" width="380" alt="P275MV PLUS hidden factory service menu"></p>
+
+> [!CAUTION]
+> Only use this menu to **read** your monitor's details, then select **Exit** to close it. Do not toggle service items
+> such as `BurnIn`, `EDIDWP`, SSC settings, or `Reset BackLight`.
+
 ## Version history of the Enhanced firmware
 
 Translated from `1、请先阅读本文档.txt` ("Read this first"):
@@ -82,8 +101,10 @@ Notes from the same file:
 1. A firmware has an architecture version, a software version and a USB software version. The OSD shows only the
    USB software version (5.1.1). It changes only when the USB management software is updated, so it stays 5.1.1 after
    these updates. The real software version is the date stamp (for example 20250920).
-2. The OSD cannot show the firmware date yet. Over DDC/CI the monitor also reports only 5.1.1 (`VCP FE = 0000/5101`),
-   which is why Titan Control asks you which package is installed (_Monitor → Information_).
+2. The regular OSD and DDC/CI (`VCP FE = 0000/5101`) both report only `5.1.1`. To see the actual firmware date
+   (e.g. `20250612`, `20250920`) and controller (e.g. `MT9802`), open the
+   [Factory Menu](#checking-the-installed-firmware-version--controller-factory-menu) above. Because DDC/CI cannot read
+   that date automatically, Titan Control asks which package is installed under _Monitor → Information_.
 3. When to update: when a feature from the list above is missing in your OSD.
 4. In the update guide the text is binding; the pictures are only illustrations.
 5. Read the whole guide before you start.

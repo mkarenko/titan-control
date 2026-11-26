@@ -95,6 +95,7 @@ pub fn auto_hdr_picker(app: &mut App) {
     PICKER_ALL.with(|cell| cell.borrow_mut().clear());
     PICKER_FILTERED.with(|cell| cell.borrow_mut().clear());
     rebuild_main_window(app);
+    crate::ui::redraw_active_page(app);
 }
 
 /// Opens a compact modal prompt to name and save a new monitor profile from current settings.

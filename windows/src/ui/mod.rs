@@ -16,9 +16,10 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM}
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen, CreateSolidBrush,
     DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, IntersectClipRect, InvalidateRect,
-    LineTo, MoveToEx, RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow,
-    DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBITMAP, HBRUSH, HDC, HFONT, HPEN,
-    NULL_BRUSH, OPAQUE, PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
+    LineTo, MoveToEx, RedrawWindow, RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor,
+    UpdateWindow, DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBITMAP, HBRUSH, HDC,
+    HFONT, HPEN, NULL_BRUSH, OPAQUE, PAINTSTRUCT, PS_SOLID, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE,
+    RDW_UPDATENOW, SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
@@ -28,8 +29,8 @@ use windows_sys::Win32::UI::Controls::{
     TTS_NOPREFIX,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetAsyncKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
-    VK_SHIFT,
+    EnableWindow, GetAsyncKeyState, GetCapture, GetFocus, IsWindowEnabled, ReleaseCapture, SetFocus, VK_CONTROL,
+    VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -1679,7 +1680,6 @@ pub fn refresh_auto_profiles_page(app: &mut App) {
         return;
     }
 
-    let page_window = window.pages[page_idx].window;
     let page_title = tr(&app.lang, "Auto Profiles");
     let mut dynamic_hwnds: HashSet<isize> = HashSet::new();
     for ctrl in &window.controls {
@@ -1696,11 +1696,9 @@ pub fn refresh_auto_profiles_page(app: &mut App) {
         }
     }
 
-    unsafe {
-        SendMessageW(page_window, WM_SETREDRAW, 0, 0);
-    }
-
     let mut drop_rows: Vec<bool> = vec![false; window.rows.len()];
+    let focused = unsafe { GetFocus() };
+    let captured = unsafe { GetCapture() };
     for (idx, row) in window.rows.iter().enumerate() {
         if row.page == page_idx
             && row
@@ -1716,6 +1714,12 @@ pub fn refresh_auto_profiles_page(app: &mut App) {
                 window.text_cache.remove(&k);
                 window.disabled_statics.remove(&k);
                 unsafe {
+                    if captured == elem.window {
+                        ReleaseCapture();
+                    }
+                    if focused == elem.window {
+                        SetFocus(window.pages[page_idx].window);
+                    }
                     DestroyWindow(elem.window);
                 }
             }
@@ -1732,17 +1736,50 @@ pub fn refresh_auto_profiles_page(app: &mut App) {
         .retain(|c| !matches!(c.kind, KindUi::AutoProfileAppRow { .. }));
 
     populate_auto_profile_rows(app, &mut window, page_idx, &page_title);
-    reflow(&mut window, app);
-
-    unsafe {
-        SendMessageW(page_window, WM_SETREDRAW, 1, 0);
-        InvalidateRect(page_window, ptr::null(), 1);
-        UpdateWindow(page_window);
+    if window.in_search() {
+        let query = read_search_box(window.search_box);
+        window.search_query.clear();
+        update_search_filter(&mut window, app, &query);
     }
-
     app.window = Some(window);
+
+    // Populate combo items, HDR pill states, and control availability before final layout and repaint.
     apply_state(app);
     refresh_availability(app);
+
+    if let Some(mut window) = app.window.take() {
+        reflow(&mut window, app);
+        app.window = Some(window);
+    }
+    // Repaint only after restoring `app.window` so synchronous WM_PAINT/WM_DRAWITEM/WM_CTLCOLOR* handlers see `Some(...)`.
+    redraw_active_page(app);
+}
+
+/// Forces an immediate full redraw of the currently visible page and all of its child controls.
+pub fn redraw_active_page(app: &App) {
+    let Some(window) = app.window.as_ref() else {
+        return;
+    };
+    if !window.is_open() {
+        return;
+    }
+    let active_hwnd = if window.in_search() {
+        window.search_page.window
+    } else if window.active < window.pages.len() {
+        window.pages[window.active].window
+    } else {
+        ptr::null_mut()
+    };
+    if !active_hwnd.is_null() {
+        unsafe {
+            RedrawWindow(
+                active_hwnd,
+                ptr::null(),
+                ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME,
+            );
+        }
+    }
 }
 
 // ───────────────────────────── widget factories & wheel subclass ─────────────────────────────

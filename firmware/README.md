@@ -29,7 +29,9 @@ below. The binaries are unmodified (SHA-256 below).
 | File                                           | Monitor                                | Firmware                   | Original package                                                                                                                                                                              |
 | ---------------------------------------------- | -------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `P275MV_PLUS_M001_20241211_5.1.1.bin`          | P275MV PLUS (regular)                  | M001 2024-12-11, USB 5.1.1 | _P275MV PLUS Firmware Update (M001 20241211 5.1.1)_, file `3、P275MV PLUS - M001-20241211-5.1.1.bin`                                                                                          |
+| `P275MV_PLUS_EUR_M001_20250612_V1.0.1.bin`     | **P275MV PLUS European (EUR)**         | M001 2025-06-12, V1.0.1    | Official file from Titan Army support: `105.001.45891_TITAN_EUR_2751V_PLUS_TKJT2023_W9RQUHD_QA2_2H1DP1C_M270QAN07_6_UHD160_0x55_20250612_XGN_20C5(V1.0.1).bin`                                |
 | `P275MV_PLUS_Enhanced_M001_20250920_5.1.1.bin` | **P275MV PLUS Enhanced (增强版) only** | M001 2025-09-20, USB 5.1.1 | _P275MV PLUS（增强版）固件补丁升级包（M001 20250920 5.1.1）_, file `105.001.38151_TITAN_2751V_PLUS_TKJT2023_W9RQUHD_QA2_2H1DP1C_M270QAN07_6_UHD160_0x98_M001_20250920_XGN3.0.4_BCE8_售后.bin` |
+| `WinISP.7z`                                    | —                                      | —                          | Windows DDC/I2C firmware flashing tool (`WinISP.exe`, `GraphicsCardCtrl.dll`, `Firmware burning procedure.pdf`) for flashing the EUR `.bin` from Windows                                      |
 | `usb-update-guide.zh.pdf`                      | —                                      | —                          | The original update guide with pictures (Chinese), translated in [USB update](#usb-update)                                                                                                    |
 
 The Enhanced package is a service (售后, after-sales) build and is no longer on the manufacturer's site. It comes with
@@ -44,7 +46,22 @@ The Enhanced build name describes the hardware: board `TKJT2023`, panel `M270QAN
 ```text
 7f94a52fea0275216f42283cedaacdbf1a0996aea26d146ae9869d0978b26373  P275MV_PLUS_Enhanced_M001_20250920_5.1.1.bin
 c8beda8f4cc03b7de1a394350744605b9baf04e9f201ced1c480b0cb3c7d3ad3  P275MV_PLUS_M001_20241211_5.1.1.bin
+3e51db98bd893ddc9d93c556b3c3c1537d12e5df40aebecfe253b60c8c66e98f  P275MV_PLUS_EUR_M001_20250612_V1.0.1.bin
+75f8aab1e1b0e9c1b71ef6f0abd752d591df796b581c3ffa859c22bd979e5e00  WinISP.7z
 ```
+
+## European (EUR) firmware & WinISP flashing
+
+`P275MV_PLUS_EUR_M001_20250612_V1.0.1.bin` was supplied directly by Titan Army support for the **European (EUR)** version
+of the P275MV PLUS (`MT9802` controller, board `TKJT2023`, panel `M270QAN07.6`, build date `2025-06-12`, version `V1.0.1`).
+
+- **Latest support-recommended EUR build:** Per Titan Army support, this is the newest firmware version currently
+  available and recommended for the European monitor variant.
+- **No VRR + DyDs fix:** Because this build predates `M001 2025-09-20` (and uses the earlier dimming block without
+  `XGN3.0.4`), it **does not include the fix that allows VRR (Adaptive-Sync) and DyDs simultaneously**.
+- **Flashing tool ([`WinISP.7z`](WinISP.7z)):** Contains `WinISP.exe`, `GraphicsCardCtrl.dll`, and the included PDF guide
+  `Firmware burning procedure.pdf` for flashing the firmware directly over GPU DDC/I2C on Windows. Read the included
+  PDF guide carefully before starting, keep the monitor powered throughout the process, and do not interrupt flashing.
 
 ## Version history of the Enhanced firmware
 

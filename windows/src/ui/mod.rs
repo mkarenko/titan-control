@@ -23,8 +23,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
     DRAWITEMSTRUCT, ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
-    MEASUREITEMSTRUCT, ODS_DISABLED, ODS_SELECTED, ODT_BUTTON, ODT_LISTBOX, SetScrollInfo, TBM_SETPAGESIZE,
-    TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
+    MEASUREITEMSTRUCT, NMCUSTOMDRAW, NMHDR, ODS_DISABLED, ODS_SELECTED, ODT_BUTTON, ODT_LISTBOX, SetScrollInfo,
+    TBM_SETPAGESIZE, TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP,
+    TTS_NOPREFIX,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetAsyncKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
@@ -57,7 +58,25 @@ const CBS_HASSTRINGS: u32 = 0x0200;
 #[allow(non_upper_case_globals)]
 const TBM_GETPOS: u32 = 0x0400;
 #[allow(non_upper_case_globals)]
+const TBM_GETTHUMBRECT: u32 = 0x0419;
+#[allow(non_upper_case_globals)]
 const TB_THUMBTRACK: u32 = 5;
+#[allow(non_upper_case_globals)]
+const NM_CUSTOMDRAW: u32 = 0u32.wrapping_sub(12);
+#[allow(non_upper_case_globals)]
+const CDDS_PREPAINT: u32 = 0x0000_0001;
+#[allow(non_upper_case_globals)]
+const CDDS_ITEMPREPAINT: u32 = 0x0001_0001;
+#[allow(non_upper_case_globals)]
+const CDRF_NOTIFYITEMDRAW: LRESULT = 0x0000_0020;
+#[allow(non_upper_case_globals)]
+const CDRF_SKIPDEFAULT: LRESULT = 0x0000_0004;
+#[allow(non_upper_case_globals)]
+const TBCD_TICS: usize = 0x0001;
+#[allow(non_upper_case_globals)]
+const TBCD_THUMB: usize = 0x0002;
+#[allow(non_upper_case_globals)]
+const TBCD_CHANNEL: usize = 0x0003;
 #[allow(non_upper_case_globals)]
 const ES_LEFT: u32 = 0x0000;
 #[allow(non_upper_case_globals)]
@@ -110,10 +129,13 @@ const HERO_IMAGE_HEIGHT: i32 = 156;
 const ID_REFRESH: u16 = 100;
 const ID_PREFERENCES: u16 = 101;
 const ID_ABOUT: u16 = 102;
-const ID_LOG: u16 = 103;
 const ID_NAV: u16 = 104;
 const ID_SEARCH: u16 = 105;
 const ID_SEARCH_CLEAR: u16 = 106;
+const ID_PROFILE_COMBO: u16 = 107;
+const ID_PROFILE_SAVE: u16 = 108;
+const ID_PROFILE_NEW: u16 = 109;
+const ID_PROFILE_DELETE: u16 = 110;
 
 /// Minimum interval between DDC/CI writes while dragging a slider.
 const SLIDER_DRAG_INTERVAL_MS: u128 = 250;
@@ -234,6 +256,15 @@ enum KindUi {
         button: HWND,
         checked: bool,
     },
+    AutoProfilesDefault {
+        combo: HWND,
+    },
+    AutoProfileAppRow {
+        profile_combo: HWND,
+        hdr_button: HWND,
+        remove_button: HWND,
+        index: usize,
+    },
     PictureMode {
         combo: HWND,
     },
@@ -257,6 +288,7 @@ enum KindUi {
 struct Control {
     kind: KindUi,
     code: Option<u8>,
+    label: Option<HWND>,
 }
 
 struct Element {
@@ -413,6 +445,10 @@ pub struct Window {
     nav: HWND,
     nav_labels: Vec<String>,
     pages: Vec<PageUi>,
+    profile_combo: HWND,
+    profile_save: HWND,
+    profile_new: HWND,
+    profile_delete: HWND,
     search_box: HWND,
     search_clear: HWND,
     search_page: PageUi,
@@ -426,12 +462,18 @@ pub struct Window {
     swatches: HashMap<isize, (usize, usize)>,
     /// Segmented toggle buttons: window → (control, option).
     toggles: HashMap<isize, (usize, usize)>,
+    /// Per-app Auto HDR pill toggles on the Auto Profiles page: window → (app index, is_hdr_on).
+    auto_hdr_pills: HashMap<isize, (usize, bool)>,
     /// Owner-drawn push buttons (toolbar / action): window → label text.
     buttons: HashMap<isize, String>,
     /// Star buttons: window → (favourite id, is_active).
     stars: HashMap<isize, (&'static str, bool)>,
     /// Header and hero `STATIC` HWNDs that sit directly on the page background.
     page_bg_labels: HashSet<isize>,
+    /// Label/value `STATIC` HWNDs currently disabled (painted muted while tooltips stay active).
+    disabled_statics: HashSet<isize>,
+    /// Trackbar `HWND`s rendered with custom active/disabled state in `NM_CUSTOMDRAW`.
+    slider_tracks: HashSet<isize>,
     /// Cached label strings (`status` and `KindUi::Text`) to skip unchanged `SetWindowTextW` calls.
     text_cache: HashMap<isize, String>,
     /// Cached slider display values keyed by trackbar HWND to skip redundant label updates.
@@ -662,6 +704,10 @@ fn create_shell(app: &mut App) -> Window {
         nav: ptr::null_mut(),
         nav_labels: Vec::new(),
         pages: Vec::new(),
+        profile_combo: ptr::null_mut(),
+        profile_save: ptr::null_mut(),
+        profile_new: ptr::null_mut(),
+        profile_delete: ptr::null_mut(),
         search_box: ptr::null_mut(),
         search_clear: ptr::null_mut(),
         search_page: PageUi {
@@ -678,9 +724,12 @@ fn create_shell(app: &mut App) -> Window {
         sections: Vec::new(),
         swatches: HashMap::new(),
         toggles: HashMap::new(),
+        auto_hdr_pills: HashMap::new(),
         buttons: HashMap::new(),
         stars: HashMap::new(),
         page_bg_labels: HashSet::new(),
+        disabled_statics: HashSet::new(),
+        slider_tracks: HashSet::new(),
         text_cache: HashMap::new(),
         slider_cache: HashMap::new(),
         last_system_key: None,
@@ -788,7 +837,6 @@ fn build(app: &mut App, window: &mut Window) {
             (ID_REFRESH, "Odśwież"),
             (ID_PREFERENCES, "Preferencje"),
             (ID_ABOUT, "O programie"),
-            (ID_LOG, "Pokaż plik logu"),
         ] {
             let label = tr(&lang, text);
             let button = CreateWindowExW(
@@ -807,6 +855,52 @@ fn build(app: &mut App, window: &mut Window) {
             );
             SendMessageW(button, WM_SETFONT, window.font as usize, 1);
             window.buttons.insert(button as isize, label);
+        }
+
+        window.profile_combo = CreateWindowExW(
+            0,
+            win::wide("COMBOBOX").as_ptr(),
+            ptr::null(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+            0,
+            0,
+            10,
+            240,
+            hwnd,
+            ID_PROFILE_COMBO as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(window.profile_combo, WM_SETFONT, window.font as usize, 1);
+        SetWindowSubclass(window.profile_combo, wheel_forward_proc, 1, 0);
+
+        for (id, text) in [
+            (ID_PROFILE_SAVE, "Zapisz"),
+            (ID_PROFILE_NEW, "Nowy"),
+            (ID_PROFILE_DELETE, "Usuń"),
+        ] {
+            let label = tr(&lang, text);
+            let button = CreateWindowExW(
+                0,
+                win::wide("BUTTON").as_ptr(),
+                win::wide(&label).as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                0,
+                0,
+                10,
+                10,
+                hwnd,
+                id as usize as *mut c_void,
+                GetModuleHandleW(ptr::null()),
+                ptr::null_mut(),
+            );
+            SendMessageW(button, WM_SETFONT, window.font as usize, 1);
+            window.buttons.insert(button as isize, label);
+            match id {
+                ID_PROFILE_SAVE => window.profile_save = button,
+                ID_PROFILE_NEW => window.profile_new = button,
+                _ => window.profile_delete = button,
+            }
         }
         window.status = CreateWindowExW(
             0,
@@ -967,6 +1061,7 @@ fn build(app: &mut App, window: &mut Window) {
 fn theme_children(window: &Window) {
     let dark = window.palette.background == DARK.background;
     unsafe {
+        win::set_combo_theme(window.profile_combo, dark);
         win::set_control_theme(window.nav, dark);
         win::set_control_theme(window.search_box, dark);
         win::set_control_theme(window.tooltip, dark);
@@ -1064,7 +1159,11 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                     title: row_label.clone(),
                 });
                 section = Some(window.sections.len() - 1);
-                window.controls.push(Control { kind: KindUi::Section { button }, code: None });
+                window.controls.push(Control {
+                    kind: KindUi::Section { button },
+                    code: None,
+                    label: None,
+                });
                 window.rows.push(RowUi {
                     page,
                     height: scale(SECTION_HEIGHT),
@@ -1108,6 +1207,7 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
             window.controls.push(Control {
                 kind: KindUi::Text { label: value, which },
                 code: None,
+                label: None,
             });
             window.rows.push(RowUi {
                 page,
@@ -1175,6 +1275,7 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
             }
             Kind::Slider { min, max, factor } => {
                 let track = create_trackbar(window, page_window, *min, *max);
+                window.slider_tracks.insert(track as isize);
                 elements.push(Element {
                     window: track,
                     x: control_x,
@@ -1385,8 +1486,20 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                 });
                 KindUi::AutoHdrToggle {
                     button,
-                    checked: app.settings.auto_hdr_enabled,
+                    checked: app.settings.auto_profiles_enabled,
                 }
+            }
+            Kind::AutoProfilesDefault => {
+                let combo = create_combo(window, page_window);
+                elements.push(Element {
+                    window: combo,
+                    x: control_x,
+                    dy: scale(7),
+                    width: combo_width,
+                    height: scale(220),
+                    right_aligned: true,
+                });
+                KindUi::AutoProfilesDefault { combo }
             }
             Kind::Header | Kind::Section => unreachable!(),
         };
@@ -1432,7 +1545,11 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
         if !spec_row.sub {
             last_parent = Some((row_index, row_label));
         }
-        window.controls.push(Control { kind, code: spec_row.code });
+        window.controls.push(Control {
+            kind,
+            code: spec_row.code,
+            label: Some(label),
+        });
         window.rows.push(RowUi {
             page,
             height: scale(ROW_HEIGHT),
@@ -1447,60 +1564,185 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
         });
     }
 
-    // Populate dynamic monitored-app rows inside the Auto HDR page.
-    if spec.title == "Auto HDR" {
-        let remove_text = tr(&lang, "Usuń");
-        let remove_w = scale(96);
-        for (idx, entry) in app.settings.auto_hdr_apps.iter().enumerate() {
-            let mut elements: Vec<Element> = Vec::new();
-            let tip_text = entry
-                .path
-                .clone()
-                .unwrap_or_else(|| format!("{}.exe", entry.process));
-            let label_text = format!("{}  \u{24d8}", entry.name);
-            let label = create_label(window, page_window, &label_text, window.font, true);
-            elements.push(Element {
-                window: label,
-                x: label_x,
-                dy: scale(10),
-                width: label_width,
-                height: scale(20),
-                right_aligned: false,
-            });
-            add_tooltip(window.tooltip, label, &tip_text);
+    // Populate dynamic monitored-app rows inside the Auto Profiles page.
+    if spec.title == "Auto Profiles" {
+        populate_auto_profile_rows(app, window, page, &page_title);
+    }
+}
 
-            let button = create_owner_button(window, page_window, &remove_text, window.font);
-            elements.push(Element {
-                window: button,
-                x: control_x,
-                dy: scale(6),
-                width: remove_w,
-                height: scale(28),
-                right_aligned: true,
-            });
+fn populate_auto_profile_rows(app: &App, window: &mut Window, page: usize, page_title: &str) {
+    let lang = app.lang;
+    let dpi = window.dpi;
+    let scale = |value: i32| win::scaled(value, dpi);
+    let page_window = window.pages[page].window;
+    let label_x = scale(MARGIN + CARD_PAD_X);
+    let label_width = scale(LABEL_WIDTH);
+    let control_x = label_x + label_width + scale(28);
+    let remove_text = tr(&lang, "Usuń");
+    let app_label_w = scale(210);
+    let row_combo_w = scale(146);
+    let hdr_w = scale(52);
+    let remove_w = scale(72);
+    let gap = scale(8);
 
-            let search_text = format!("{} {} auto hdr {}", entry.name, entry.process, page_title).to_lowercase();
-            window.controls.push(Control {
-                kind: KindUi::Action {
-                    button,
-                    action: Action::AutoHdrRemove(idx),
-                },
-                code: None,
-            });
-            window.rows.push(RowUi {
-                page,
-                height: scale(ROW_HEIGHT),
-                is_header: false,
-                is_hero: false,
-                section: None,
-                parent_row: None,
-                search_text,
-                visible_in_search: false,
-                elements,
-                star: None,
-            });
+    for (idx, entry) in app.settings.auto_profile_apps.iter().enumerate() {
+        let mut elements: Vec<Element> = Vec::new();
+        let tip_text = entry
+            .path
+            .clone()
+            .unwrap_or_else(|| format!("{}.exe", entry.process));
+        let label_text = format!("{}  \u{24d8}", entry.name);
+        let label = create_label(window, page_window, &label_text, window.font, true);
+        elements.push(Element {
+            window: label,
+            x: label_x,
+            dy: scale(10),
+            width: app_label_w,
+            height: scale(20),
+            right_aligned: false,
+        });
+        add_tooltip(window.tooltip, label, &tip_text);
+
+        let profile_combo = create_combo(window, page_window);
+        elements.push(Element {
+            window: profile_combo,
+            x: control_x,
+            dy: scale(7),
+            width: row_combo_w,
+            height: scale(220),
+            right_aligned: true,
+        });
+
+        let hdr_button = create_owner_button(window, page_window, "HDR", window.font);
+        elements.push(Element {
+            window: hdr_button,
+            x: control_x + row_combo_w + gap,
+            dy: scale(6),
+            width: hdr_w,
+            height: scale(28),
+            right_aligned: true,
+        });
+        window
+            .auto_hdr_pills
+            .insert(hdr_button as isize, (idx, entry.auto_hdr));
+
+        let remove_button = create_owner_button(window, page_window, &remove_text, window.font);
+        elements.push(Element {
+            window: remove_button,
+            x: control_x + row_combo_w + gap + hdr_w + gap,
+            dy: scale(6),
+            width: remove_w,
+            height: scale(28),
+            right_aligned: true,
+        });
+
+        let search_text = format!(
+            "{} {} auto profiles hdr {}",
+            entry.name, entry.process, page_title
+        )
+        .to_lowercase();
+        window.controls.push(Control {
+            kind: KindUi::AutoProfileAppRow {
+                profile_combo,
+                hdr_button,
+                remove_button,
+                index: idx,
+            },
+            code: None,
+            label: Some(label),
+        });
+        window.rows.push(RowUi {
+            page,
+            height: scale(ROW_HEIGHT),
+            is_header: false,
+            is_hero: false,
+            section: None,
+            parent_row: None,
+            search_text,
+            visible_in_search: false,
+            elements,
+            star: None,
+        });
+    }
+}
+
+/// Updates the Auto Profiles dynamic app list in-place without closing or recreating the window.
+pub fn refresh_auto_profiles_page(app: &mut App) {
+    let Some(page_idx) = rows::pages().iter().position(|p| p.title == "Auto Profiles") else {
+        return;
+    };
+    let Some(mut window) = app.window.take() else {
+        return;
+    };
+    if !window.is_open() {
+        app.window = Some(window);
+        return;
+    }
+
+    let page_window = window.pages[page_idx].window;
+    let page_title = tr(&app.lang, "Auto Profiles");
+    let mut dynamic_hwnds: HashSet<isize> = HashSet::new();
+    for ctrl in &window.controls {
+        if let KindUi::AutoProfileAppRow {
+            profile_combo,
+            hdr_button,
+            remove_button,
+            ..
+        } = ctrl.kind
+        {
+            dynamic_hwnds.insert(profile_combo as isize);
+            dynamic_hwnds.insert(hdr_button as isize);
+            dynamic_hwnds.insert(remove_button as isize);
         }
     }
+
+    unsafe {
+        SendMessageW(page_window, WM_SETREDRAW, 0, 0);
+    }
+
+    let mut drop_rows: Vec<bool> = vec![false; window.rows.len()];
+    for (idx, row) in window.rows.iter().enumerate() {
+        if row.page == page_idx
+            && row
+                .elements
+                .iter()
+                .any(|e| dynamic_hwnds.contains(&(e.window as isize)))
+        {
+            drop_rows[idx] = true;
+            for elem in &row.elements {
+                let k = elem.window as isize;
+                window.auto_hdr_pills.remove(&k);
+                window.buttons.remove(&k);
+                window.text_cache.remove(&k);
+                window.disabled_statics.remove(&k);
+                unsafe {
+                    DestroyWindow(elem.window);
+                }
+            }
+        }
+    }
+    let mut row_pos = 0;
+    window.rows.retain(|_| {
+        let keep = !drop_rows[row_pos];
+        row_pos += 1;
+        keep
+    });
+    window
+        .controls
+        .retain(|c| !matches!(c.kind, KindUi::AutoProfileAppRow { .. }));
+
+    populate_auto_profile_rows(app, &mut window, page_idx, &page_title);
+    reflow(&mut window, app);
+
+    unsafe {
+        SendMessageW(page_window, WM_SETREDRAW, 1, 0);
+        InvalidateRect(page_window, ptr::null(), 1);
+        UpdateWindow(page_window);
+    }
+
+    app.window = Some(window);
+    apply_state(app);
+    refresh_availability(app);
 }
 
 // ───────────────────────────── widget factories & wheel subclass ─────────────────────────────
@@ -1730,13 +1972,32 @@ fn layout(window: &mut Window, app: &mut App) {
     let edit_left = pill.left + win::scaled(8, dpi);
     let edit_right = pill.right - clear_size - win::scaled(6, dpi);
     unsafe {
-        let mut x = nav + win::scaled(MARGIN, dpi);
-        for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT, ID_LOG] {
+        let g = win::scaled(6, dpi);
+        let right_margin = width - win::scaled(14, dpi);
+        let del_w = win::scaled(58, dpi);
+        let new_w = win::scaled(54, dpi);
+        let save_w = win::scaled(60, dpi);
+        let combo_w = win::scaled(140, dpi);
+        let right_block_w = combo_w + g + save_w + g + new_w + g + del_w;
+        let left_start = nav + win::scaled(14, dpi);
+        let avail_left = (right_margin - right_block_w - win::scaled(12, dpi) - left_start).max(120);
+        let btn_w = ((avail_left - g * 2) / 3).clamp(win::scaled(72, dpi), win::scaled(126, dpi));
+
+        let mut x = left_start;
+        for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT] {
             let button = GetDlgItem(hwnd, id as i32);
-            let button_width = win::scaled(132, dpi);
-            MoveWindow(button, x, win::scaled(10, dpi), button_width, win::scaled(28, dpi), 1);
-            x += button_width + win::scaled(8, dpi);
+            MoveWindow(button, x, win::scaled(10, dpi), btn_w, win::scaled(28, dpi), 1);
+            x += btn_w + g;
         }
+
+        let mut rx = (right_margin - right_block_w).max(x + win::scaled(8, dpi));
+        MoveWindow(window.profile_combo, rx, win::scaled(11, dpi), combo_w, win::scaled(240, dpi), 1);
+        rx += combo_w + g;
+        MoveWindow(window.profile_save, rx, win::scaled(10, dpi), save_w, win::scaled(28, dpi), 1);
+        rx += save_w + g;
+        MoveWindow(window.profile_new, rx, win::scaled(10, dpi), new_w, win::scaled(28, dpi), 1);
+        rx += new_w + g;
+        MoveWindow(window.profile_delete, rx, win::scaled(10, dpi), del_w, win::scaled(28, dpi), 1);
         MoveWindow(
             window.search_box,
             edit_left,
@@ -2342,17 +2603,21 @@ pub fn apply_state(app: &mut App) {
                         .map(|info| usage_minutes(info.usage_mins))
                         .unwrap_or_default(),
                     DynText::AutoHdrStatus => {
-                        if !app.settings.auto_hdr_enabled {
+                        if !app.settings.auto_profiles_enabled {
                             tr(&language, "Wyłączone")
-                        } else if app.settings.auto_hdr_apps.is_empty() {
+                        } else if app.settings.auto_profile_apps.is_empty() {
                             tr(&language, "Dodaj aplikacje do listy poniżej")
                         } else if let Some(active) = app.auto_hdr.active_name.as_deref() {
                             let prefix = if app.auto_hdr.turned_on_by_us {
                                 tr(&language, "HDR włączony dla:")
                             } else {
-                                tr(&language, "Wykryto uruchomioną aplikację (HDR był już włączony):")
+                                tr(&language, "Aktywne:")
                             };
-                            format!("{prefix} {active}")
+                            if let Some(profile) = app.auto_hdr.active_profile.as_deref() {
+                                format!("{prefix} {active} ({profile})")
+                            } else {
+                                format!("{prefix} {active}")
+                            }
                         } else {
                             tr(&language, "Monitorowanie aktywne (oczekiwanie na aplikację)")
                         }
@@ -2361,11 +2626,47 @@ pub fn apply_state(app: &mut App) {
                 set_text_cached(&mut window.text_cache, *label, &text);
             }
             KindUi::AutoHdrToggle { button, checked } => {
-                let desired = app.settings.auto_hdr_enabled;
+                let desired = app.settings.auto_profiles_enabled;
                 if *checked != desired {
                     *checked = desired;
                     unsafe {
                         InvalidateRect(*button, ptr::null(), 0);
+                    }
+                }
+            }
+            KindUi::AutoProfilesDefault { combo } => {
+                let first = tr(&language, "Poprzednie ustawienia");
+                sync_profile_combo(
+                    &mut window.text_cache,
+                    *combo,
+                    &first,
+                    &app.settings.profiles,
+                    app.settings.auto_profiles_default.as_deref(),
+                );
+            }
+            KindUi::AutoProfileAppRow {
+                profile_combo,
+                hdr_button,
+                index,
+                ..
+            } => {
+                if let Some(entry) = app.settings.auto_profile_apps.get(*index) {
+                    let first = tr(&language, "(Brak profilu)");
+                    sync_profile_combo(
+                        &mut window.text_cache,
+                        *profile_combo,
+                        &first,
+                        &app.settings.profiles,
+                        entry.profile.as_deref(),
+                    );
+                    let changed = window
+                        .auto_hdr_pills
+                        .insert(*hdr_button as isize, (*index, entry.auto_hdr))
+                        .is_none_or(|prev| prev != (*index, entry.auto_hdr));
+                    if changed {
+                        unsafe {
+                            InvalidateRect(*hdr_button, ptr::null(), 0);
+                        }
                     }
                 }
             }
@@ -2414,9 +2715,63 @@ pub fn apply_state(app: &mut App) {
     }
 
     apply_system_combos(&mut window, app);
+    sync_profile_toolbar(&mut window, app, &language);
     update_status(&mut window, app, &language);
     window.applying = false;
     app.window = Some(window);
+}
+
+fn sync_profile_combo(
+    text_cache: &mut HashMap<isize, String>,
+    combo: HWND,
+    first_label: &str,
+    profiles: &[crate::settings::MonitorProfile],
+    selected: Option<&str>,
+) {
+    let mut list_key = String::from(first_label);
+    for profile in profiles {
+        list_key.push('\x1f');
+        list_key.push_str(&profile.name);
+    }
+    let key = combo as isize;
+    if !text_cache.get(&key).is_some_and(|prev| prev == &list_key) {
+        text_cache.insert(key, list_key);
+        unsafe {
+            SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+        }
+        add_combo_string(combo, first_label);
+        for profile in profiles {
+            add_combo_string(combo, &profile.name);
+        }
+    }
+    let desired_index = selected
+        .and_then(|name| profiles.iter().position(|p| p.name == name))
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    unsafe {
+        if SendMessageW(combo, CB_GETCURSEL, 0, 0) != desired_index as isize {
+            SendMessageW(combo, CB_SETCURSEL, desired_index, 0);
+        }
+    }
+}
+
+fn sync_profile_toolbar(window: &mut Window, app: &App, lang: &AppLang) {
+    let first = tr(lang, "(Brak profilu)");
+    sync_profile_combo(
+        &mut window.text_cache,
+        window.profile_combo,
+        &first,
+        &app.settings.profiles,
+        app.settings.active_profile.as_deref(),
+    );
+    let has_active = app
+        .settings
+        .active_profile
+        .as_deref()
+        .is_some_and(|name| app.settings.profiles.iter().any(|p| p.name == name));
+    set_enabled_if_changed(window.profile_save, has_active && app.profile_dirty);
+    set_enabled_if_changed(window.profile_delete, has_active);
+    set_enabled_if_changed(window.profile_new, true);
 }
 
 fn set_text_cached(cache: &mut HashMap<isize, String>, hwnd: HWND, text: &str) {
@@ -2543,12 +2898,13 @@ pub fn refresh_availability(app: &mut App) {
     let hdr_locked = app.hdr_locked();
     let led_has_colorful = monitor::led_mode_has_colorful(app.get(monitor::VCP_LED_MODE));
 
+    let mut new_disabled_statics: HashSet<isize> = HashSet::new();
     for control in &window.controls {
         let enabled = match &control.kind {
             KindUi::Action { action, .. } => {
                 if matches!(
                     action,
-                    Action::AutoHdrDiscover | Action::AutoHdrBrowse | Action::AutoHdrRemove(_)
+                    Action::AutoHdrDiscover | Action::AutoHdrBrowse
                 ) {
                     true
                 } else {
@@ -2559,7 +2915,10 @@ pub fn refresh_availability(app: &mut App) {
                     connected && code_ok
                 }
             }
-            KindUi::AutoHdrToggle { .. } | KindUi::Section { .. } => true,
+            KindUi::AutoHdrToggle { .. }
+            | KindUi::AutoProfilesDefault { .. }
+            | KindUi::AutoProfileAppRow { .. }
+            | KindUi::Section { .. } => true,
             KindUi::PictureMode { .. } | KindUi::Variant { .. } => connected && !loading && !hdr_locked,
             KindUi::System { which, .. } => !matches!(which, SystemKind::Scaling),
             _ => {
@@ -2571,6 +2930,15 @@ pub fn refresh_availability(app: &mut App) {
                 ok
             }
         };
+
+        if !enabled {
+            if let Some(label_hwnd) = control.label {
+                new_disabled_statics.insert(label_hwnd as isize);
+            }
+            if let KindUi::Slider { value, .. } = &control.kind {
+                new_disabled_statics.insert(*value as isize);
+            }
+        }
 
         if let KindUi::Swatches { buttons, values, .. } = &control.kind {
             for (idx, hwnd) in buttons.iter().enumerate() {
@@ -2588,6 +2956,15 @@ pub fn refresh_availability(app: &mut App) {
         for hwnd in control_windows(&control.kind) {
             set_enabled_if_changed(hwnd, enabled);
         }
+    }
+
+    if let Some(window) = app.window.as_mut() {
+        for &hwnd_key in window.disabled_statics.symmetric_difference(&new_disabled_statics) {
+            unsafe {
+                InvalidateRect(hwnd_key as HWND, ptr::null(), 0);
+            }
+        }
+        window.disabled_statics = new_disabled_statics;
     }
 }
 
@@ -2609,6 +2986,13 @@ fn control_windows(kind: &KindUi) -> Vec<HWND> {
         KindUi::Swatches { buttons, .. } => buttons.clone(),
         KindUi::Action { button, .. } => vec![*button],
         KindUi::AutoHdrToggle { button, .. } => vec![*button],
+        KindUi::AutoProfilesDefault { combo } => vec![*combo],
+        KindUi::AutoProfileAppRow {
+            profile_combo,
+            hdr_button,
+            remove_button,
+            ..
+        } => vec![*profile_combo, *hdr_button, *remove_button],
         KindUi::PictureMode { combo } => vec![*combo],
         KindUi::System { combo, .. } => vec![*combo],
         KindUi::Text { .. } | KindUi::Section { .. } => Vec::new(),
@@ -2684,12 +3068,60 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
                 prefs::about(app);
                 return;
             }
-            ID_LOG => {
+            ID_PROFILE_COMBO => {
+                if notification == CBN_SELCHANGE as u32 {
+                    let sel = unsafe { SendMessageW(window.profile_combo, CB_GETCURSEL, 0, 0) } as usize;
+                    let target = if sel == 0 {
+                        None
+                    } else {
+                        app.settings.profiles.get(sel - 1).map(|p| p.name.clone())
+                    };
+                    app.window = Some(window);
+                    crate::app::select_profile(app, target.as_deref());
+                    apply_state(app);
+                    refresh_availability(app);
+                    return;
+                }
                 app.window = Some(window);
-                crate::settings::open_log_folder();
+                return;
+            }
+            ID_PROFILE_SAVE => {
+                app.window = Some(window);
+                if crate::app::save_active_profile(app) {
+                    apply_state(app);
+                }
+                return;
+            }
+            ID_PROFILE_NEW => {
+                app.window = Some(window);
+                prefs::new_profile_dialog(app);
+                apply_state(app);
+                refresh_availability(app);
+                return;
+            }
+            ID_PROFILE_DELETE => {
+                app.window = Some(window);
+                if app.settings.active_profile.is_some()
+                    && confirm_dialog(app, "Usuń profil?", "Wybrany profil zostanie usunięty.")
+                    && crate::app::delete_active_profile(app)
+                {
+                    apply_state(app);
+                    refresh_availability(app);
+                }
                 return;
             }
             _ => {}
+        }
+
+        // Per-app Auto HDR pill toggles on the Auto Profiles page.
+        if let Some((app_idx, _)) = window.auto_hdr_pills.get(&(item as isize)).copied() {
+            app.window = Some(window);
+            if let Some(entry) = app.settings.auto_profile_apps.get_mut(app_idx) {
+                entry.auto_hdr = !entry.auto_hdr;
+                app.save_settings();
+            }
+            apply_state(app);
+            return;
         }
 
         // Favorite stars (handles both "picture_mode" and tray control shortcuts).
@@ -2861,7 +3293,7 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             return;
         }
 
-        // Auto HDR enable/disable switch.
+        // Auto Profiles enable/disable switch.
         if let KindUi::AutoHdrToggle { button, checked } = &mut window.controls[index].kind {
             *checked = !*checked;
             let enabled = *checked;
@@ -2870,10 +3302,61 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
                 InvalidateRect(btn, ptr::null(), 0);
             }
             app.window = Some(window);
-            app.settings.auto_hdr_enabled = enabled;
+            app.settings.auto_profiles_enabled = enabled;
             app.save_settings();
             crate::app::sync_auto_hdr(app);
             apply_state(app);
+            return;
+        }
+
+        // Default profile dropdown on Auto Profiles page.
+        if let KindUi::AutoProfilesDefault { combo } = window.controls[index].kind {
+            if notification == CBN_SELCHANGE as u32 {
+                let sel = unsafe { SendMessageW(combo, CB_GETCURSEL, 0, 0) } as usize;
+                app.window = Some(window);
+                app.settings.auto_profiles_default = if sel == 0 {
+                    None
+                } else {
+                    app.settings.profiles.get(sel - 1).map(|p| p.name.clone())
+                };
+                app.save_settings();
+                apply_state(app);
+                return;
+            }
+            app.window = Some(window);
+            return;
+        }
+
+        // Per-app row on Auto Profiles page (`profile_combo` or `remove_button`).
+        if let KindUi::AutoProfileAppRow {
+            profile_combo,
+            remove_button,
+            index: app_idx,
+            ..
+        } = window.controls[index].kind
+        {
+            if item == remove_button {
+                app.window = Some(window);
+                if crate::app::remove_auto_hdr_app(app, app_idx) {
+                    refresh_auto_profiles_page(app);
+                }
+                return;
+            }
+            if item == profile_combo && notification == CBN_SELCHANGE as u32 {
+                let sel = unsafe { SendMessageW(profile_combo, CB_GETCURSEL, 0, 0) } as usize;
+                app.window = Some(window);
+                if let Some(entry) = app.settings.auto_profile_apps.get_mut(app_idx) {
+                    entry.profile = if sel == 0 {
+                        None
+                    } else {
+                        app.settings.profiles.get(sel - 1).map(|p| p.name.clone())
+                    };
+                    app.save_settings();
+                }
+                apply_state(app);
+                return;
+            }
+            app.window = Some(window);
             return;
         }
 
@@ -2915,6 +3398,7 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             let vcp_val = (position.clamp(*min, *max) as u16) * (*factor).max(1);
             unsafe {
                 SetWindowTextW(*value_label, win::wide(&vcp_val.to_string()).as_ptr());
+                InvalidateRect(*track, ptr::null(), 0);
             }
             let code = window.controls[index].code;
             let is_drag = notification == TB_THUMBTRACK;
@@ -3067,13 +3551,7 @@ fn run_action(app: &mut App, action: Action) {
                 crate::auto_hdr::browse_exe(app.dialog_owner(), &app.tr("Wybierz plik wykonywalny (.exe)"))
                 && crate::app::add_auto_hdr_app(app, name, process, Some(path))
             {
-                rebuild_preserving_view(app);
-            }
-            return;
-        }
-        Action::AutoHdrRemove(index) => {
-            if crate::app::remove_auto_hdr_app(app, index) {
-                rebuild_preserving_view(app);
+                refresh_auto_profiles_page(app);
             }
             return;
         }
@@ -3219,13 +3697,69 @@ fn draw_owner_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
         }
         None => {}
     }
-    // 4. Star button?
+    // 4. Per-app Auto HDR pill button?
+    if let Some(&(_, hdr_on)) = window.auto_hdr_pills.get(&key) {
+        draw_auto_hdr_pill(window, item, hdr_on);
+        return;
+    }
+    // 5. Star button?
     if let Some(&(_, is_fav)) = window.stars.get(&key) {
         draw_star_button(window, item, is_fav);
         return;
     }
-    // 5. Standard rounded button (Toolbar / Action).
+    // 6. Standard rounded button (Toolbar / Action).
     draw_push_button(window, item, key);
+}
+
+fn draw_auto_hdr_pill(window: &mut Window, item: &DRAWITEMSTRUCT, active: bool) {
+    let dpi = window.dpi;
+    let r = win::scaled(6, dpi);
+    let palette = window.palette;
+    let fill = if active {
+        palette.control_active
+    } else {
+        palette.control_bg
+    };
+    let border = if active {
+        palette.control_active
+    } else {
+        palette.line
+    };
+    unsafe {
+        FillRect(item.hDC, &item.rcItem, window.brush_card);
+        let brush = window.draw.brush(fill);
+        let pen = window.draw.pen(border, 1);
+        let old_pen = SelectObject(item.hDC, pen as _);
+        let old_brush = SelectObject(item.hDC, brush as _);
+        RoundRect(
+            item.hDC,
+            item.rcItem.left,
+            item.rcItem.top,
+            item.rcItem.right,
+            item.rcItem.bottom,
+            r,
+            r,
+        );
+        SelectObject(item.hDC, old_pen);
+        SelectObject(item.hDC, old_brush);
+
+        let mut rc = item.rcItem;
+        SetBkMode(item.hDC, TRANSPARENT as i32);
+        SetTextColor(
+            item.hDC,
+            if active { 0x00FF_FFFF } else { palette.muted },
+        );
+        let old_font = SelectObject(item.hDC, if active { window.bold } else { window.font } as _);
+        let mut wide = win::wide("HDR");
+        DrawTextW(
+            item.hDC,
+            wide.as_mut_ptr(),
+            (wide.len().saturating_sub(1)) as i32,
+            &mut rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        SelectObject(item.hDC, old_font);
+    }
 }
 
 fn draw_nav_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
@@ -3569,6 +4103,7 @@ fn draw_push_button(window: &mut Window, item: &DRAWITEMSTRUCT, key: isize) {
     let disabled = (item.itemState & ODS_DISABLED) != 0;
     let pressed = (item.itemState & ODS_SELECTED) != 0;
     let is_toolbar = unsafe { GetParent(item.hwndItem) } == window.hwnd;
+    let is_save_accent = item.hwndItem == window.profile_save && !disabled;
     let dpi = window.dpi;
     let r = win::scaled(6, dpi);
     let palette = window.palette;
@@ -3582,15 +4117,22 @@ fn draw_push_button(window: &mut Window, item: &DRAWITEMSTRUCT, key: isize) {
                 window.brush_card
             },
         );
-        let fill_color = if pressed {
+        let fill_color = if is_save_accent {
+            if pressed { palette.line } else { palette.control_active }
+        } else if pressed {
             palette.line
         } else if is_toolbar {
             palette.card
         } else {
             palette.control_bg
         };
+        let border_color = if is_save_accent {
+            palette.control_active
+        } else {
+            palette.line
+        };
         let brush = window.draw.brush(fill_color);
-        let pen = window.draw.pen(palette.line, 1);
+        let pen = window.draw.pen(border_color, 1);
         let old_pen = SelectObject(item.hDC, pen as _);
         let old_brush = SelectObject(item.hDC, brush as _);
         RoundRect(
@@ -3610,9 +4152,18 @@ fn draw_push_button(window: &mut Window, item: &DRAWITEMSTRUCT, key: isize) {
             SetBkMode(item.hDC, TRANSPARENT as i32);
             SetTextColor(
                 item.hDC,
-                if disabled { palette.muted } else { palette.text },
+                if disabled {
+                    palette.muted
+                } else if is_save_accent {
+                    0x00FF_FFFF
+                } else {
+                    palette.text
+                },
             );
-            let old_font = SelectObject(item.hDC, window.font as _);
+            let old_font = SelectObject(
+                item.hDC,
+                if is_save_accent { window.bold } else { window.font } as _,
+            );
             let mut wide = win::wide(label);
             DrawTextW(
                 item.hDC,
@@ -4068,6 +4619,79 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
     }
 }
 
+fn draw_slider_custom(window: &mut Window, nm: &NMCUSTOMDRAW) -> LRESULT {
+    match nm.dwDrawStage {
+        CDDS_PREPAINT => CDRF_NOTIFYITEMDRAW,
+        CDDS_ITEMPREPAINT => {
+            let track = nm.hdr.hwndFrom;
+            let disabled = unsafe { IsWindowEnabled(track) == 0 };
+            let dpi = window.dpi;
+            let palette = window.palette;
+            match nm.dwItemSpec {
+                TBCD_TICS => CDRF_SKIPDEFAULT,
+                TBCD_CHANNEL => {
+                    let cy = (nm.rc.top + nm.rc.bottom) / 2;
+                    let half_h = win::scaled(2, dpi).max(2);
+                    let top = cy - half_h;
+                    let bottom = cy + half_h;
+                    let radius = half_h * 2;
+                    unsafe {
+                        let bg_brush = window.draw.brush(palette.line);
+                        let bg_pen = window.draw.pen(palette.line, 1);
+                        let old_pen = SelectObject(nm.hdc, bg_pen as _);
+                        let old_brush = SelectObject(nm.hdc, bg_brush as _);
+                        RoundRect(nm.hdc, nm.rc.left, top, nm.rc.right, bottom, radius, radius);
+                        if !disabled {
+                            let mut thumb: RECT = std::mem::zeroed();
+                            SendMessageW(track, TBM_GETTHUMBRECT, 0, &mut thumb as *mut RECT as isize);
+                            let active_right = ((thumb.left + thumb.right) / 2).clamp(nm.rc.left, nm.rc.right);
+                            if active_right > nm.rc.left + 2 {
+                                let act_brush = window.draw.brush(palette.control_active);
+                                let act_pen = window.draw.pen(palette.control_active, 1);
+                                SelectObject(nm.hdc, act_pen as _);
+                                SelectObject(nm.hdc, act_brush as _);
+                                RoundRect(nm.hdc, nm.rc.left, top, active_right, bottom, radius, radius);
+                            }
+                        }
+                        SelectObject(nm.hdc, old_pen);
+                        SelectObject(nm.hdc, old_brush);
+                    }
+                    CDRF_SKIPDEFAULT
+                }
+                TBCD_THUMB => {
+                    let cx = (nm.rc.left + nm.rc.right) / 2;
+                    let cy = (nm.rc.top + nm.rc.bottom) / 2;
+                    let rx = (nm.rc.right - nm.rc.left) / 2;
+                    let ry = (nm.rc.bottom - nm.rc.top) / 2;
+                    let r = rx.min(ry).max(win::scaled(5, dpi));
+                    let fill = if disabled { palette.control_bg } else { palette.control_active };
+                    let border = if disabled { palette.line } else { palette.control_active };
+                    unsafe {
+                        let brush = window.draw.brush(fill);
+                        let pen = window.draw.pen(border, 1);
+                        let old_pen = SelectObject(nm.hdc, pen as _);
+                        let old_brush = SelectObject(nm.hdc, brush as _);
+                        Ellipse(nm.hdc, cx - r, cy - r, cx + r, cy + r);
+                        if !disabled {
+                            let ir = (r / 2).max(win::scaled(2, dpi));
+                            let inner_brush = window.draw.brush(palette.card);
+                            let inner_pen = window.draw.pen(palette.card, 1);
+                            SelectObject(nm.hdc, inner_pen as _);
+                            SelectObject(nm.hdc, inner_brush as _);
+                            Ellipse(nm.hdc, cx - ir, cy - ir, cx + ir, cy + ir);
+                        }
+                        SelectObject(nm.hdc, old_pen);
+                        SelectObject(nm.hdc, old_brush);
+                    }
+                    CDRF_SKIPDEFAULT
+                }
+                _ => 0,
+            }
+        }
+        _ => 0,
+    }
+}
+
 pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let raw = unsafe { app_of(hwnd) };
     if raw.is_null() {
@@ -4104,6 +4728,17 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
             }
             1
         }
+        WM_NOTIFY => {
+            let hdr = unsafe { &*(lparam as *const NMHDR) };
+            if hdr.code == NM_CUSTOMDRAW
+                && let Some(window) = app.window.as_mut()
+                && window.slider_tracks.contains(&(hdr.hwndFrom as isize))
+            {
+                let nm = unsafe { &*(lparam as *const NMCUSTOMDRAW) };
+                return draw_slider_custom(window, nm);
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLORLISTBOX => {
             let palette = app
                 .window
@@ -4113,13 +4748,20 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
             let (brush_card, _) = cached_brushes(&palette);
             let child = lparam as HWND;
             // Header & Hero labels sit directly on the page background (`palette.background`);
-            // rows inside cards sit on `palette.card`.
-            let on_page_bg = app
+            // rows inside cards sit on `palette.card`. Disabled labels/values draw muted.
+            let (on_page_bg, is_disabled) = app
                 .window
                 .as_ref()
-                .is_some_and(|w| w.page_bg_labels.contains(&(child as isize)));
+                .map(|w| {
+                    let key = child as isize;
+                    (w.page_bg_labels.contains(&key), w.disabled_statics.contains(&key))
+                })
+                .unwrap_or((false, false));
             unsafe {
-                SetTextColor(wparam as _, palette.text);
+                SetTextColor(
+                    wparam as _,
+                    if is_disabled { palette.muted } else { palette.text },
+                );
                 if on_page_bg {
                     SetBkColor(wparam as _, palette.background);
                     SetBkMode(wparam as _, TRANSPARENT as i32);
@@ -4190,9 +4832,19 @@ fn rescale(window: &mut Window, dpi: u32) {
         SendMessageW(window.search_box, WM_SETFONT, window.font as usize, 1);
         SendMessageW(window.search_clear, WM_SETFONT, window.font as usize, 1);
         SendMessageW(window.status, WM_SETFONT, window.font as usize, 1);
-        for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT, ID_LOG] {
+        for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT] {
             let button = GetDlgItem(window.hwnd, id as i32);
             SendMessageW(button, WM_SETFONT, window.font as usize, 1);
+        }
+        for hwnd in [
+            window.profile_combo,
+            window.profile_save,
+            window.profile_new,
+            window.profile_delete,
+        ] {
+            if !hwnd.is_null() {
+                SendMessageW(hwnd, WM_SETFONT, window.font as usize, 1);
+            }
         }
     }
 }

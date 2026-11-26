@@ -12,7 +12,7 @@ use windows_sys::Win32::UI::Controls::{
     BST_CHECKED, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
     TTTOOLINFOW,
 };
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 /// Static control styles and combo box styles (`WinUser.h`).
@@ -49,9 +49,12 @@ const ID_CLOSE: u16 = 210;
 const ID_WEBSITE: u16 = 220;
 const ID_ISSUES: u16 = 221;
 const ID_COFFEE: u16 = 222;
+const ID_ABOUT_LOG: u16 = 223;
 const ID_PICKER_FILTER: u16 = 230;
 const ID_PICKER_LIST: u16 = 231;
 const ID_PICKER_ADD: u16 = 232;
+const ID_PROFILE_NAME_EDIT: u16 = 240;
+const ID_PROFILE_NAME_OK: u16 = 241;
 
 const MARGIN: i32 = 16;
 const LABEL_WIDTH: i32 = 250;
@@ -91,6 +94,19 @@ pub fn auto_hdr_picker(app: &mut App) {
     );
     PICKER_ALL.with(|cell| cell.borrow_mut().clear());
     PICKER_FILTERED.with(|cell| cell.borrow_mut().clear());
+    rebuild_main_window(app);
+}
+
+/// Opens a compact modal prompt to name and save a new monitor profile from current settings.
+pub fn new_profile_dialog(app: &mut App) {
+    run_modal(
+        app,
+        "TitanNewProfile",
+        "Nowy profil",
+        165,
+        |app, hwnd, dpi| build_new_profile(app, hwnd, dpi),
+        new_profile_proc,
+    );
     rebuild_main_window(app);
 }
 
@@ -396,6 +412,7 @@ fn build_about(app: &mut App, hwnd: HWND, dpi: u32) {
         let links = [
             (ID_WEBSITE, "Strona programu", "https://github.com/mkarenko/titan-control"),
             (ID_ISSUES, "Zgłoś błąd", "https://github.com/mkarenko/titan-control/issues/new"),
+            (ID_ABOUT_LOG, "Pokaż plik logu", ""),
             (ID_COFFEE, "Buy me a coffee", "https://buymeacoffee.com/mkarenko"),
         ];
         let mut y = scale(MARGIN + 60);
@@ -550,6 +567,7 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16, notification: u32) {
         ID_ISSUES if notification == BN_CLICKED => {
             settings::open_url("https://github.com/mkarenko/titan-control/issues/new")
         }
+        ID_ABOUT_LOG if notification == BN_CLICKED => settings::open_log_folder(),
         ID_COFFEE if notification == BN_CLICKED => settings::open_url("https://buymeacoffee.com/mkarenko"),
         _ => {}
     }
@@ -785,7 +803,7 @@ fn populate_picker_list(app: &App, hwnd: HWND, query: &str) {
                 }
                 let already = app
                     .settings
-                    .auto_hdr_apps
+                    .auto_profile_apps
                     .iter()
                     .any(|a| a.process.eq_ignore_ascii_case(&item.process));
                 if already {
@@ -826,7 +844,7 @@ fn add_selected_picker_app(app: &mut App, hwnd: HWND) {
     if let Some(entry) = picked
         && crate::app::add_auto_hdr_app(app, entry.name, entry.process, Some(entry.path))
     {
-        app.needs_rebuild = true;
+        crate::ui::refresh_auto_profiles_page(app);
         let filter_hwnd = unsafe { GetDlgItem(hwnd, ID_PICKER_FILTER as i32) };
         let len = unsafe { GetWindowTextLengthW(filter_hwnd) };
         let mut buf = vec![0u16; len.max(0) as usize + 1];
@@ -863,6 +881,115 @@ unsafe extern "system" fn picker_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
             0
         }
         WM_CTLCOLORLISTBOX | WM_CTLCOLOREDIT => unsafe { dialog_proc(hwnd, WM_CTLCOLORSTATIC, wparam, lparam) },
+        _ => unsafe { dialog_proc(hwnd, message, wparam, lparam) },
+    }
+}
+
+fn build_new_profile(app: &App, hwnd: HWND, dpi: u32) {
+    let margin = win::scaled(MARGIN, dpi);
+    let width = win::scaled(560, dpi) - margin * 2;
+    let btn_w = win::scaled(104, dpi);
+    let btn_h = win::scaled(30, dpi);
+    let label_h = win::scaled(20, dpi);
+    let edit_h = win::scaled(28, dpi);
+
+    unsafe {
+        let label = CreateWindowExW(
+            0,
+            win::wide("STATIC").as_ptr(),
+            win::wide(&app.tr("Nazwa profilu")).as_ptr(),
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            margin,
+            margin,
+            width,
+            label_h,
+            hwnd,
+            ptr::null_mut(),
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(label, WM_SETFONT, app.font as usize, 1);
+
+        let edit = CreateWindowExW(
+            0x0000_0200,
+            win::wide("EDIT").as_ptr(),
+            ptr::null(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0080,
+            margin,
+            margin + label_h + win::scaled(6, dpi),
+            width,
+            edit_h,
+            hwnd,
+            ID_PROFILE_NAME_EDIT as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(edit, WM_SETFONT, app.font as usize, 1);
+        SetFocus(edit);
+
+        let btn_y = margin + label_h + edit_h + win::scaled(18, dpi);
+        let ok_btn = CreateWindowExW(
+            0,
+            win::wide("BUTTON").as_ptr(),
+            win::wide(&app.tr("Zapisz")).as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            margin + width - btn_w * 2 - win::scaled(8, dpi),
+            btn_y,
+            btn_w,
+            btn_h,
+            hwnd,
+            ID_PROFILE_NAME_OK as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(ok_btn, WM_SETFONT, app.font as usize, 1);
+
+        let cancel_btn = CreateWindowExW(
+            0,
+            win::wide("BUTTON").as_ptr(),
+            win::wide(&app.tr("Anuluj")).as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            margin + width - btn_w,
+            btn_y,
+            btn_w,
+            btn_h,
+            hwnd,
+            ID_CLOSE as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(cancel_btn, WM_SETFONT, app.font as usize, 1);
+    }
+}
+
+unsafe extern "system" fn new_profile_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut App };
+    if raw.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    let app = unsafe { &mut *raw };
+    match message {
+        WM_COMMAND => {
+            let item = (wparam & 0xFFFF) as u16;
+            let notif = ((wparam >> 16) & 0xFFFF) as u32;
+            if (item == ID_PROFILE_NAME_OK || item == IDOK as u16) && notif == BN_CLICKED {
+                let edit = unsafe { GetDlgItem(hwnd, ID_PROFILE_NAME_EDIT as i32) };
+                let len = unsafe { GetWindowTextLengthW(edit) };
+                let mut buf = vec![0u16; len.max(0) as usize + 1];
+                let copied = unsafe { GetWindowTextW(edit, buf.as_mut_ptr(), buf.len() as i32) } as usize;
+                let name = String::from_utf16_lossy(&buf[..copied]);
+                if crate::app::create_profile(app, name) {
+                    close_modal(app, hwnd);
+                }
+                return 0;
+            }
+            if (item == ID_CLOSE || item == IDCANCEL as u16) && notif == BN_CLICKED {
+                close_modal(app, hwnd);
+                return 0;
+            }
+            0
+        }
+        WM_CTLCOLOREDIT => unsafe { dialog_proc(hwnd, WM_CTLCOLORSTATIC, wparam, lparam) },
         _ => unsafe { dialog_proc(hwnd, message, wparam, lparam) },
     }
 }

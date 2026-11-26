@@ -308,15 +308,24 @@ const PL_EN: &[(&str, &str)] = &[
     ("Sterowanie monitorem przez DDC/CI (dxva2). Menu programu:", "Monitor control over DDC/CI (dxva2). Application menu:"),
     ("Szukaj...", "Search..."),
     ("Brak pasujących ustawień", "No matching settings"),
-    // ── Auto HDR ──
-    ("Auto HDR", "Auto HDR"),
-    ("Włącz Auto HDR", "Enable Auto HDR"),
+    // ── Auto Profiles & Saved Profiles ──
+    ("Auto Profiles", "Auto Profiles"),
+    ("Włącz Auto Profiles", "Enable Auto Profiles"),
+    ("Domyślny profil", "Default profile"),
+    ("Poprzednie ustawienia", "Previous settings"),
+    ("HDR", "HDR"),
+    ("(Brak profilu)", "(No profile)"),
+    ("Zapisz", "Save"),
+    ("Nowy", "New"),
+    ("Usuń profil?", "Delete profile?"),
+    ("Wybrany profil zostanie usunięty.", "The selected profile will be deleted."),
+    ("Nowy profil", "New profile"),
+    ("Nazwa profilu", "Profile name"),
     ("Status", "Status"),
     ("Wyłączone", "Off"),
     ("Dodaj aplikacje do listy poniżej", "Add applications to the list below"),
     ("Monitorowanie aktywne (oczekiwanie na aplikację)", "Monitoring active (waiting for an application)"),
-    ("HDR włączony dla:", "HDR active for:"),
-    ("Wykryto uruchomioną aplikację (HDR był już włączony):", "Tracking running app (HDR was already on):"),
+    ("Aktywne:", "Active:"),
     ("Monitorowane aplikacje", "Monitored applications"),
     ("Wykryj aplikacje", "Locate applications"),
     ("Znajdź...", "Browse..."),
@@ -328,6 +337,91 @@ const PL_EN: &[(&str, &str)] = &[
     ("Brak wykrytych aplikacji", "No applications found"),
     ("Nie znaleziono żadnych aplikacji.", "No applications were found."),
     ("Wybierz aplikacje", "Locate applications"),
+    // ── feature tooltips ──
+    (
+        "Gotowe profile obrazu: Standard, DyDs/ULL FPS (redukcja rozmycia stroboskopem w FPS), DyDs/LD (strojenie lokalnego przyciemniania do MOBA/AAA), tryby gatunkowe oraz przestrzenie barw (sRGB, AdobeRGB, DCI-P3)",
+        "Preset picture modes: Standard, DyDs/ULL FPS (backlight-strobing blur reduction for FPS), DyDs/LD (local dimming tuning for MOBA/AAA), genre modes, and color-space clamps (sRGB, AdobeRGB, DCI-P3)",
+    ),
+    (
+        "Domyślne używa ustawień fabrycznych trybu; Własne odblokowuje ręczną edycję jasności, kontrastu, gammy i kolorów",
+        "Default uses factory preset values for the mode; Custom unlocks manual edits to brightness, contrast, gamma, and colors",
+    ),
+    (
+        "Dynamiczny kontrast — automatycznie reguluje podświetlenie pod jasność sceny (blokuje ręczną jasność, kontrast, Shadow Balance i lokalne przyciemnianie)",
+        "Dynamic Contrast Ratio — automatically adjusts backlight to scene brightness (locks manual brightness, contrast, Shadow Balance, and local dimming)",
+    ),
+    (
+        "Redukuje emisję krótkofalowego światła niebieskiego (0–4), aby zmniejszyć zmęczenie oczu",
+        "Filters short-wavelength blue light (0–4) to reduce eye strain",
+    ),
+    (
+        "Krzywa jasności i tonów (1.8–2.6); S Curve podbija kontrast w cieniach i światłach",
+        "Luminance tone curve (1.8–2.6); S Curve boosts shadow depth and highlight punch",
+    ),
+    (
+        "Automatycznie zwiększa nasycenie i żywość kolorów (1–10); gdy jest włączone, ręczne suwaki nasycenia są zablokowane",
+        "Automatically boosts color vibrancy (1–10); while active, manual 6-axis Saturation sliders are locked",
+    ),
+    (
+        "Wzmocnienie lokalnego kontrastu i wyrazistości detali w ciemnych i jasnych partiach obrazu (0–5)",
+        "Enhances local contrast and micro-detail crispness across dark and bright regions (0–5)",
+    ),
+    (
+        "Korektor czerni (Black Equalizer, 0–100) — rozjaśnia ciemne strefy, ułatwiając dostrzeżenie przeciwników w cieniu bez prześwietlania jasnych miejsc",
+        "Black Equalizer (0–100) — lifts dark shadow detail to spot enemies without blowing out bright areas",
+    ),
+    (
+        "Super Resolution (0–5) — wyostrza i poprawia szczegółowość krawędzi przy treściach o niższej rozdzielczości",
+        "Super Resolution (0–5) — sharpens edges and reconstructs fine detail on softer or lower-resolution content",
+    ),
+    (
+        "Inteligentne rozjaśnianie ciemnych scen: Lvl 1–2 działa stale, a Auto 1–2 włącza się automatycznie tylko w bardzo ciemnych ujęciach",
+        "Smart dark-scene booster: Lvl 1–2 stay active permanently, while Auto 1–2 engage automatically only in dark scenes",
+    ),
+    (
+        "Dynamic Overdrive — przyspiesza czas reakcji pikseli (płynniejszy ruch bez smużenia); wyższe poziomy zmniejszają ghosting kosztem możliwego przesterowania",
+        "Dynamic Overdrive — speeds up pixel response time to reduce motion blur/ghosting; higher levels trade slight overshoot for speed",
+    ),
+    (
+        "Steruje 1152 strefami Mini-LED FALD dla głębokiej czerni i wysokiego kontrastu (blokuje DCR; wyłączane przy DyDs ULL)",
+        "Controls the 1,152-zone Mini-LED FALD backlight for deep blacks and high contrast (locks DCR; disabled by DyDs ULL)",
+    ),
+    (
+        "Ogranicza poświatę (blooming) wokół jasnych obiektów na ciemnym tle. Dostępne tylko przy włączonym lokalnym przyciemnianiu",
+        "Reduces glowing halos/blooming around bright objects on dark backgrounds. Available only with local dimming enabled",
+    ),
+    (
+        "Technologia klarowności ruchu (Black Hole / DyDs): Low–High dostrajają podświetlenie w ruchu, a ULL-1..3 włączają stroboskopową redukcję rozmycia (BFI) kosztem lokalnego przyciemniania",
+        "Dynamic Display motion clarity (DyDs): Low–High tune dynamic backlight response, while ULL-1..3 enable Ultra-Low Latency backlight strobing (BFI), turning off Local Dimming",
+    ),
+    (
+        "Balans bieli: gotowe presety (Warm/Natural/Cold) lub własne profile User 1–3, które odblokowują suwaki RGB poniżej",
+        "White balance: factory presets (Warm/Natural/Cold) or customizable User 1–3 slots, which unlock the R/G/B sliders below",
+    ),
+    (
+        "Synchronizuje odświeżanie monitora z klatkami GPU (VRR / FreeSync / G-Sync Compatible), eliminując rozrywanie obrazu (tearing)",
+        "Variable Refresh Rate (VRR / FreeSync / G-Sync Compatible) — syncs monitor refresh rate to GPU FPS to eliminate screen tearing",
+    ),
+    (
+        "Przełącza pełny ekran 27\" (4K do 160 Hz) oraz pomniejszony obszar 25\" do gier FPS (FHD do 320 Hz w Windows)",
+        "Switches between the full 27\" display (4K up to 160 Hz) and a smaller 25\" esports area (paired with FHD up to 320 Hz)",
+    ),
+    (
+        "Luneta snajperska w rogu ekranu (GAME+) — powiększa centralny obszar celownika w osobnym okienku bez zasłaniania reszty widoku",
+        "Inset sniper scope (GAME+) — magnifies the center aim area in a dedicated corner window without obstructing your full view",
+    ),
+    (
+        "Zakres poziomów czerni i bieli sygnału: Pełny (0–255 dla PC), Ograniczony (16–235 dla konsol i TV) lub Auto",
+        "Signal quantization levels: Full (0–255 for PC), Limited (16–235 for consoles/video players), or Auto",
+    ),
+    (
+        "Tryb eco ograniczający pobór mocy i maksymalną jasność podświetlenia (Lvl 1 / Lvl 2)",
+        "Eco power mode limiting maximum backlight brightness and power draw (Lvl 1 / Lvl 2)",
+    ),
+    (
+        "Skraca czas wybudzania monitora ze stanu czuwania kosztem nieco wyższego poboru mocy w spoczynku",
+        "Speeds up monitor wake-up from standby at the cost of slightly higher standby power draw",
+    ),
 ];
 
 /// Formats usage time as `N h M min`, like the Linux application.

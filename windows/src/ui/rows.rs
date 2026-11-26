@@ -34,8 +34,10 @@ pub enum Kind {
     SystemResolution,
     SystemRefresh,
     SystemScaling,
-    /// Global Auto HDR detection enable/disable toggle.
+    /// Global Auto Profiles enable/disable toggle.
     AutoHdrToggle,
+    /// Default profile selector restored when monitored apps close.
+    AutoProfilesDefault,
 }
 
 /// Text rows whose content is set at run time.
@@ -59,7 +61,6 @@ pub enum Action {
     PipReset,
     AutoHdrDiscover,
     AutoHdrBrowse,
-    AutoHdrRemove(usize),
 }
 
 pub struct Row {
@@ -84,7 +85,9 @@ pub fn search_aliases(row: &Row) -> &'static str {
         (Kind::SystemScaling, _) => "dpi zoom windows scale",
         (Kind::PictureMode, _) => "picture mode preset profile",
         (Kind::Variant, _) => "variant default custom",
-        (Kind::AutoHdrToggle, _) => "auto hdr windows hdr game detection automatic",
+        (Kind::AutoHdrToggle | Kind::AutoProfilesDefault, _) => {
+            "auto profiles auto hdr windows hdr game detection automatic default"
+        }
         (Kind::Action(Action::AutoHdrDiscover | Action::AutoHdrBrowse), _) => {
             "auto hdr locate find browse executable exe app"
         }
@@ -357,17 +360,32 @@ fn overview() -> Page {
 fn picture() -> Page {
     let rows = vec![
         header("Tryb obrazu"),
-        star(row("Aktywny tryb", Kind::PictureMode, Some(monitor::VCP_MODE)), "picture_mode"),
-        row("Ustawienia trybu", Kind::Variant, Some(monitor::VCP_MODE)),
+        tooltip(
+            star(row("Aktywny tryb", Kind::PictureMode, Some(monitor::VCP_MODE)), "picture_mode"),
+            "Gotowe profile obrazu: Standard, DyDs/ULL FPS (redukcja rozmycia stroboskopem w FPS), DyDs/LD (strojenie lokalnego przyciemniania do MOBA/AAA), tryby gatunkowe oraz przestrzenie barw (sRGB, AdobeRGB, DCI-P3)",
+        ),
+        tooltip(
+            row("Ustawienia trybu", Kind::Variant, Some(monitor::VCP_MODE)),
+            "Domyślne używa ustawień fabrycznych trybu; Własne odblokowuje ręczną edycję jasności, kontrastu, gammy i kolorów",
+        ),
         header("Podstawowe"),
         star(slider("Jasność", monitor::VCP_BRIGHTNESS, 100), "brightness"),
         star(slider("Kontrast", monitor::VCP_CONTRAST, 100), "contrast"),
-        tooltip(star(switch("DCR", monitor::VCP_DCR, 1, 0), "dcr"), "Dynamiczny kontrast"),
-        star(slider("Low Blue Light", monitor::VCP_LOW_BLUE, 4), "low_blue_light"),
+        tooltip(
+            star(switch("DCR", monitor::VCP_DCR, 1, 0), "dcr"),
+            "Dynamiczny kontrast — automatycznie reguluje podświetlenie pod jasność sceny (blokuje ręczną jasność, kontrast, Shadow Balance i lokalne przyciemnianie)",
+        ),
+        tooltip(
+            star(slider("Low Blue Light", monitor::VCP_LOW_BLUE, 4), "low_blue_light"),
+            "Redukuje emisję krótkofalowego światła niebieskiego (0–4), aby zmniejszyć zmęczenie oczu",
+        ),
         star(slider("Ostrość", monitor::VCP_SHARPNESS, 5), "sharpness"),
-        star(
-            toggles("Gamma", monitor::VCP_GAMMA, &monitor::GAMMA_VALUES, &GAMMA_OPTIONS),
-            "gamma",
+        tooltip(
+            star(
+                toggles("Gamma", monitor::VCP_GAMMA, &monitor::GAMMA_VALUES, &GAMMA_OPTIONS),
+                "gamma",
+            ),
+            "Krzywa jasności i tonów (1.8–2.6); S Curve podbija kontrast w cieniach i światłach",
         ),
         header("Efekty"),
         tooltip(
@@ -377,60 +395,96 @@ fn picture() -> Page {
             ),
             "W KDE Plasma (Wayland) włącza i wyłącza też HDR w systemie. Z firmware 2025-09-20 przy HDR włączonym w monitorze i w systemie zablokowane są: tryb obrazu, jasność, kontrast, DCR, Low Blue Light, Color Enhance, CR Enhance, Shadow Balance, Night Vision, DyDs, wyłączenie lokalnego przyciemniania, zakres RGB i lupa",
         ),
-        star(slider("Color Enhance", monitor::VCP_COLOR_ENHANCE, 10), "color_enhance"),
-        star(slider("CR Enhance", monitor::VCP_CR_ENHANCE, 5), "cr_enhance"),
-        star(slider("Shadow Balance", monitor::VCP_SHADOW_BALANCE, 100), "shadow_balance"),
-        star(slider("Super Res", monitor::VCP_SUPER_RES, 5), "super_res"),
-        star(
-            toggles(
-                "Night Vision",
-                monitor::VCP_NIGHT_VISION,
-                &monitor::NIGHT_VISION_VALUES,
-                &NIGHT_VISION_OPTIONS,
-            ),
-            "night_vision",
+        tooltip(
+            star(slider("Color Enhance", monitor::VCP_COLOR_ENHANCE, 10), "color_enhance"),
+            "Automatycznie zwiększa nasycenie i żywość kolorów (1–10); gdy jest włączone, ręczne suwaki nasycenia są zablokowane",
         ),
-        star(
-            toggles(
-                "Dynamic OD",
-                monitor::VCP_DYNAMIC_OD,
-                &monitor::DYNAMIC_OD_VALUES,
-                &DYNAMIC_OD_OPTIONS,
+        tooltip(
+            star(slider("CR Enhance", monitor::VCP_CR_ENHANCE, 5), "cr_enhance"),
+            "Wzmocnienie lokalnego kontrastu i wyrazistości detali w ciemnych i jasnych partiach obrazu (0–5)",
+        ),
+        tooltip(
+            star(slider("Shadow Balance", monitor::VCP_SHADOW_BALANCE, 100), "shadow_balance"),
+            "Korektor czerni (Black Equalizer, 0–100) — rozjaśnia ciemne strefy, ułatwiając dostrzeżenie przeciwników w cieniu bez prześwietlania jasnych miejsc",
+        ),
+        tooltip(
+            star(slider("Super Res", monitor::VCP_SUPER_RES, 5), "super_res"),
+            "Super Resolution (0–5) — wyostrza i poprawia szczegółowość krawędzi przy treściach o niższej rozdzielczości",
+        ),
+        tooltip(
+            star(
+                toggles(
+                    "Night Vision",
+                    monitor::VCP_NIGHT_VISION,
+                    &monitor::NIGHT_VISION_VALUES,
+                    &NIGHT_VISION_OPTIONS,
+                ),
+                "night_vision",
             ),
-            "dynamic_od",
+            "Inteligentne rozjaśnianie ciemnych scen: Lvl 1–2 działa stale, a Auto 1–2 włącza się automatycznie tylko w bardzo ciemnych ujęciach",
+        ),
+        tooltip(
+            star(
+                toggles(
+                    "Dynamic OD",
+                    monitor::VCP_DYNAMIC_OD,
+                    &monitor::DYNAMIC_OD_VALUES,
+                    &DYNAMIC_OD_OPTIONS,
+                ),
+                "dynamic_od",
+            ),
+            "Dynamic Overdrive — przyspiesza czas reakcji pikseli (płynniejszy ruch bez smużenia); wyższe poziomy zmniejszają ghosting kosztem możliwego przesterowania",
         ),
         header("Podświetlenie"),
-        star(
-            toggles(
-                "Lokalne przyciemnianie",
-                monitor::VCP_LOCAL_DIMMING,
-                &monitor::LOCAL_DIMMING_VALUES,
-                &LOCAL_DIMMING_OPTIONS,
+        tooltip(
+            star(
+                toggles(
+                    "Lokalne przyciemnianie",
+                    monitor::VCP_LOCAL_DIMMING,
+                    &monitor::LOCAL_DIMMING_VALUES,
+                    &LOCAL_DIMMING_OPTIONS,
+                ),
+                "local_dimming",
             ),
-            "local_dimming",
+            "Steruje 1152 strefami Mini-LED FALD dla głębokiej czerni i wysokiego kontrastu (blokuje DCR; wyłączane przy DyDs ULL)",
         ),
         tooltip(
             star(slider("Halo Control", monitor::VCP_HALO_CONTROL, 100), "halo_control"),
-            "Tylko przy włączonym lokalnym przyciemnianiu",
+            "Ogranicza poświatę (blooming) wokół jasnych obiektów na ciemnym tle. Dostępne tylko przy włączonym lokalnym przyciemnianiu",
         ),
-        star(
-            toggles("DyDs", monitor::VCP_DYDS, &monitor::DYDS_VALUES, &DYDS_OPTIONS),
-            "dyds",
+        tooltip(
+            star(
+                toggles("DyDs", monitor::VCP_DYDS, &monitor::DYDS_VALUES, &DYDS_OPTIONS),
+                "dyds",
+            ),
+            "Technologia klarowności ruchu (Black Hole / DyDs): Low–High dostrajają podświetlenie w ruchu, a ULL-1..3 włączają stroboskopową redukcję rozmycia (BFI) kosztem lokalnego przyciemniania",
         ),
         header("Kolor"),
-        star(
-            toggles(
-                "Temperatura barwowa",
-                monitor::VCP_COLOR_TEMP,
-                &monitor::COLOR_TEMP_VALUES,
-                &COLOR_TEMP_OPTIONS,
+        tooltip(
+            star(
+                toggles(
+                    "Temperatura barwowa",
+                    monitor::VCP_COLOR_TEMP,
+                    &monitor::COLOR_TEMP_VALUES,
+                    &COLOR_TEMP_OPTIONS,
+                ),
+                "color_temp_profile",
             ),
-            "color_temp_profile",
+            "Balans bieli: gotowe presety (Warm/Natural/Cold) lub własne profile User 1–3, które odblokowują suwaki RGB poniżej",
         ),
         section("RGB"),
-        sub(star(slider("Czerwony (R)", monitor::VCP_RED, 100), "color_temp_red")),
-        sub(star(slider("Zielony (G)", monitor::VCP_GREEN, 100), "color_temp_green")),
-        sub(star(slider("Niebieski (B)", monitor::VCP_BLUE, 100), "color_temp_blue")),
+        sub(tooltip(
+            star(slider("Czerwony (R)", monitor::VCP_RED, 100), "color_temp_red"),
+            "Edytowalne tylko dla profili User 1–3",
+        )),
+        sub(tooltip(
+            star(slider("Zielony (G)", monitor::VCP_GREEN, 100), "color_temp_green"),
+            "Edytowalne tylko dla profili User 1–3",
+        )),
+        sub(tooltip(
+            star(slider("Niebieski (B)", monitor::VCP_BLUE, 100), "color_temp_blue"),
+            "Edytowalne tylko dla profili User 1–3",
+        )),
         section("Odcień (Hue)"),
         sub(star(slider("Czerwony (R)", monitor::VCP_HUE_RED, 100), "hue_red")),
         sub(star(slider("Zielony (G)", monitor::VCP_HUE_GREEN, 100), "hue_green")),
@@ -454,15 +508,21 @@ fn gaming() -> Page {
         title: "Gaming",
         rows: vec![
             header("Wydajność"),
-            star(switch("Adaptive-Sync", monitor::VCP_ADAPTIVE_SYNC, 1, 0), "adaptive_sync"),
-            star(
-                toggles(
-                    "Rozmiar ekranu (DualMode)",
-                    monitor::VCP_SCREEN_SIZE,
-                    &[0, 1],
-                    &SCREEN_SIZE_OPTIONS,
+            tooltip(
+                star(switch("Adaptive-Sync", monitor::VCP_ADAPTIVE_SYNC, 1, 0), "adaptive_sync"),
+                "Synchronizuje odświeżanie monitora z klatkami GPU (VRR / FreeSync / G-Sync Compatible), eliminując rozrywanie obrazu (tearing)",
+            ),
+            tooltip(
+                star(
+                    toggles(
+                        "Rozmiar ekranu (DualMode)",
+                        monitor::VCP_SCREEN_SIZE,
+                        &[0, 1],
+                        &SCREEN_SIZE_OPTIONS,
+                    ),
+                    "screen_size",
                 ),
-                "screen_size",
+                "Przełącza pełny ekran 27\" (4K do 160 Hz) oraz pomniejszony obszar 25\" do gier FPS (FHD do 320 Hz w Windows)",
             ),
             header("Nakładki"),
             star(switch("Licznik FPS/Hz", monitor::VCP_FPS_COUNTER, 1, 0), "fps_counter"),
@@ -491,7 +551,10 @@ fn gaming() -> Page {
             sub(toggles("Powiększenie", monitor::VCP_MAGNIFIER_ZOOM, &[0, 1, 2], &ZOOM_OPTIONS)),
             sub(toggles("Rozmiar", monitor::VCP_MAGNIFIER_SIZE, &[1, 2, 3], &SMALL_MEDIUM_LARGE)),
             sub(toggles("Pozycja", monitor::VCP_MAGNIFIER_POS, &MAGNIFIER_POS_VALUES, &CENTER_OPTIONS)),
-            star(switch("Hawkeye Vision", monitor::VCP_HAWKEYE, 1, 0), "hawkeye"),
+            tooltip(
+                star(switch("Hawkeye Vision", monitor::VCP_HAWKEYE, 1, 0), "hawkeye"),
+                "Luneta snajperska w rogu ekranu (GAME+) — powiększa centralny obszar celownika w osobnym okienku bez zasłaniania reszty widoku",
+            ),
             sub(toggles("Rozmiar", monitor::VCP_HAWKEYE_SIZE, &[0, 1, 2], &SMALL_MEDIUM_LARGE)),
             sub(toggles("Pozycja", monitor::VCP_HAWKEYE_POS, &HAWKEYE_POS_VALUES, &CENTER_OPTIONS)),
             sub(toggles("Poziom", monitor::VCP_HAWKEYE_LEVEL, &[0, 1, 2, 3, 4], &LEVEL_OPTIONS)),
@@ -514,11 +577,14 @@ fn inputs() -> Page {
                 &monitor::values::INPUT_SELECT,
                 &INPUT_OPTIONS,
             ),
-            choice(
-                "Zakres RGB (Output Range)",
-                monitor::VCP_OUTPUT_RANGE,
-                &monitor::OUTPUT_RANGE_VALUES,
-                &OUTPUT_RANGE_OPTIONS,
+            tooltip(
+                choice(
+                    "Zakres RGB (Output Range)",
+                    monitor::VCP_OUTPUT_RANGE,
+                    &monitor::OUTPUT_RANGE_VALUES,
+                    &OUTPUT_RANGE_OPTIONS,
+                ),
+                "Zakres poziomów czerni i bieli sygnału: Pełny (0–255 dla PC), Ograniczony (16–235 dla konsol i TV) lub Auto",
             ),
             tooltip(
                 toggles(
@@ -642,17 +708,23 @@ fn monitor_page() -> Page {
             sub(slider("Pozycja pionowa", monitor::VCP_OSD_V_POS, 100)),
             sub(slider_factor("Przezroczystość", monitor::VCP_OSD_TRANS, 5, 20)),
             header("Zasilanie"),
-            toggles(
-                "Oszczędzanie energii",
-                monitor::VCP_POWER_SAVING,
-                &monitor::POWER_SAVING_VALUES,
-                &POWER_SAVING_OPTIONS,
+            tooltip(
+                toggles(
+                    "Oszczędzanie energii",
+                    monitor::VCP_POWER_SAVING,
+                    &monitor::POWER_SAVING_VALUES,
+                    &POWER_SAVING_OPTIONS,
+                ),
+                "Tryb eco ograniczający pobór mocy i maksymalną jasność podświetlenia (Lvl 1 / Lvl 2)",
             ),
             tooltip(
                 switch("Zasilanie USB w uśpieniu", monitor::VCP_USB_POWER_SLEEP, 1, 0),
                 "Porty USB monitora ładują, gdy monitor śpi",
             ),
-            switch("Quick Boot", monitor::VCP_QUICK_BOOT, 1, 0),
+            tooltip(
+                switch("Quick Boot", monitor::VCP_QUICK_BOOT, 1, 0),
+                "Skraca czas wybudzania monitora ze stanu czuwania kosztem nieco wyższego poboru mocy w spoczynku",
+            ),
             row("Wyłącz monitor", Kind::Action(Action::PowerOff), None),
             header("Informacje"),
             text("Model", DynText::Model),
@@ -667,11 +739,12 @@ fn monitor_page() -> Page {
 
 fn auto_hdr_page() -> Page {
     Page {
-        title: "Auto HDR",
+        title: "Auto Profiles",
         rows: vec![
-            header("Auto HDR"),
-            row("Włącz Auto HDR", Kind::AutoHdrToggle, None),
-            text("Status", DynText::AutoHdrStatus),
+            header("Auto Profiles"),
+            row("Włącz Auto Profiles", Kind::AutoHdrToggle, None),
+            row("Status", Kind::Text(DynText::AutoHdrStatus), None),
+            row("Domyślny profil", Kind::AutoProfilesDefault, None),
             header("Monitorowane aplikacje"),
             row("Wykryj aplikacje", Kind::Action(Action::AutoHdrDiscover), None),
             row("Dodaj plik .exe", Kind::Action(Action::AutoHdrBrowse), None),

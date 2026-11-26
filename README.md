@@ -1,10 +1,11 @@
 # Titan Control
 
-A Linux app for the **Titan Army P275MV PLUS** monitor. It changes the monitor's own settings over DDC/CI, the
+A Linux and Windows app for the **Titan Army P275MV PLUS** monitor. It changes the monitor's own settings over DDC/CI, the
 same settings as the on-screen menu (OSD): picture modes, local dimming, HDR, game overlays, PIP, LED lighting and
 more. Nothing is emulated in software.
 
-Built with Rust, GTK 4 and libadwaita. It is not affiliated with Titan Army.
+Built with Rust — using GTK 4 and libadwaita on Linux, and native Win32 (`dxva2.dll`) on Windows. It is not affiliated
+with Titan Army.
 
 > ## ⚠️ Use at your own risk
 >
@@ -152,9 +153,28 @@ Start **Titan Control** from the application menu (or run `titan_control`).
 
 ## Windows
 
-A native Windows build lives in [`windows/`](windows): the same monitor control over the same DDC/CI protocol, written
-against Win32 and `dxva2.dll` instead of GTK, so it runs in a few megabytes and keeps monitor polling at zero while it
-idles in the notification area.
+A native Windows 10/11 build lives in [`windows/`](windows): the same monitor control over the same DDC/CI protocol,
+written directly against Win32 and `dxva2.dll` instead of GTK. When minimized to the notification area, it uses around
+**2 MB of RAM** and **virtually 0% CPU** — the settings window is destroyed when closed and recreated on demand, and
+nothing polls the monitor in the background.
+
+<p align="center"><img src="assets/windows_preview.webp" width="760" alt="Titan Control for Windows"></p>
+
+### Distinctive Windows features (compared to the Linux build)
+
+- **~2 MB RAM footprint & 0% idle CPU:** no GTK/runtime overhead and no background OSD polling while idling in the tray.
+- **Global search bar:** instant sidebar filter across all settings, options, tooltips, and common technical aliases
+  (such as `VRR`, `FALD`, `BFI`, `KVM`, `Black Equalizer`, `HDR`).
+- **Monitor Profiles:** top-right profile bar to save snapshots of all current monitor settings, apply profiles in one
+  click (writing only changed VCP values), update modified profiles with **Save**, or delete them.
+- **Auto Profiles & Auto HDR:** event-driven foreground/process monitoring (no polling loop, negligible CPU overhead)
+  with built-in app discovery (Steam, Battle.net, or custom `.exe`). Automatically applies a chosen monitor profile and
+  toggles Windows HDR per app on launch, then restores the configured default profile (or pre-app settings) and SDR on
+  exit.
+- **Global hotkeys:** press `Ctrl+Alt+1…5` (configurable modifier in Preferences) from anywhere to switch favorite
+  picture modes.
+- **Portable single-executable build:** ~560 KB native binary with embedded icons, manifest, dark/light Win32 styling,
+  per-monitor DPI scaling, single-instance guard, and Windows autostart support.
 
 ```powershell
 cd windows
@@ -162,10 +182,10 @@ cargo build --release
 # windows\target\release\titan-control.exe
 ```
 
-It has the same pages, rows, tray menu, favourites, preferences and protocol handling as the Linux application, and it
-reads and writes the same JSON settings file. See [`docs/windows/README.md`](docs/windows/README.md) for the
-architecture, the measured memory and CPU figures, the comparison with the GTK build and the few limitations Windows
-imposes (no periodic OSD polling, read-only display scaling, no system-HDR mirroring).
+It shares the same pages, rows, tray favorites, preferences and protocol handling with the Linux app while reading and
+writing the same JSON layout (`%APPDATA%\Titan Control\`). See [`docs/windows/README.md`](docs/windows/README.md) for the
+architecture and the Windows-specific limitations (no periodic OSD polling, read-only display scaling, and per-app Auto
+HDR instead of desktop HDR mirroring).
 
 ## Reporting a problem
 

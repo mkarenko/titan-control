@@ -860,6 +860,8 @@ pub struct MonitorInfo {
 
 pub enum WorkerCmd {
     Set(u8, u16),
+    /// Applies a saved monitor profile snapshot, skipping settings that already match the monitor cache.
+    ApplyProfile(HashMap<u8, u16>),
     ReadUsageTime,
     /// Read the monitor info, the active profile and every setting again (refresh button).
     RefreshAll,
@@ -888,7 +890,8 @@ pub enum UiCmd {
 fn worker_cmd_code(cmd: &WorkerCmd) -> Option<u8> {
     match cmd {
         WorkerCmd::Set(code, _) => Some(*code),
-        WorkerCmd::ReadUsageTime
+        WorkerCmd::ApplyProfile(_)
+        | WorkerCmd::ReadUsageTime
         | WorkerCmd::RefreshAll
         | WorkerCmd::CheckOsdChanges
         | WorkerCmd::DydsWithAdaptiveSync(_)
@@ -1046,6 +1049,8 @@ enum Task {
     RefreshProfile,
     /// Read settings from the monitor (startup, after a reset or an OSD change).
     Read(Vec<u8>),
+    /// Writes remaining profile settings after a picture mode / link switch settles.
+    ApplyProfileRest(Vec<(u8, u16)>),
     /// Tells the UI that the profile settings queued before it have been read.
     ProfileLoaded,
 }
@@ -1159,6 +1164,7 @@ impl<L: Link> Worker<L> {
                         self.ui.send(UiCmd::ProfileLoaded);
                     }
                 }
+                WorkerCmd::ApplyProfile(values) => self.apply_profile(values),
                 WorkerCmd::ReadUsageTime => {
                     if let Some(mins) = read_vcp(&mut self.ddc, VCP_USAGE_TIME) {
                         cache_store::update_snapshot_usage_time(&self.monitor_name, mins);
@@ -1216,8 +1222,10 @@ impl<L: Link> Worker<L> {
         // A newer value replaces the one still waiting for its read-back (and a newer profile its table read),
         // and strips `code` from any pending background `Task::Read` so an old queued read cannot overwrite it.
         for scheduled in &mut self.tasks {
-            if let Task::Read(keys) = &mut scheduled.task {
-                keys.retain(|&k| k != code);
+            match &mut scheduled.task {
+                Task::Read(keys) => keys.retain(|&k| k != code),
+                Task::ApplyProfileRest(pairs) => pairs.retain(|&(k, _)| k != code),
+                _ => {}
             }
         }
         self.tasks.retain(|scheduled| match &scheduled.task {
@@ -1225,6 +1233,7 @@ impl<L: Link> Worker<L> {
             Task::RefreshProfile => code != VCP_MODE,
             Task::Read(keys) => !keys.is_empty(),
             Task::ProfileLoaded => true,
+            Task::ApplyProfileRest(pairs) => !pairs.is_empty(),
         });
 
         // DyDs profiles need Adaptive-Sync off on firmware older than 2025-09-20.
@@ -1318,11 +1327,88 @@ impl<L: Link> Worker<L> {
         cache_store::save_settings(&self.monitor_name, &self.cache);
     }
 
+    /// Applies all settings in `values` that differ from `self.cache`, sequencing mode/link switches cleanly first.
+    fn apply_profile(&mut self, values: HashMap<u8, u16>) {
+        self.tasks
+            .retain(|s| !matches!(s.task, Task::RefreshProfile | Task::ApplyProfileRest(_)));
+
+        let is_writable = |code: u8| -> bool {
+            code == VCP_MODE
+                || PROFILE_SETTING_KEYS.contains(&code)
+                || GLOBAL_SETTING_KEYS.contains(&code)
+                || matches!(code, VCP_RED | VCP_GREEN | VCP_BLUE)
+        };
+
+        let mut changes: Vec<(u8, u16)> = values
+            .into_iter()
+            .filter(|&(code, val)| is_writable(code) && self.cache.get(&code).copied() != Some(val))
+            .collect();
+        if changes.is_empty() {
+            self.ui.send(UiCmd::ProfileLoaded);
+            return;
+        }
+
+        // Apply prerequisite/mode switches cleanly in dependency order.
+        let priority = |code: u8| -> u8 {
+            match code {
+                VCP_SCREEN_SIZE => 0,
+                VCP_ADAPTIVE_SYNC => 1,
+                VCP_PIP_MODE => 2,
+                VCP_MODE => 3,
+                VCP_DCR | VCP_LOCAL_DIMMING | VCP_HDR | VCP_COLOR_ENHANCE => 4,
+                VCP_COLOR_TEMP => 5,
+                _ => 6,
+            }
+        };
+        changes.sort_by_key(|&(code, _)| (priority(code), code));
+
+        let mut mode_delay = Duration::ZERO;
+        let mut rest: Vec<(u8, u16)> = Vec::new();
+        let mut defer_rest = false;
+
+        for (code, val) in changes {
+            if defer_rest {
+                rest.push((code, val));
+                continue;
+            }
+            if matches!(code, VCP_SCREEN_SIZE | VCP_ADAPTIVE_SYNC | VCP_PIP_MODE | VCP_MODE) {
+                self.write(code, val);
+                if code == VCP_MODE {
+                    self.tasks.retain(|s| !matches!(s.task, Task::RefreshProfile));
+                    mode_delay = mode_delay.max(MODE_SETTLE);
+                    defer_rest = true;
+                } else {
+                    mode_delay = mode_delay.max(Duration::from_millis(2000));
+                    defer_rest = true;
+                }
+            } else {
+                self.write(code, val);
+            }
+        }
+
+        if rest.is_empty() {
+            self.ui.send(UiCmd::ProfileLoaded);
+        } else {
+            self.tasks.push_front(Scheduled {
+                task: Task::ApplyProfileRest(rest),
+                due: Instant::now() + mode_delay,
+            });
+        }
+    }
+
     fn run_task(&mut self, task: Task) {
         match task {
             Task::Verify { code, value, attempt } => self.verify(code, value, attempt),
             Task::RefreshProfile => self.refresh_profile(),
             Task::Read(keys) => self.read_keys(keys),
+            Task::ApplyProfileRest(items) => {
+                for (code, val) in items {
+                    if self.cache.get(&code).copied() != Some(val) {
+                        self.write(code, val);
+                    }
+                }
+                self.ui.send(UiCmd::ProfileLoaded);
+            }
             Task::ProfileLoaded => self.ui.send(UiCmd::ProfileLoaded),
         }
     }

@@ -23,7 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::{
-    settings::{self, AutoHdrApp},
+    settings::{self, AutoProfileApp},
     win,
 };
 
@@ -499,12 +499,18 @@ fn broadcast_display_change() {
 
 // ───────────────────────────── Zero-polling watcher ─────────────────────────────
 
+pub enum AutoEvent {
+    Activated { profile: Option<String> },
+    Deactivated,
+}
+
 pub struct Watcher {
     hook: isize,
     wait_handle: isize,
     proc_handle: isize,
     pub active_pid: u32,
     pub active_name: Option<String>,
+    pub active_profile: Option<String>,
     pub turned_on_by_us: bool,
     host: HWND,
     last_fg: (isize, u32),
@@ -518,6 +524,7 @@ impl Watcher {
             proc_handle: 0,
             active_pid: 0,
             active_name: None,
+            active_profile: None,
             turned_on_by_us: false,
             host,
             last_fg: (0, 0),
@@ -539,6 +546,7 @@ impl Watcher {
         }
         self.active_pid = 0;
         self.active_name = None;
+        self.active_profile = None;
     }
 
     fn unhook(&mut self) {
@@ -552,21 +560,22 @@ impl Watcher {
         self.last_fg = (0, 0);
     }
 
-    /// Synchronizes WinEvent hooks and process waits with the current `auto_hdr_enabled` & list.
+    /// Synchronizes WinEvent hooks and process waits with the current `auto_profiles_enabled` & list.
     /// When disabled (or no monitored apps), releases all hooks and handles so CPU load is 0%.
-    pub fn sync(&mut self, connector: &str, enabled: bool, apps: &[AutoHdrApp]) {
+    pub fn sync(&mut self, connector: &str, enabled: bool, apps: &[AutoProfileApp]) -> Option<AutoEvent> {
         if !enabled || apps.is_empty() {
+            let was_active = self.active_pid != 0 || self.turned_on_by_us;
             self.unhook();
             self.clear_process_wait();
             if self.turned_on_by_us {
                 if let Err(err) = set_hdr(Some(connector), false) {
-                    log!("[AUTO-HDR] restore SDR failed: {err}");
+                    log!("[AUTO-PROFILES] restore SDR failed: {err}");
                 } else {
-                    log!("[AUTO-HDR] disabled: restored Windows SDR");
+                    log!("[AUTO-PROFILES] disabled: restored Windows SDR");
                 }
                 self.turned_on_by_us = false;
             }
-            return;
+            return if was_active { Some(AutoEvent::Deactivated) } else { None };
         }
 
         if self.hook == 0 {
@@ -589,16 +598,18 @@ impl Watcher {
             self.clear_process_wait();
         }
         if self.active_pid == 0 {
-            if let Some((pid, name)) = scan_running_for_match(apps) {
-                self.activate_for_pid(connector, pid, name);
-            } else if self.turned_on_by_us {
+            if let Some((pid, app_entry)) = scan_running_for_match(apps) {
+                return self.activate_for_app(connector, pid, &app_entry);
+            }
+            if self.turned_on_by_us {
                 let _ = set_hdr(Some(connector), false);
                 self.turned_on_by_us = false;
             }
         }
+        None
     }
 
-    /// Stops all hooks and waits cleanly (does not force-toggle HDR during OS shutdown / app quit if desired).
+    /// Stops all hooks and waits cleanly on exit.
     pub fn shutdown(&mut self, connector: &str) {
         self.unhook();
         self.clear_process_wait();
@@ -608,58 +619,65 @@ impl Watcher {
         }
     }
 
-    pub fn on_foreground(&mut self, connector: &str, enabled: bool, apps: &[AutoHdrApp], fg_hwnd: HWND) {
+    pub fn on_foreground(
+        &mut self,
+        connector: &str,
+        enabled: bool,
+        apps: &[AutoProfileApp],
+        fg_hwnd: HWND,
+    ) -> Option<AutoEvent> {
         if !enabled || apps.is_empty() || fg_hwnd.is_null() {
-            return;
+            return None;
         }
         let mut pid = 0u32;
         unsafe {
             GetWindowThreadProcessId(fg_hwnd, &mut pid);
         }
         if pid == 0 {
-            return;
+            return None;
         }
         let key = (fg_hwnd as isize, pid);
         if self.last_fg == key {
-            return;
+            return None;
         }
         self.last_fg = key;
 
         if pid == self.active_pid {
-            return;
+            return None;
         }
         if let Some(exe_path) = query_process_path(pid)
             && let Some(matched) = match_monitored_app(&exe_path, apps)
         {
-            self.activate_for_pid(connector, pid, matched.name.clone());
+            return self.activate_for_app(connector, pid, matched);
         }
+        None
     }
 
-    pub fn on_process_exit(&mut self, connector: &str, enabled: bool, apps: &[AutoHdrApp]) {
+    pub fn on_process_exit(&mut self, connector: &str, enabled: bool, apps: &[AutoProfileApp]) -> Option<AutoEvent> {
         self.clear_process_wait();
         if enabled && !apps.is_empty() {
-            if let Some((pid, name)) = scan_running_for_match(apps) {
-                self.activate_for_pid(connector, pid, name);
-                return;
+            if let Some((pid, app_entry)) = scan_running_for_match(apps) {
+                return self.activate_for_app(connector, pid, &app_entry);
             }
         }
         if self.turned_on_by_us {
             match set_hdr(Some(connector), false) {
-                Ok(()) => log!("[AUTO-HDR] monitored app exited: restored Windows SDR"),
-                Err(err) => log!("[AUTO-HDR] restore SDR failed: {err}"),
+                Ok(()) => log!("[AUTO-PROFILES] monitored app exited: restored Windows SDR"),
+                Err(err) => log!("[AUTO-PROFILES] restore SDR failed: {err}"),
             }
             self.turned_on_by_us = false;
         }
+        Some(AutoEvent::Deactivated)
     }
 
-    fn activate_for_pid(&mut self, connector: &str, pid: u32, app_name: String) {
+    fn activate_for_app(&mut self, connector: &str, pid: u32, app_entry: &AutoProfileApp) -> Option<AutoEvent> {
         if self.active_pid == pid {
-            return;
+            return None;
         }
         self.clear_process_wait();
         let proc_handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE_ACCESS, 0, pid) };
         if proc_handle.is_null() {
-            return;
+            return None;
         }
         let mut wait_handle: HANDLE = ptr::null_mut();
         let ok = unsafe {
@@ -676,25 +694,34 @@ impl Watcher {
             unsafe {
                 CloseHandle(proc_handle);
             }
-            return;
+            return None;
         }
         self.proc_handle = proc_handle as isize;
         self.wait_handle = wait_handle as isize;
         self.active_pid = pid;
-        self.active_name = Some(app_name.clone());
+        self.active_name = Some(app_entry.name.clone());
+        self.active_profile = app_entry.profile.clone();
 
-        let hdr_already_on = query_hdr(Some(connector)).is_some_and(|(_, on)| on);
-        if !hdr_already_on {
-            match set_hdr(Some(connector), true) {
-                Ok(()) => {
-                    self.turned_on_by_us = true;
-                    log!("[AUTO-HDR] enabled Windows HDR for {app_name} (pid {pid})");
+        if app_entry.auto_hdr {
+            let hdr_already_on = query_hdr(Some(connector)).is_some_and(|(_, on)| on);
+            if !hdr_already_on {
+                match set_hdr(Some(connector), true) {
+                    Ok(()) => {
+                        self.turned_on_by_us = true;
+                        log!("[AUTO-PROFILES] enabled Windows HDR for {} (pid {pid})", app_entry.name);
+                    }
+                    Err(err) => log!("[AUTO-PROFILES] failed enabling HDR for {}: {err}", app_entry.name),
                 }
-                Err(err) => log!("[AUTO-HDR] failed enabling HDR for {app_name}: {err}"),
+            } else {
+                log!("[AUTO-PROFILES] tracking {} (pid {pid}; Windows HDR already on)", app_entry.name);
             }
         } else {
-            log!("[AUTO-HDR] tracking {app_name} (pid {pid}; Windows HDR already on)");
+            log!("[AUTO-PROFILES] tracking {} (pid {pid})", app_entry.name);
         }
+
+        Some(AutoEvent::Activated {
+            profile: app_entry.profile.clone(),
+        })
     }
 }
 
@@ -751,7 +778,7 @@ fn query_process_path(pid: u32) -> Option<String> {
     }
 }
 
-fn match_monitored_app<'a>(exe_path: &str, apps: &'a [AutoHdrApp]) -> Option<&'a AutoHdrApp> {
+fn match_monitored_app<'a>(exe_path: &str, apps: &'a [AutoProfileApp]) -> Option<&'a AutoProfileApp> {
     if is_system_path(exe_path) {
         return None;
     }
@@ -762,7 +789,7 @@ fn match_monitored_app<'a>(exe_path: &str, apps: &'a [AutoHdrApp]) -> Option<&'a
     apps.iter().find(|entry| entry.process.eq_ignore_ascii_case(&stem))
 }
 
-fn scan_running_for_match(apps: &[AutoHdrApp]) -> Option<(u32, String)> {
+fn scan_running_for_match(apps: &[AutoProfileApp]) -> Option<(u32, AutoProfileApp)> {
     if apps.is_empty() {
         return None;
     }
@@ -783,7 +810,7 @@ fn scan_running_for_match(apps: &[AutoHdrApp]) -> Option<(u32, String)> {
                     if let Some(app_entry) = apps.iter().find(|a| a.process.eq_ignore_ascii_case(&stem))
                         && query_process_path(entry.th32_process_id).is_none_or(|p| !is_system_path(&p))
                     {
-                        found = Some((entry.th32_process_id, app_entry.name.clone()));
+                        found = Some((entry.th32_process_id, app_entry.clone()));
                         break;
                     }
                 }
@@ -1227,10 +1254,12 @@ mod tests {
 
     #[test]
     fn process_matching_and_steam_parsing() {
-        let apps = vec![AutoHdrApp {
+        let apps = vec![AutoProfileApp {
             name: "Cyberpunk 2077".into(),
             process: "cyberpunk2077".into(),
             path: None,
+            profile: None,
+            auto_hdr: true,
         }];
         assert!(match_monitored_app(r"D:\Games\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe", &apps).is_some());
         assert!(match_monitored_app(r"C:\Windows\System32\cyberpunk2077.exe", &apps).is_none());

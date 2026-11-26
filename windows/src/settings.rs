@@ -4,6 +4,7 @@
 //! can be copied over. Autostart uses the per-user `Run` key instead of an XDG autostart entry.
 
 use std::{
+    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -17,14 +18,27 @@ pub const APP_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (Windows)");
 /// Name of the `Run` value and of the single-instance mutex.
 pub const APP_REGISTRY_NAME: &str = "Titan Control";
 
-/// Application entry watched by Auto HDR.
+/// Application entry watched by Auto Profiles.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AutoHdrApp {
+pub struct AutoProfileApp {
     pub name: String,
     /// Lowercase executable stem (e.g. `"cyberpunk2077"` or `"mpc-hc64"`).
     pub process: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Named monitor profile applied automatically while this app is running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// Whether Windows HDR is enabled automatically while this app is running.
+    #[serde(default)]
+    pub auto_hdr: bool,
+}
+
+/// Named snapshot of all monitor VCP settings.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MonitorProfile {
+    pub name: String,
+    pub values: HashMap<u8, u16>,
 }
 
 /// Extracts a normalized lowercase executable stem (`"C:\Games\Game.exe"` -> `"game"`).
@@ -52,8 +66,13 @@ pub struct AppSettings {
     pub language: Option<u32>,
     /// 0 = system, 1 = light, 2 = dark.
     pub theme: u32,
-    pub auto_hdr_enabled: bool,
-    pub auto_hdr_apps: Vec<AutoHdrApp>,
+    #[serde(alias = "auto_hdr_enabled")]
+    pub auto_profiles_enabled: bool,
+    #[serde(alias = "auto_hdr_apps")]
+    pub auto_profile_apps: Vec<AutoProfileApp>,
+    pub auto_profiles_default: Option<String>,
+    pub profiles: Vec<MonitorProfile>,
+    pub active_profile: Option<String>,
 }
 
 /// Look of the tray icon.

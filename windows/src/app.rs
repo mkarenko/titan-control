@@ -188,8 +188,12 @@ pub struct App {
     pub needs_rebuild: bool,
     /// Last active sidebar page remembered across closing to and reopening from the tray.
     pub active_page: usize,
-    /// Zero-polling Windows Auto HDR watcher.
+    /// Zero-polling Windows Auto Profiles / Auto HDR watcher.
     pub auto_hdr: crate::auto_hdr::Watcher,
+    /// True after modifying monitor settings while a profile is selected (enables toolbar "Save").
+    pub profile_dirty: bool,
+    /// Snapshot captured when Auto Profiles switches on an app launch, restored on exit if no Default profile is set.
+    pub pre_app_state: Option<(Option<String>, HashMap<u8, u16>)>,
     pub quit: bool,
 }
 
@@ -240,6 +244,9 @@ impl App {
 
     /// Sends a setting to the monitor, with the adjustments some settings need.
     pub fn set(&mut self, code: u8, value: u16) {
+        if self.settings.active_profile.is_some() {
+            self.profile_dirty = true;
+        }
         match code {
             monitor::VCP_OUTPUT_RANGE => {
                 self.local_change(code, value);
@@ -768,35 +775,222 @@ pub fn sync_autostart(app: &mut App) {
     }
 }
 
-/// Synchronizes the Auto HDR foreground/process watcher with current settings.
+/// Synchronizes the Auto Profiles foreground/process watcher with current settings.
 pub fn sync_auto_hdr(app: &mut App) {
-    app.auto_hdr
-        .sync(&app.connector, app.settings.auto_hdr_enabled, &app.settings.auto_hdr_apps);
+    let event = app.auto_hdr.sync(
+        &app.connector,
+        app.settings.auto_profiles_enabled,
+        &app.settings.auto_profile_apps,
+    );
+    apply_auto_event(app, event);
 }
 
-/// Adds an executable to the Auto HDR monitored list if not already present.
+pub fn handle_auto_profile_foreground(app: &mut App, fg_hwnd: HWND) {
+    let event = app.auto_hdr.on_foreground(
+        &app.connector,
+        app.settings.auto_profiles_enabled,
+        &app.settings.auto_profile_apps,
+        fg_hwnd,
+    );
+    apply_auto_event(app, event);
+}
+
+pub fn handle_auto_profile_exit(app: &mut App) {
+    let event = app.auto_hdr.on_process_exit(
+        &app.connector,
+        app.settings.auto_profiles_enabled,
+        &app.settings.auto_profile_apps,
+    );
+    apply_auto_event(app, event);
+}
+
+fn apply_auto_event(app: &mut App, event: Option<crate::auto_hdr::AutoEvent>) {
+    match event {
+        Some(crate::auto_hdr::AutoEvent::Activated { profile }) => {
+            if app.pre_app_state.is_none() {
+                app.pre_app_state = Some((app.settings.active_profile.clone(), app.state.clone()));
+            }
+            if let Some(name) = profile {
+                let _ = select_profile(app, Some(&name));
+            }
+        }
+        Some(crate::auto_hdr::AutoEvent::Deactivated) => {
+            let prev = app.pre_app_state.take();
+            if let Some(default_name) = app.settings.auto_profiles_default.clone() {
+                if select_profile(app, Some(&default_name)) {
+                    return;
+                }
+            }
+            if let Some((prev_profile, snapshot)) = prev {
+                app.settings.active_profile = prev_profile;
+                app.profile_dirty = false;
+                app.save_settings();
+                apply_profile_snapshot(app, snapshot);
+            }
+        }
+        None => {}
+    }
+}
+
+/// Applies a saved named profile immediately to the monitor, skipping unchanged settings.
+pub fn select_profile(app: &mut App, name: Option<&str>) -> bool {
+    let Some(target_name) = name else {
+        app.settings.active_profile = None;
+        app.profile_dirty = false;
+        app.save_settings();
+        ui::apply_state(app);
+        return true;
+    };
+    let Some(values) = app
+        .settings
+        .profiles
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case(target_name))
+        .map(|p| p.values.clone())
+    else {
+        return false;
+    };
+    app.settings.active_profile = Some(target_name.to_string());
+    app.profile_dirty = false;
+    app.save_settings();
+    apply_profile_snapshot(app, values);
+    true
+}
+
+fn apply_profile_snapshot(app: &mut App, values: HashMap<u8, u16>) {
+    if values.get(&monitor::VCP_MODE) != app.state.get(&monitor::VCP_MODE) {
+        app.start_profile_load();
+    }
+    for (&code, &val) in &values {
+        if app.state.get(&code).copied() != Some(val) {
+            app.local_change(code, val);
+        }
+    }
+    app.show_saturation();
+    let _ = app.worker.send(WorkerCmd::ApplyProfile(values));
+    ui::apply_state(app);
+    ui::refresh_availability(app);
+    crate::tray::refresh(app);
+}
+
+/// Overwrites the currently selected saved profile with the current monitor settings.
+pub fn save_active_profile(app: &mut App) -> bool {
+    let Some(active) = app.settings.active_profile.clone() else {
+        return false;
+    };
+    let snapshot = app.state.clone();
+    if let Some(profile) = app
+        .settings
+        .profiles
+        .iter_mut()
+        .find(|p| p.name.eq_ignore_ascii_case(&active))
+    {
+        profile.values = snapshot;
+    } else {
+        app.settings.profiles.push(crate::settings::MonitorProfile {
+            name: active,
+            values: snapshot,
+        });
+    }
+    app.profile_dirty = false;
+    app.save_settings();
+    ui::apply_state(app);
+    true
+}
+
+/// Saves current monitor settings under a new (or updated) profile name and selects it.
+pub fn create_profile(app: &mut App, name: String) -> bool {
+    let trimmed = name.trim().to_string();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let snapshot = app.state.clone();
+    if let Some(existing) = app
+        .settings
+        .profiles
+        .iter_mut()
+        .find(|p| p.name.eq_ignore_ascii_case(&trimmed))
+    {
+        existing.name = trimmed.clone();
+        existing.values = snapshot;
+    } else {
+        app.settings.profiles.push(crate::settings::MonitorProfile {
+            name: trimmed.clone(),
+            values: snapshot,
+        });
+    }
+    app.settings.active_profile = Some(trimmed);
+    app.profile_dirty = false;
+    app.save_settings();
+    ui::apply_state(app);
+    true
+}
+
+/// Deletes the currently active saved profile and clears references to it.
+pub fn delete_active_profile(app: &mut App) -> bool {
+    let Some(active) = app.settings.active_profile.clone() else {
+        return false;
+    };
+    let before = app.settings.profiles.len();
+    app.settings
+        .profiles
+        .retain(|p| !p.name.eq_ignore_ascii_case(&active));
+    if app.settings.profiles.len() == before {
+        return false;
+    }
+    app.settings.active_profile = None;
+    app.profile_dirty = false;
+    if app
+        .settings
+        .auto_profiles_default
+        .as_deref()
+        .is_some_and(|d| d.eq_ignore_ascii_case(&active))
+    {
+        app.settings.auto_profiles_default = None;
+    }
+    for entry in &mut app.settings.auto_profile_apps {
+        if entry
+            .profile
+            .as_deref()
+            .is_some_and(|p| p.eq_ignore_ascii_case(&active))
+        {
+            entry.profile = None;
+        }
+    }
+    app.save_settings();
+    ui::apply_state(app);
+    true
+}
+
+/// Adds an executable to the Auto Profiles monitored list if not already present.
 pub fn add_auto_hdr_app(app: &mut App, name: String, process: String, path: Option<String>) -> bool {
     if process.is_empty()
         || app
             .settings
-            .auto_hdr_apps
+            .auto_profile_apps
             .iter()
             .any(|existing| existing.process.eq_ignore_ascii_case(&process))
     {
         return false;
     }
-    app.settings.auto_hdr_apps.push(crate::settings::AutoHdrApp { name, process, path });
+    app.settings.auto_profile_apps.push(crate::settings::AutoProfileApp {
+        name,
+        process,
+        path,
+        profile: app.settings.active_profile.clone(),
+        auto_hdr: false,
+    });
     app.save_settings();
     sync_auto_hdr(app);
     true
 }
 
-/// Removes an entry from the Auto HDR monitored list.
+/// Removes an entry from the Auto Profiles monitored list.
 pub fn remove_auto_hdr_app(app: &mut App, index: usize) -> bool {
-    if index >= app.settings.auto_hdr_apps.len() {
+    if index >= app.settings.auto_profile_apps.len() {
         return false;
     }
-    app.settings.auto_hdr_apps.remove(index);
+    app.settings.auto_profile_apps.remove(index);
     app.save_settings();
     sync_auto_hdr(app);
     true

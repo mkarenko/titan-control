@@ -121,6 +121,8 @@ fn main() {
         needs_rebuild: false,
         active_page: 0,
         auto_hdr: auto_hdr::Watcher::new(host),
+        profile_dirty: false,
+        pre_app_state: None,
         quit: false,
         lang,
         settings,
@@ -330,21 +332,12 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
             0
         }
         WM_AUTO_HDR_FOREGROUND => {
-            app.auto_hdr.on_foreground(
-                &app.connector,
-                app.settings.auto_hdr_enabled,
-                &app.settings.auto_hdr_apps,
-                lparam as HWND,
-            );
+            app::handle_auto_profile_foreground(app, lparam as HWND);
             ui::apply_state(app);
             0
         }
         WM_AUTO_HDR_EXIT => {
-            app.auto_hdr.on_process_exit(
-                &app.connector,
-                app.settings.auto_hdr_enabled,
-                &app.settings.auto_hdr_apps,
-            );
+            app::handle_auto_profile_exit(app);
             ui::apply_state(app);
             0
         }

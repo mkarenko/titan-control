@@ -100,9 +100,15 @@ not sure, do **not** flash firmware: see [firmware/](firmware/README.md).
 
 ## Which firmware do I have?
 
-The OSD and DDC/CI both report only **5.1.1**. That is the USB firmware version, the same for every package. The
-real version is the date of the package and cannot be read from the monitor. If you never updated, it is the factory
-firmware. You can tell the 2025-09-20 firmware by these signs:
+The regular OSD and DDC/CI both report only **5.1.1** (the USB firmware version, the same across packages). To read the
+exact firmware version, build date and controller directly on the monitor, open the **factory service menu**:
+
+1. Set **Brightness** to **`88`**.
+2. Press and hold the **down button** on the monitor for **5 seconds or more**.
+3. The menu appears in the top-left corner and shows `FW: M001`, the **date** (`20250612`, `20250920`, etc.), the
+   controller (e.g. `MT9802`), `Panel`, and `LD FW`. Select **Exit** without changing other items.
+
+Without opening the service menu, you can also tell the **2025-09-20** firmware by these signs:
 
 - the OSD lets you use DyDs together with Adaptive-Sync;
 - you have **three custom buttons** and one of the options is switching the brightness mode (**Normal / Highlight**).
@@ -112,9 +118,12 @@ not as a guarantee. If in doubt, assume the older firmware and choose *2024-12-1
 
 ## How do I update the firmware, and which file is for my monitor?
 
-The packages, translated instructions and warnings are in [firmware/](firmware/README.md). In short:
+The packages, translated instructions, factory-menu check and warnings are in [firmware/](firmware/README.md). In short:
 
 - `P275MV_PLUS_M001_20241211_5.1.1.bin`: regular P275MV PLUS.
+- `P275MV_PLUS_EUR_M001_20250612_V1.0.1.bin`: European (EUR) P275MV PLUS (`MT9802` / `M270QAN07.6`), latest official
+  build recommended by support for EUR units (without the simultaneous VRR + DyDs fix); flashed on Windows via
+  `WinISP.7z`.
 - `P275MV_PLUS_Enhanced_M001_20250920_5.1.1.bin`: **P275MV PLUS Enhanced only.** The manufacturer warns that it
   must not be used on the P275MV, the regular P275MV PLUS or any other model.
 

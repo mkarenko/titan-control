@@ -308,6 +308,26 @@ const PL_EN: &[(&str, &str)] = &[
     ("Sterowanie monitorem przez DDC/CI (dxva2). Menu programu:", "Monitor control over DDC/CI (dxva2). Application menu:"),
     ("Szukaj...", "Search..."),
     ("Brak pasujących ustawień", "No matching settings"),
+    // ── Auto HDR ──
+    ("Auto HDR", "Auto HDR"),
+    ("Włącz Auto HDR", "Enable Auto HDR"),
+    ("Status", "Status"),
+    ("Wyłączone", "Off"),
+    ("Dodaj aplikacje do listy poniżej", "Add applications to the list below"),
+    ("Monitorowanie aktywne (oczekiwanie na aplikację)", "Monitoring active (waiting for an application)"),
+    ("HDR włączony dla:", "HDR active for:"),
+    ("Wykryto uruchomioną aplikację (HDR był już włączony):", "Tracking running app (HDR was already on):"),
+    ("Monitorowane aplikacje", "Monitored applications"),
+    ("Wykryj aplikacje", "Locate applications"),
+    ("Znajdź...", "Browse..."),
+    ("Dodaj plik .exe", "Add .exe file"),
+    ("Wybierz plik wykonywalny (.exe)", "Select executable (.exe)"),
+    ("Usuń", "Remove"),
+    ("Dodaj", "Add"),
+    ("Filtruj listę...", "Filter list..."),
+    ("Brak wykrytych aplikacji", "No applications found"),
+    ("Nie znaleziono żadnych aplikacji.", "No applications were found."),
+    ("Wybierz aplikacje", "Locate applications"),
 ];
 
 /// Formats usage time as `N h M min`, like the Linux application.

@@ -34,6 +34,8 @@ pub enum Kind {
     SystemResolution,
     SystemRefresh,
     SystemScaling,
+    /// Global Auto HDR detection enable/disable toggle.
+    AutoHdrToggle,
 }
 
 /// Text rows whose content is set at run time.
@@ -43,6 +45,7 @@ pub enum DynText {
     MonitorSubtitle,
     Model,
     Usage,
+    AutoHdrStatus,
 }
 
 /// Buttons that are not a plain value write.
@@ -54,6 +57,9 @@ pub enum Action {
     ResetFactory,
     PipSwap,
     PipReset,
+    AutoHdrDiscover,
+    AutoHdrBrowse,
+    AutoHdrRemove(usize),
 }
 
 pub struct Row {
@@ -78,6 +84,10 @@ pub fn search_aliases(row: &Row) -> &'static str {
         (Kind::SystemScaling, _) => "dpi zoom windows scale",
         (Kind::PictureMode, _) => "picture mode preset profile",
         (Kind::Variant, _) => "variant default custom",
+        (Kind::AutoHdrToggle, _) => "auto hdr windows hdr game detection automatic",
+        (Kind::Action(Action::AutoHdrDiscover | Action::AutoHdrBrowse), _) => {
+            "auto hdr locate find browse executable exe app"
+        }
         (Kind::Action(Action::PowerOff), _) => "power off shutdown sleep dpms",
         (Kind::Action(Action::PipSwap | Action::PipReset), _) => {
             "pip pbp split screen picture by picture dual input"
@@ -315,9 +325,9 @@ pub struct Page {
     pub rows: Vec<Row>,
 }
 
-/// Builds the six pages of the settings window.
+/// Builds the pages of the settings window.
 pub fn pages() -> Vec<Page> {
-    vec![overview(), picture(), gaming(), inputs(), lighting(), monitor_page()]
+    vec![overview(), picture(), gaming(), inputs(), lighting(), monitor_page(), auto_hdr_page()]
 }
 
 fn overview() -> Page {
@@ -651,6 +661,20 @@ fn monitor_page() -> Page {
             row("Resetuj kolory", Kind::Action(Action::ResetColors), None),
             row("Resetuj jasność i kontrast", Kind::Action(Action::ResetBrightnessContrast), None),
             row("Przywróć ustawienia fabryczne", Kind::Action(Action::ResetFactory), None),
+        ],
+    }
+}
+
+fn auto_hdr_page() -> Page {
+    Page {
+        title: "Auto HDR",
+        rows: vec![
+            header("Auto HDR"),
+            row("Włącz Auto HDR", Kind::AutoHdrToggle, None),
+            text("Status", DynText::AutoHdrStatus),
+            header("Monitorowane aplikacje"),
+            row("Wykryj aplikacje", Kind::Action(Action::AutoHdrDiscover), None),
+            row("Dodaj plik .exe", Kind::Action(Action::AutoHdrBrowse), None),
         ],
     }
 }

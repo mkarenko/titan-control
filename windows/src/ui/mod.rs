@@ -230,6 +230,10 @@ enum KindUi {
         button: HWND,
         action: Action,
     },
+    AutoHdrToggle {
+        button: HWND,
+        checked: bool,
+    },
     PictureMode {
         combo: HWND,
     },
@@ -280,12 +284,11 @@ struct RowUi {
     star: Option<HWND>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct CardRect {
     top: i32,
     bottom: i32,
-    dividers: [i32; 24],
-    divider_count: usize,
+    dividers: Vec<i32>,
 }
 
 struct PageUi {
@@ -1295,7 +1298,11 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                 }
             }
             Kind::Action(action) => {
-                let button = create_owner_button(window, page_window, &row_label, window.font);
+                let button_text = match action {
+                    Action::AutoHdrDiscover | Action::AutoHdrBrowse => tr(&lang, "Znajdź..."),
+                    _ => row_label.clone(),
+                };
+                let button = create_owner_button(window, page_window, &button_text, window.font);
                 elements.push(Element {
                     window: button,
                     x: control_x,
@@ -1366,6 +1373,21 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                 });
                 KindUi::System { combo, which }
             }
+            Kind::AutoHdrToggle => {
+                let button = create_owner_button(window, page_window, "", window.font);
+                elements.push(Element {
+                    window: button,
+                    x: control_x,
+                    dy: scale(8),
+                    width: scale(SWITCH_WIDTH),
+                    height: scale(SWITCH_HEIGHT),
+                    right_aligned: true,
+                });
+                KindUi::AutoHdrToggle {
+                    button,
+                    checked: app.settings.auto_hdr_enabled,
+                }
+            }
             Kind::Header | Kind::Section => unreachable!(),
         };
         let parent_row = if spec_row.sub {
@@ -1423,6 +1445,61 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
             elements,
             star,
         });
+    }
+
+    // Populate dynamic monitored-app rows inside the Auto HDR page.
+    if spec.title == "Auto HDR" {
+        let remove_text = tr(&lang, "Usuń");
+        let remove_w = scale(96);
+        for (idx, entry) in app.settings.auto_hdr_apps.iter().enumerate() {
+            let mut elements: Vec<Element> = Vec::new();
+            let tip_text = entry
+                .path
+                .clone()
+                .unwrap_or_else(|| format!("{}.exe", entry.process));
+            let label_text = format!("{}  \u{24d8}", entry.name);
+            let label = create_label(window, page_window, &label_text, window.font, true);
+            elements.push(Element {
+                window: label,
+                x: label_x,
+                dy: scale(10),
+                width: label_width,
+                height: scale(20),
+                right_aligned: false,
+            });
+            add_tooltip(window.tooltip, label, &tip_text);
+
+            let button = create_owner_button(window, page_window, &remove_text, window.font);
+            elements.push(Element {
+                window: button,
+                x: control_x,
+                dy: scale(6),
+                width: remove_w,
+                height: scale(28),
+                right_aligned: true,
+            });
+
+            let search_text = format!("{} {} auto hdr {}", entry.name, entry.process, page_title).to_lowercase();
+            window.controls.push(Control {
+                kind: KindUi::Action {
+                    button,
+                    action: Action::AutoHdrRemove(idx),
+                },
+                code: None,
+            });
+            window.rows.push(RowUi {
+                page,
+                height: scale(ROW_HEIGHT),
+                is_header: false,
+                is_hero: false,
+                section: None,
+                parent_row: None,
+                search_text,
+                visible_in_search: false,
+                elements,
+                star: None,
+            });
+        }
     }
 }
 
@@ -1788,8 +1865,7 @@ fn reflow(window: &mut Window, _app: &mut App) {
             current_card = Some(CardRect {
                 top: y,
                 bottom: y,
-                dividers: [0; 24],
-                divider_count: 0,
+                dividers: Vec::new(),
             });
             continue;
         }
@@ -1797,14 +1873,12 @@ fn reflow(window: &mut Window, _app: &mut App) {
             current_card = Some(CardRect {
                 top: y,
                 bottom: y,
-                dividers: [0; 24],
-                divider_count: 0,
+                dividers: Vec::new(),
             });
         }
         if let Some(card) = current_card.as_mut() {
-            if card.bottom > card.top && card.divider_count < card.dividers.len() {
-                card.dividers[card.divider_count] = y;
-                card.divider_count += 1;
+            if card.bottom > card.top {
+                card.dividers.push(y);
             }
             card.bottom = y + row.height;
         }
@@ -2267,8 +2341,33 @@ pub fn apply_state(app: &mut App) {
                         .as_ref()
                         .map(|info| usage_minutes(info.usage_mins))
                         .unwrap_or_default(),
+                    DynText::AutoHdrStatus => {
+                        if !app.settings.auto_hdr_enabled {
+                            tr(&language, "Wyłączone")
+                        } else if app.settings.auto_hdr_apps.is_empty() {
+                            tr(&language, "Dodaj aplikacje do listy poniżej")
+                        } else if let Some(active) = app.auto_hdr.active_name.as_deref() {
+                            let prefix = if app.auto_hdr.turned_on_by_us {
+                                tr(&language, "HDR włączony dla:")
+                            } else {
+                                tr(&language, "Wykryto uruchomioną aplikację (HDR był już włączony):")
+                            };
+                            format!("{prefix} {active}")
+                        } else {
+                            tr(&language, "Monitorowanie aktywne (oczekiwanie na aplikację)")
+                        }
+                    }
                 };
                 set_text_cached(&mut window.text_cache, *label, &text);
+            }
+            KindUi::AutoHdrToggle { button, checked } => {
+                let desired = app.settings.auto_hdr_enabled;
+                if *checked != desired {
+                    *checked = desired;
+                    unsafe {
+                        InvalidateRect(*button, ptr::null(), 0);
+                    }
+                }
             }
             KindUi::Section { .. } | KindUi::Action { .. } | KindUi::System { .. } => {}
         }
@@ -2446,16 +2545,23 @@ pub fn refresh_availability(app: &mut App) {
 
     for control in &window.controls {
         let enabled = match &control.kind {
-            KindUi::Action { .. } => {
-                let code_ok = control
-                    .code
-                    .map(|code| allowed.get(&code).copied().unwrap_or(true))
-                    .unwrap_or(true);
-                connected && code_ok
+            KindUi::Action { action, .. } => {
+                if matches!(
+                    action,
+                    Action::AutoHdrDiscover | Action::AutoHdrBrowse | Action::AutoHdrRemove(_)
+                ) {
+                    true
+                } else {
+                    let code_ok = control
+                        .code
+                        .map(|code| allowed.get(&code).copied().unwrap_or(true))
+                        .unwrap_or(true);
+                    connected && code_ok
+                }
             }
+            KindUi::AutoHdrToggle { .. } | KindUi::Section { .. } => true,
             KindUi::PictureMode { .. } | KindUi::Variant { .. } => connected && !loading && !hdr_locked,
             KindUi::System { which, .. } => !matches!(which, SystemKind::Scaling),
-            KindUi::Section { .. } => true,
             _ => {
                 let Some(code) = control.code else { continue };
                 let mut ok = connected && allowed.get(&code).copied().unwrap_or(true);
@@ -2502,6 +2608,7 @@ fn control_windows(kind: &KindUi) -> Vec<HWND> {
         KindUi::Choice { combo, .. } => vec![*combo],
         KindUi::Swatches { buttons, .. } => buttons.clone(),
         KindUi::Action { button, .. } => vec![*button],
+        KindUi::AutoHdrToggle { button, .. } => vec![*button],
         KindUi::PictureMode { combo } => vec![*combo],
         KindUi::System { combo, .. } => vec![*combo],
         KindUi::Text { .. } | KindUi::Section { .. } => Vec::new(),
@@ -2754,6 +2861,22 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             return;
         }
 
+        // Auto HDR enable/disable switch.
+        if let KindUi::AutoHdrToggle { button, checked } = &mut window.controls[index].kind {
+            *checked = !*checked;
+            let enabled = *checked;
+            let btn = *button;
+            unsafe {
+                InvalidateRect(btn, ptr::null(), 0);
+            }
+            app.window = Some(window);
+            app.settings.auto_hdr_enabled = enabled;
+            app.save_settings();
+            crate::app::sync_auto_hdr(app);
+            apply_state(app);
+            return;
+        }
+
         // Owner-drawn switch toggle.
         if let KindUi::Switch {
             button,
@@ -2935,6 +3058,25 @@ fn run_action(app: &mut App, action: Action) {
             app.set(monitor::VCP_PIP_RESET, 1);
             return;
         }
+        Action::AutoHdrDiscover => {
+            prefs::auto_hdr_picker(app);
+            return;
+        }
+        Action::AutoHdrBrowse => {
+            if let Some((name, process, path)) =
+                crate::auto_hdr::browse_exe(app.dialog_owner(), &app.tr("Wybierz plik wykonywalny (.exe)"))
+                && crate::app::add_auto_hdr_app(app, name, process, Some(path))
+            {
+                rebuild_preserving_view(app);
+            }
+            return;
+        }
+        Action::AutoHdrRemove(index) => {
+            if crate::app::remove_auto_hdr_app(app, index) {
+                rebuild_preserving_view(app);
+            }
+            return;
+        }
     };
     if confirm_dialog(app, title, body) {
         app.set(code, value);
@@ -3053,7 +3195,9 @@ fn draw_owner_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
     let mut found = None;
     for control in &window.controls {
         match &control.kind {
-            KindUi::Switch { button, checked, .. } if *button == hwnd => {
+            KindUi::Switch { button, checked, .. } | KindUi::AutoHdrToggle { button, checked }
+                if *button == hwnd =>
+            {
                 found = Some(Found::Switch(*checked));
                 break;
             }
@@ -3644,8 +3788,8 @@ fn paint_page(window: &mut Window, page_window: HWND) {
                     continue;
                 }
                 RoundRect(mem_dc, card_left, top, card_right, bottom, radius, radius);
-                for i in 0..card.divider_count {
-                    let div_y = card.dividers[i] - scroll;
+                for &div in &card.dividers {
+                    let div_y = div - scroll;
                     if div_y >= dirty.top - 1 && div_y <= dirty.bottom + 1 {
                         MoveToEx(mem_dc, card_left + pad_x, div_y, ptr::null_mut());
                         LineTo(mem_dc, card_right - pad_x, div_y);

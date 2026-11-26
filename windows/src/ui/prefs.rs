@@ -49,6 +49,9 @@ const ID_CLOSE: u16 = 210;
 const ID_WEBSITE: u16 = 220;
 const ID_ISSUES: u16 = 221;
 const ID_COFFEE: u16 = 222;
+const ID_PICKER_FILTER: u16 = 230;
+const ID_PICKER_LIST: u16 = 231;
+const ID_PICKER_ADD: u16 = 232;
 
 const MARGIN: i32 = 16;
 const LABEL_WIDTH: i32 = 250;
@@ -71,6 +74,23 @@ pub fn open(app: &mut App) {
 /// Opens the "About" dialog.
 pub fn about(app: &mut App) {
     run_modal(app, "TitanAbout", "O programie", 420, |app, hwnd, dpi| build_about(app, hwnd, dpi), about_proc);
+    rebuild_main_window(app);
+}
+
+/// Opens the modal application locator dialog for Auto HDR.
+pub fn auto_hdr_picker(app: &mut App) {
+    PICKER_ALL.with(|cell| *cell.borrow_mut() = crate::auto_hdr::discover_installed_apps());
+    PICKER_FILTERED.with(|cell| cell.borrow_mut().clear());
+    run_modal(
+        app,
+        "TitanAutoHdrPicker",
+        "Wybierz aplikacje",
+        470,
+        |app, hwnd, dpi| build_picker(app, hwnd, dpi),
+        picker_proc,
+    );
+    PICKER_ALL.with(|cell| cell.borrow_mut().clear());
+    PICKER_FILTERED.with(|cell| cell.borrow_mut().clear());
     rebuild_main_window(app);
 }
 
@@ -655,4 +675,194 @@ thread_local! {
     /// Background brush of the dialogs (`(color, HBRUSH)`), updated automatically if the theme changes.
     static DLG_BRUSH: std::cell::RefCell<Option<(u32, windows_sys::Win32::Graphics::Gdi::HBRUSH)>> = const { std::cell::RefCell::new(None) };
     static PREFS_TOOLTIP: std::cell::RefCell<HWND> = const { std::cell::RefCell::new(ptr::null_mut()) };
+    static PICKER_ALL: std::cell::RefCell<Vec<crate::auto_hdr::DiscoveredApp>> = const { std::cell::RefCell::new(Vec::new()) };
+    static PICKER_FILTERED: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn build_picker(app: &mut App, hwnd: HWND, dpi: u32) {
+    let margin = win::scaled(MARGIN, dpi);
+    let width = win::scaled(560, dpi) - margin * 2;
+    let btn_w = win::scaled(110, dpi);
+    let btn_h = win::scaled(30, dpi);
+    let filter_h = win::scaled(28, dpi);
+    let list_h = win::scaled(330, dpi);
+
+    unsafe {
+        let filter = CreateWindowExW(
+            0x0000_0200, // WS_EX_CLIENTEDGE
+            win::wide("EDIT").as_ptr(),
+            ptr::null(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0080, // ES_AUTOHSCROLL
+            margin,
+            margin,
+            width,
+            filter_h,
+            hwnd,
+            ID_PICKER_FILTER as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(filter, WM_SETFONT, app.font as usize, 1);
+        let cue = win::wide(&app.tr("Filtruj listę..."));
+        SendMessageW(filter, 0x1501 /* EM_SETCUEBANNER */, 1, cue.as_ptr() as isize);
+
+        let list = CreateWindowExW(
+            0x0000_0200,
+            win::wide("LISTBOX").as_ptr(),
+            ptr::null(),
+            WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | WS_VSCROLL
+                | (LBS_NOTIFY | LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT) as u32,
+            margin,
+            margin + filter_h + win::scaled(10, dpi),
+            width,
+            list_h,
+            hwnd,
+            ID_PICKER_LIST as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(list, WM_SETFONT, app.font as usize, 1);
+
+        let bottom_y = margin + filter_h + win::scaled(10, dpi) + list_h + win::scaled(12, dpi);
+        let add_btn = CreateWindowExW(
+            0,
+            win::wide("BUTTON").as_ptr(),
+            win::wide(&app.tr("Dodaj")).as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            margin + width - btn_w * 2 - win::scaled(8, dpi),
+            bottom_y,
+            btn_w,
+            btn_h,
+            hwnd,
+            ID_PICKER_ADD as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(add_btn, WM_SETFONT, app.font as usize, 1);
+
+        let close_btn = CreateWindowExW(
+            0,
+            win::wide("BUTTON").as_ptr(),
+            win::wide(&app.tr("Zamknij")).as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            margin + width - btn_w,
+            bottom_y,
+            btn_w,
+            btn_h,
+            hwnd,
+            ID_CLOSE as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(close_btn, WM_SETFONT, app.font as usize, 1);
+    }
+    populate_picker_list(app, hwnd, "");
+}
+
+fn populate_picker_list(app: &App, hwnd: HWND, query: &str) {
+    let list = unsafe { GetDlgItem(hwnd, ID_PICKER_LIST as i32) };
+    if list.is_null() {
+        return;
+    }
+    let needle = query.trim().to_lowercase();
+    unsafe {
+        SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    }
+    PICKER_ALL.with(|all_cell| {
+        PICKER_FILTERED.with(|flt_cell| {
+            let all = all_cell.borrow();
+            let mut filtered = flt_cell.borrow_mut();
+            filtered.clear();
+            for (idx, item) in all.iter().enumerate() {
+                if !needle.is_empty() {
+                    let hay = format!("{} {} {}", item.name, item.process, item.path).to_lowercase();
+                    if !needle.split_whitespace().all(|tok| hay.contains(tok)) {
+                        continue;
+                    }
+                }
+                let already = app
+                    .settings
+                    .auto_hdr_apps
+                    .iter()
+                    .any(|a| a.process.eq_ignore_ascii_case(&item.process));
+                if already {
+                    continue;
+                }
+                filtered.push(idx);
+                let label = format!("{}  ({}.exe)", item.name, item.process);
+                let wide = win::wide(&label);
+                unsafe {
+                    SendMessageW(list, LB_ADDSTRING, 0, wide.as_ptr() as isize);
+                }
+            }
+            if filtered.is_empty() {
+                let empty = win::wide(&app.tr("Brak wykrytych aplikacji"));
+                unsafe {
+                    SendMessageW(list, LB_ADDSTRING, 0, empty.as_ptr() as isize);
+                }
+            } else {
+                unsafe {
+                    SendMessageW(list, LB_SETCURSEL, 0, 0);
+                }
+            }
+        });
+    });
+}
+
+fn add_selected_picker_app(app: &mut App, hwnd: HWND) {
+    let list = unsafe { GetDlgItem(hwnd, ID_PICKER_LIST as i32) };
+    let sel = unsafe { SendMessageW(list, LB_GETCURSEL, 0, 0) };
+    if sel < 0 {
+        return;
+    }
+    let picked = PICKER_FILTERED.with(|flt_cell| {
+        let flt = flt_cell.borrow();
+        let all_idx = *flt.get(sel as usize)?;
+        PICKER_ALL.with(|all_cell| all_cell.borrow().get(all_idx).cloned())
+    });
+    if let Some(entry) = picked
+        && crate::app::add_auto_hdr_app(app, entry.name, entry.process, Some(entry.path))
+    {
+        app.needs_rebuild = true;
+        let filter_hwnd = unsafe { GetDlgItem(hwnd, ID_PICKER_FILTER as i32) };
+        let len = unsafe { GetWindowTextLengthW(filter_hwnd) };
+        let mut buf = vec![0u16; len.max(0) as usize + 1];
+        let copied = unsafe { GetWindowTextW(filter_hwnd, buf.as_mut_ptr(), buf.len() as i32) } as usize;
+        let q = String::from_utf16_lossy(&buf[..copied]);
+        populate_picker_list(app, hwnd, &q);
+    }
+}
+
+unsafe extern "system" fn picker_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut App };
+    if raw.is_null() {
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+    }
+    let app = unsafe { &mut *raw };
+    match message {
+        WM_COMMAND => {
+            let item = (wparam & 0xFFFF) as u16;
+            let notif = ((wparam >> 16) & 0xFFFF) as u32;
+            match item {
+                ID_PICKER_FILTER if notif == 0x0300 /* EN_CHANGE */ => {
+                    let filter_hwnd = unsafe { GetDlgItem(hwnd, ID_PICKER_FILTER as i32) };
+                    let len = unsafe { GetWindowTextLengthW(filter_hwnd) };
+                    let mut buf = vec![0u16; len.max(0) as usize + 1];
+                    let copied = unsafe { GetWindowTextW(filter_hwnd, buf.as_mut_ptr(), buf.len() as i32) } as usize;
+                    let q = String::from_utf16_lossy(&buf[..copied]);
+                    populate_picker_list(app, hwnd, &q);
+                }
+                ID_PICKER_LIST if notif == LBN_DBLCLK => add_selected_picker_app(app, hwnd),
+                ID_PICKER_ADD if notif == BN_CLICKED => add_selected_picker_app(app, hwnd),
+                ID_CLOSE if notif == BN_CLICKED => close_modal(app, hwnd),
+                _ => {}
+            }
+            0
+        }
+        WM_CTLCOLORLISTBOX | WM_CTLCOLOREDIT => unsafe { dialog_proc(hwnd, WM_CTLCOLORSTATIC, wparam, lparam) },
+        _ => unsafe { dialog_proc(hwnd, message, wparam, lparam) },
+    }
 }

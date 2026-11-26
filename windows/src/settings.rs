@@ -17,6 +17,26 @@ pub const APP_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (Windows)");
 /// Name of the `Run` value and of the single-instance mutex.
 pub const APP_REGISTRY_NAME: &str = "Titan Control";
 
+/// Application entry watched by Auto HDR.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutoHdrApp {
+    pub name: String,
+    /// Lowercase executable stem (e.g. `"cyberpunk2077"` or `"mpc-hc64"`).
+    pub process: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Extracts a normalized lowercase executable stem (`"C:\Games\Game.exe"` -> `"game"`).
+pub fn normalize_process_name(exe: &str) -> String {
+    let trimmed = exe.trim().trim_matches('"');
+    Path::new(trimmed)
+        .file_stem()
+        .or_else(|| Path::new(trimmed).file_name())
+        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 /// App preferences. Monitor settings are not stored here: the monitor is read on every start.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -32,6 +52,8 @@ pub struct AppSettings {
     pub language: Option<u32>,
     /// 0 = system, 1 = light, 2 = dark.
     pub theme: u32,
+    pub auto_hdr_enabled: bool,
+    pub auto_hdr_apps: Vec<AutoHdrApp>,
 }
 
 /// Look of the tray icon.

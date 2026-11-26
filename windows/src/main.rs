@@ -10,6 +10,7 @@
 mod log;
 
 mod app;
+mod auto_hdr;
 mod cache_store;
 mod ddc;
 mod i18n;
@@ -44,6 +45,10 @@ pub const WM_TRAY: u32 = WM_APP + 2;
 pub const WM_SHOW_WINDOW: u32 = WM_APP + 3;
 /// A second instance started with `--quit` asks the first one to stop.
 pub const WM_QUIT_APP: u32 = WM_APP + 4;
+/// Auto HDR foreground window change event (`lParam` = foreground `HWND`).
+pub const WM_AUTO_HDR_FOREGROUND: u32 = WM_APP + 5;
+/// Auto HDR watched process exited.
+pub const WM_AUTO_HDR_EXIT: u32 = WM_APP + 6;
 
 const HOST_CLASS: &str = "TitanControlHost";
 const MUTEX_NAME: &str = "Local\\TitanControl-single-instance";
@@ -115,6 +120,7 @@ fn main() {
         start_minimized: false,
         needs_rebuild: false,
         active_page: 0,
+        auto_hdr: auto_hdr::Watcher::new(host),
         quit: false,
         lang,
         settings,
@@ -141,6 +147,7 @@ fn main() {
     tray::create(app);
     register_hotkeys(app);
     app::sync_autostart(app);
+    app::sync_auto_hdr(app);
     app::schedule_trim(app);
     // `--minimized` starts in the tray; the autostart entry passes it.
     app.start_minimized = app.settings.start_minimized || std::env::args().any(|argument| argument == "--minimized");
@@ -164,6 +171,7 @@ fn main() {
     }
 
     log!("[APP] exiting");
+    app.auto_hdr.shutdown(&app.connector);
     tray::remove(app);
     unregister_hotkeys(app);
     win::destroy_icon(app.icon_small);
@@ -319,6 +327,25 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
         WM_QUIT_APP => {
             app.quit = true;
             ui::close(app);
+            0
+        }
+        WM_AUTO_HDR_FOREGROUND => {
+            app.auto_hdr.on_foreground(
+                &app.connector,
+                app.settings.auto_hdr_enabled,
+                &app.settings.auto_hdr_apps,
+                lparam as HWND,
+            );
+            ui::apply_state(app);
+            0
+        }
+        WM_AUTO_HDR_EXIT => {
+            app.auto_hdr.on_process_exit(
+                &app.connector,
+                app.settings.auto_hdr_enabled,
+                &app.settings.auto_hdr_apps,
+            );
+            ui::apply_state(app);
             0
         }
         WM_HOTKEY => {

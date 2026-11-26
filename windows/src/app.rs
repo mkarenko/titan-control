@@ -188,6 +188,8 @@ pub struct App {
     pub needs_rebuild: bool,
     /// Last active sidebar page remembered across closing to and reopening from the tray.
     pub active_page: usize,
+    /// Zero-polling Windows Auto HDR watcher.
+    pub auto_hdr: crate::auto_hdr::Watcher,
     pub quit: bool,
 }
 
@@ -764,4 +766,38 @@ pub fn sync_autostart(app: &mut App) {
     if let Err(error) = settings::sync_autostart(&app.settings) {
         log!("[APP] cannot update the autostart entry: {error}");
     }
+}
+
+/// Synchronizes the Auto HDR foreground/process watcher with current settings.
+pub fn sync_auto_hdr(app: &mut App) {
+    app.auto_hdr
+        .sync(&app.connector, app.settings.auto_hdr_enabled, &app.settings.auto_hdr_apps);
+}
+
+/// Adds an executable to the Auto HDR monitored list if not already present.
+pub fn add_auto_hdr_app(app: &mut App, name: String, process: String, path: Option<String>) -> bool {
+    if process.is_empty()
+        || app
+            .settings
+            .auto_hdr_apps
+            .iter()
+            .any(|existing| existing.process.eq_ignore_ascii_case(&process))
+    {
+        return false;
+    }
+    app.settings.auto_hdr_apps.push(crate::settings::AutoHdrApp { name, process, path });
+    app.save_settings();
+    sync_auto_hdr(app);
+    true
+}
+
+/// Removes an entry from the Auto HDR monitored list.
+pub fn remove_auto_hdr_app(app: &mut App, index: usize) -> bool {
+    if index >= app.settings.auto_hdr_apps.len() {
+        return false;
+    }
+    app.settings.auto_hdr_apps.remove(index);
+    app.save_settings();
+    sync_auto_hdr(app);
+    true
 }

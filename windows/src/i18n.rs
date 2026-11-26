@@ -306,6 +306,8 @@ const PL_EN: &[(&str, &str)] = &[
     ("Wersja", "Version"),
     ("Uruchom z Windows", "Start with Windows"),
     ("Sterowanie monitorem przez DDC/CI (dxva2). Menu programu:", "Monitor control over DDC/CI (dxva2). Application menu:"),
+    ("Szukaj...", "Search..."),
+    ("Brak pasujących ustawień", "No matching settings"),
 ];
 
 /// Formats usage time as `N h M min`, like the Linux application.

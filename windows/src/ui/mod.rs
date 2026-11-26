@@ -18,7 +18,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, IntersectClipRect, InvalidateRect,
     LineTo, MoveToEx, RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow,
     DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBITMAP, HBRUSH, HDC, HFONT, HPEN,
-    NULL_BRUSH, PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
+    NULL_BRUSH, OPAQUE, PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
@@ -27,7 +27,8 @@ use windows_sys::Win32::UI::Controls::{
     TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetAsyncKeyState, IsWindowEnabled, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    EnableWindow, GetAsyncKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
+    VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -57,6 +58,18 @@ const CBS_HASSTRINGS: u32 = 0x0200;
 const TBM_GETPOS: u32 = 0x0400;
 #[allow(non_upper_case_globals)]
 const TB_THUMBTRACK: u32 = 5;
+#[allow(non_upper_case_globals)]
+const ES_LEFT: u32 = 0x0000;
+#[allow(non_upper_case_globals)]
+const ES_AUTOHSCROLL: u32 = 0x0080;
+#[allow(non_upper_case_globals)]
+const EN_SETFOCUS: u32 = 0x0100;
+#[allow(non_upper_case_globals)]
+const EN_KILLFOCUS: u32 = 0x0200;
+#[allow(non_upper_case_globals)]
+const EN_CHANGE: u32 = 0x0300;
+#[allow(non_upper_case_globals)]
+const EM_SETCUEBANNER: u32 = 0x1501;
 
 use crate::{
     app::{App, SystemKind, TIMER_FAV_KEY},
@@ -99,6 +112,8 @@ const ID_PREFERENCES: u16 = 101;
 const ID_ABOUT: u16 = 102;
 const ID_LOG: u16 = 103;
 const ID_NAV: u16 = 104;
+const ID_SEARCH: u16 = 105;
+const ID_SEARCH_CLEAR: u16 = 106;
 
 /// Minimum interval between DDC/CI writes while dragging a slider.
 const SLIDER_DRAG_INTERVAL_MS: u128 = 250;
@@ -256,6 +271,11 @@ struct RowUi {
     is_hero: bool,
     /// Section that hides the row when it is collapsed.
     section: Option<usize>,
+    /// Parent non-sub row above a `sub(...)` row so search keeps context together.
+    parent_row: Option<usize>,
+    /// Lowercase searchable text (label, parent label, section, header, page, options, tooltip).
+    search_text: String,
+    visible_in_search: bool,
     elements: Vec<Element>,
     star: Option<HWND>,
 }
@@ -390,6 +410,12 @@ pub struct Window {
     nav: HWND,
     nav_labels: Vec<String>,
     pages: Vec<PageUi>,
+    search_box: HWND,
+    search_clear: HWND,
+    search_page: PageUi,
+    search_query: String,
+    search_focused: bool,
+    empty_search_text: String,
     rows: Vec<RowUi>,
     controls: Vec<Control>,
     sections: Vec<SectionUi>,
@@ -423,6 +449,10 @@ impl Window {
 
     pub fn palette(&self) -> &Palette {
         &self.palette
+    }
+
+    fn in_search(&self) -> bool {
+        !self.search_query.is_empty()
     }
 }
 
@@ -549,14 +579,20 @@ pub fn poll_favorites_key(app: &mut App) {
         return;
     }
     window.fav_key_held = held;
+    let in_search = window.in_search();
     let active_page = window.active;
-    for row in window.rows.iter().filter(|r| r.page == active_page) {
+    for row in &window.rows {
+        let matches_view = if in_search { row.visible_in_search } else { row.page == active_page };
+        if !matches_view {
+            continue;
+        }
         let Some(star_hwnd) = row.star else {
             continue;
         };
-        let hidden_by_section = row
-            .section
-            .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
+        let hidden_by_section = !in_search
+            && row
+                .section
+                .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
         if hidden_by_section {
             continue;
         }
@@ -623,6 +659,17 @@ fn create_shell(app: &mut App) -> Window {
         nav: ptr::null_mut(),
         nav_labels: Vec::new(),
         pages: Vec::new(),
+        search_box: ptr::null_mut(),
+        search_clear: ptr::null_mut(),
+        search_page: PageUi {
+            window: ptr::null_mut(),
+            scroll: 0,
+            content_height: 0,
+            cards: Vec::new(),
+        },
+        search_query: String::new(),
+        search_focused: false,
+        empty_search_text: app.tr("Brak pasujących ustawień"),
         rows: Vec::new(),
         controls: Vec::new(),
         sections: Vec::new(),
@@ -791,6 +838,56 @@ fn build(app: &mut App, window: &mut Window) {
         SendMessageW(window.nav, WM_SETFONT, window.font as usize, 1);
         SendMessageW(window.nav, LB_SETITEMHEIGHT, 0, win::scaled(38, dpi) as isize);
 
+        window.search_box = CreateWindowExW(
+            0,
+            win::wide("EDIT").as_ptr(),
+            ptr::null(),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_LEFT | ES_AUTOHSCROLL,
+            0,
+            0,
+            10,
+            10,
+            hwnd,
+            ID_SEARCH as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(window.search_box, WM_SETFONT, window.font as usize, 1);
+        let hint = win::wide(&tr(&lang, "Szukaj..."));
+        SendMessageW(window.search_box, EM_SETCUEBANNER, 1, hint.as_ptr() as isize);
+        SetWindowSubclass(window.search_box, search_edit_proc, 1, 0);
+
+        window.search_clear = CreateWindowExW(
+            0,
+            win::wide("BUTTON").as_ptr(),
+            win::wide("\u{00d7}").as_ptr(),
+            WS_CHILD | BS_OWNERDRAW,
+            0,
+            0,
+            10,
+            10,
+            hwnd,
+            ID_SEARCH_CLEAR as usize as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+        SendMessageW(window.search_clear, WM_SETFONT, window.font as usize, 1);
+
+        window.search_page.window = CreateWindowExW(
+            0,
+            win::wide("TitanPage").as_ptr(),
+            ptr::null(),
+            WS_CHILD | WS_VSCROLL | WS_CLIPCHILDREN,
+            0,
+            0,
+            10,
+            10,
+            hwnd,
+            usize::MAX as *mut c_void,
+            GetModuleHandleW(ptr::null()),
+            ptr::null_mut(),
+        );
+
         window.tooltip = CreateWindowExW(
             WS_EX_TOPMOST,
             win::wide("tooltips_class32").as_ptr(),
@@ -868,7 +965,9 @@ fn theme_children(window: &Window) {
     let dark = window.palette.background == DARK.background;
     unsafe {
         win::set_control_theme(window.nav, dark);
+        win::set_control_theme(window.search_box, dark);
         win::set_control_theme(window.tooltip, dark);
+        win::set_control_theme(window.search_page.window, dark);
         for page in &window.pages {
             win::set_control_theme(page.window, dark);
             let mut child = GetWindow(page.window, GW_CHILD);
@@ -905,6 +1004,10 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
     let swatch_gap = scale(SWATCH_GAP);
     let indent = scale(INDENT);
     let mut section: Option<usize> = None;
+    let page_title = tr(&lang, spec.title).to_lowercase();
+    let mut current_header = String::new();
+    let mut current_section = String::new();
+    let mut last_parent: Option<(usize, String)> = None;
 
     for spec_row in &spec.rows {
         let mut elements: Vec<Element> = Vec::new();
@@ -914,6 +1017,9 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
         match &spec_row.kind {
             Kind::Header => {
                 section = None;
+                current_header = row_label.to_lowercase();
+                current_section.clear();
+                last_parent = None;
                 let label = create_label(window, page_window, &row_label, window.bold, false);
                 elements.push(Element {
                     window: label,
@@ -929,12 +1035,17 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                     is_header: true,
                     is_hero: false,
                     section: None,
+                    parent_row: None,
+                    search_text: String::new(),
+                    visible_in_search: false,
                     elements,
                     star: None,
                 });
                 continue;
             }
             Kind::Section => {
+                current_section = row_label.to_lowercase();
+                last_parent = None;
                 let button = create_owner_button(window, page_window, &row_label, window.bold);
                 elements.push(Element {
                     window: button,
@@ -957,6 +1068,9 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                     is_header: false,
                     is_hero: false,
                     section: None,
+                    parent_row: None,
+                    search_text: current_section.clone(),
+                    visible_in_search: false,
                     elements,
                     star: None,
                 });
@@ -998,6 +1112,9 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
                 is_header: false,
                 is_hero: true,
                 section: None,
+                parent_row: None,
+                search_text: String::new(),
+                visible_in_search: false,
                 elements,
                 star: None,
             });
@@ -1251,6 +1368,48 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
             }
             Kind::Header | Kind::Section => unreachable!(),
         };
+        let parent_row = if spec_row.sub {
+            last_parent.as_ref().map(|(idx, _)| *idx)
+        } else {
+            None
+        };
+        let parent_label = if spec_row.sub {
+            last_parent.as_ref().map(|(_, title)| title.as_str()).unwrap_or("")
+        } else {
+            ""
+        };
+        let mut search_text = format!(
+            "{row_label} {parent_label} {current_section} {current_header} {page_title}"
+        );
+        if let Some(tip) = spec_row.tooltip {
+            search_text.push(' ');
+            search_text.push_str(&tr(&lang, tip));
+        }
+        match &spec_row.kind {
+            Kind::ToggleGroup { options, .. } | Kind::Choice { options, .. } | Kind::Swatches { options, .. } => {
+                for option in options.iter() {
+                    search_text.push(' ');
+                    search_text.push_str(&tr(&lang, option));
+                }
+            }
+            Kind::PictureMode => {
+                for name in monitor::PICTURE_MODE_NAMES {
+                    search_text.push(' ');
+                    search_text.push_str(name);
+                }
+            }
+            _ => {}
+        }
+        let aliases = rows::search_aliases(spec_row);
+        if !aliases.is_empty() {
+            search_text.push(' ');
+            search_text.push_str(aliases);
+        }
+        let search_text = search_text.to_lowercase();
+        let row_index = window.rows.len();
+        if !spec_row.sub {
+            last_parent = Some((row_index, row_label));
+        }
         window.controls.push(Control { kind, code: spec_row.code });
         window.rows.push(RowUi {
             page,
@@ -1258,6 +1417,9 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
             is_header: false,
             is_hero: false,
             section,
+            parent_row,
+            search_text,
+            visible_in_search: false,
             elements,
             star,
         });
@@ -1291,6 +1453,32 @@ unsafe extern "system" fn wheel_forward_proc(
         if !parent.is_null() {
             return unsafe { SendMessageW(parent, WM_MOUSEWHEEL, wparam, lparam) };
         }
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// Subclass procedure for the sidebar search box: `Escape` clears the filter and moves focus to the nav list.
+unsafe extern "system" fn search_edit_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if msg == WM_KEYDOWN && wparam == VK_ESCAPE as usize {
+        unsafe {
+            let root = GetParent(hwnd);
+            if !root.is_null() {
+                let clear = GetDlgItem(root, ID_SEARCH_CLEAR as i32);
+                SendMessageW(root, WM_COMMAND, ID_SEARCH_CLEAR as usize, clear as isize);
+                let nav = GetDlgItem(root, ID_NAV as i32);
+                if !nav.is_null() {
+                    SetFocus(nav);
+                }
+            }
+        }
+        return 0;
     }
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
@@ -1437,6 +1625,17 @@ fn add_tooltip(tooltip: HWND, target: HWND, text: &str) {
 
 // ───────────────────────────── layout & fast scrolling ─────────────────────────────
 
+fn search_pill_rect(dpi: u32) -> RECT {
+    let nav = win::scaled(NAV_WIDTH, dpi);
+    let pad = win::scaled(10, dpi);
+    RECT {
+        left: pad,
+        top: pad,
+        right: nav - pad,
+        bottom: win::scaled(38, dpi),
+    }
+}
+
 fn layout(window: &mut Window, app: &mut App) {
     let hwnd = window.hwnd;
     let dpi = window.dpi;
@@ -1449,6 +1648,10 @@ fn layout(window: &mut Window, app: &mut App) {
     let toolbar = win::scaled(TOOLBAR_HEIGHT, dpi);
     let status = win::scaled(STATUS_HEIGHT, dpi);
     let nav = win::scaled(NAV_WIDTH, dpi);
+    let pill = search_pill_rect(dpi);
+    let clear_size = win::scaled(20, dpi);
+    let edit_left = pill.left + win::scaled(8, dpi);
+    let edit_right = pill.right - clear_size - win::scaled(6, dpi);
     unsafe {
         let mut x = nav + win::scaled(MARGIN, dpi);
         for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT, ID_LOG] {
@@ -1458,6 +1661,22 @@ fn layout(window: &mut Window, app: &mut App) {
             x += button_width + win::scaled(8, dpi);
         }
         MoveWindow(
+            window.search_box,
+            edit_left,
+            pill.top + win::scaled(5, dpi),
+            (edit_right - edit_left).max(10),
+            win::scaled(18, dpi),
+            1,
+        );
+        MoveWindow(
+            window.search_clear,
+            pill.right - clear_size - win::scaled(3, dpi),
+            pill.top + win::scaled(4, dpi),
+            clear_size,
+            clear_size,
+            1,
+        );
+        MoveWindow(
             window.status,
             win::scaled(16, dpi),
             (height - status + win::scaled(6, dpi)).max(0),
@@ -1466,6 +1685,14 @@ fn layout(window: &mut Window, app: &mut App) {
             1,
         );
         MoveWindow(window.nav, 0, toolbar, nav, (height - toolbar - status).max(0), 1);
+        MoveWindow(
+            window.search_page.window,
+            nav,
+            toolbar,
+            (width - nav).max(0),
+            (height - toolbar - status).max(0),
+            1,
+        );
         for page in &window.pages {
             MoveWindow(
                 page.window,
@@ -1480,15 +1707,43 @@ fn layout(window: &mut Window, app: &mut App) {
     reflow(window, app);
 }
 
-/// Positions the controls of the active page using `DeferWindowPos` and computes the card rectangles for `WM_PAINT`.
+/// Keeps each row's Win32 child controls parented to the currently visible container (`search_page` or `pages[row.page]`).
+fn sync_row_parents(window: &Window) {
+    let in_search = window.in_search();
+    for row in &window.rows {
+        let target = if in_search && row.visible_in_search {
+            window.search_page.window
+        } else {
+            window.pages[row.page].window
+        };
+        if target.is_null() {
+            continue;
+        }
+        for element in &row.elements {
+            unsafe {
+                if GetParent(element.window) != target {
+                    SetParent(element.window, target);
+                }
+            }
+        }
+    }
+}
+
+/// Positions the controls of the active view (`pages[active]` or `search_page`) and computes card rectangles for `WM_PAINT`.
 fn reflow(window: &mut Window, _app: &mut App) {
+    let in_search = window.in_search();
     let page_index = window.active;
-    if page_index >= window.pages.len() {
+    if !in_search && page_index >= window.pages.len() {
         return;
     }
+    sync_row_parents(window);
     let dpi = window.dpi;
     let margin = win::scaled(MARGIN, dpi);
-    let page_window = window.pages[page_index].window;
+    let page_window = if in_search {
+        window.search_page.window
+    } else {
+        window.pages[page_index].window
+    };
     let mut client: RECT = unsafe { std::mem::zeroed() };
     unsafe {
         GetClientRect(page_window, &mut client);
@@ -1503,10 +1758,19 @@ fn reflow(window: &mut Window, _app: &mut App) {
     let mut cards: Vec<CardRect> = Vec::new();
     let mut current_card: Option<CardRect> = None;
 
-    for row in window.rows.iter().filter(|row| row.page == page_index) {
-        let hidden = row
-            .section
-            .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
+    for row in &window.rows {
+        let in_view = if in_search {
+            row.visible_in_search
+        } else {
+            row.page == page_index
+        };
+        if !in_view {
+            continue;
+        }
+        let hidden = !in_search
+            && row
+                .section
+                .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
         if hidden {
             continue;
         }
@@ -1553,18 +1817,23 @@ fn reflow(window: &mut Window, _app: &mut App) {
     }
 
     let content = y + margin;
-    window.pages[page_index].content_height = content;
-    window.pages[page_index].cards = cards;
+    let page_ui = if in_search {
+        &mut window.search_page
+    } else {
+        &mut window.pages[page_index]
+    };
+    page_ui.content_height = content;
+    page_ui.cards = cards;
     let max_scroll = (content - viewport).max(0);
-    let scroll = window.pages[page_index].scroll.clamp(0, max_scroll);
-    window.pages[page_index].scroll = scroll;
+    let scroll = page_ui.scroll.clamp(0, max_scroll);
+    page_ui.scroll = scroll;
 
-    // Second pass: batch-position child HWNDs on the active page using BeginDeferWindowPos.
+    // Second pass: batch-position child HWNDs on the active view using BeginDeferWindowPos.
     let mut y = margin / 2;
     let elem_count: usize = window
         .rows
         .iter()
-        .filter(|row| row.page == page_index)
+        .filter(|row| if in_search { row.visible_in_search } else { row.page == page_index })
         .map(|row| row.elements.len())
         .sum();
     let hdwp = unsafe { BeginDeferWindowPos(elem_count.max(1) as i32) };
@@ -1574,10 +1843,19 @@ fn reflow(window: &mut Window, _app: &mut App) {
     let right_pad = win::scaled(CARD_PAD_X, dpi);
     let target_control_right = card_right - right_pad;
 
-    for row in window.rows.iter().filter(|row| row.page == page_index) {
-        let hidden = row
-            .section
-            .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
+    for row in &window.rows {
+        let in_view = if in_search {
+            row.visible_in_search
+        } else {
+            row.page == page_index
+        };
+        if !in_view {
+            continue;
+        }
+        let hidden = !in_search
+            && row
+                .section
+                .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
         if hidden {
             for element in &row.elements {
                 set_visible(element.window, false);
@@ -1658,30 +1936,152 @@ fn reflow(window: &mut Window, _app: &mut App) {
 
 fn show_page(window: &mut Window, index: usize) {
     window.active = index;
+    let in_search = window.in_search();
+    set_visible(window.search_page.window, in_search);
     for (position, page) in window.pages.iter().enumerate() {
-        set_visible(page.window, position == index);
+        set_visible(page.window, !in_search && position == index);
     }
 }
 
-/// Scrolls the active page using `ScrollWindowEx` without reflowing all 6 pages.
-fn scroll_page_fast(window: &mut Window, page_window: HWND, request: i32) {
-    let Some(index) = window.pages.iter().position(|page| page.window == page_window) else {
+fn read_search_box(hwnd: HWND) -> String {
+    let len = unsafe { GetWindowTextLengthW(hwnd) };
+    if len <= 0 {
+        return String::new();
+    }
+    let mut buf = vec![0u16; len as usize + 1];
+    let copied = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) } as usize;
+    String::from_utf16_lossy(&buf[..copied])
+}
+
+/// Evaluates the sidebar search query across all pages and switches the active view accordingly.
+fn update_search_filter(window: &mut Window, app: &mut App, raw_query: &str) {
+    let normalized = raw_query.trim().to_lowercase();
+    set_visible(window.search_clear, !raw_query.is_empty());
+    if normalized == window.search_query {
         return;
-    };
+    }
+    window.search_query = normalized;
+    window.search_page.scroll = 0;
+
+    if window.search_query.is_empty() {
+        for row in &mut window.rows {
+            row.visible_in_search = false;
+        }
+        unsafe {
+            SendMessageW(window.nav, LB_SETCURSEL, window.active, 0);
+            InvalidateRect(window.nav, ptr::null(), 0);
+        }
+        let active = window.active;
+        reflow(window, app);
+        show_page(window, active);
+        return;
+    }
+
+    let tokens: Vec<&str> = window.search_query.split_whitespace().collect();
+    for row in &mut window.rows {
+        row.visible_in_search = false;
+    }
+
+    let mut matched_sections: Vec<usize> = Vec::new();
+    let mut matched_parents: Vec<usize> = Vec::new();
+    for i in 0..window.rows.len() {
+        let is_section = window
+            .rows[i]
+            .elements
+            .first()
+            .is_some_and(|e| window.sections.iter().any(|s| s.button == e.window));
+        if window.rows[i].is_header || window.rows[i].is_hero || is_section {
+            continue;
+        }
+        if tokens.iter().all(|t| window.rows[i].search_text.contains(t)) {
+            window.rows[i].visible_in_search = true;
+            if let Some(parent_idx) = window.rows[i].parent_row {
+                matched_parents.push(parent_idx);
+            }
+            if let Some(sec_idx) = window.rows[i].section {
+                matched_sections.push(sec_idx);
+            }
+        }
+    }
+    for parent_idx in matched_parents {
+        window.rows[parent_idx].visible_in_search = true;
+        if let Some(sec_idx) = window.rows[parent_idx].section {
+            matched_sections.push(sec_idx);
+        }
+    }
+    for sec_idx in matched_sections {
+        if let Some(sec_btn) = window.sections.get(sec_idx).map(|s| s.button)
+            && let Some(sec_row) = window
+                .rows
+                .iter_mut()
+                .find(|r| r.elements.first().is_some_and(|e| e.window == sec_btn))
+        {
+            sec_row.visible_in_search = true;
+        }
+    }
+
+    // Include each card header above at least one matched setting row.
+    let mut current_header: Option<usize> = None;
+    let mut header_page: usize = usize::MAX;
+    for i in 0..window.rows.len() {
+        if window.rows[i].page != header_page {
+            current_header = None;
+            header_page = window.rows[i].page;
+        }
+        if window.rows[i].is_header {
+            current_header = Some(i);
+        } else if window.rows[i].visible_in_search
+            && let Some(h) = current_header
+        {
+            window.rows[h].visible_in_search = true;
+        }
+    }
+
+    unsafe {
+        SendMessageW(window.nav, LB_SETCURSEL, usize::MAX, 0);
+        InvalidateRect(window.nav, ptr::null(), 0);
+    }
+    let active = window.active;
+    reflow(window, app);
+    show_page(window, active);
+}
+
+fn clear_search(window: &mut Window, app: &mut App) {
+    if window.search_query.is_empty() && read_search_box(window.search_box).is_empty() {
+        return;
+    }
+    let was_applying = window.applying;
+    window.applying = true;
+    unsafe {
+        SetWindowTextW(window.search_box, win::wide("").as_ptr());
+    }
+    window.applying = was_applying;
+    update_search_filter(window, app, "");
+}
+
+/// Scrolls the active view (`pages[active]` or `search_page`) using `ScrollWindowEx`.
+fn scroll_page_fast(window: &mut Window, page_window: HWND, request: i32) {
     let mut client: RECT = unsafe { std::mem::zeroed() };
     unsafe {
         GetClientRect(page_window, &mut client);
     }
     let viewport = client.bottom.max(0);
-    let content = window.pages[index].content_height;
+    let page_ui = if window.search_page.window == page_window {
+        &mut window.search_page
+    } else if let Some(page) = window.pages.iter_mut().find(|page| page.window == page_window) {
+        page
+    } else {
+        return;
+    };
+    let content = page_ui.content_height;
     let max = (content - viewport).max(0);
     let new_scroll = request.clamp(0, max);
-    let old_scroll = window.pages[index].scroll;
+    let old_scroll = page_ui.scroll;
     let dy = old_scroll - new_scroll;
     if dy == 0 {
         return;
     }
-    window.pages[index].scroll = new_scroll;
+    page_ui.scroll = new_scroll;
     unsafe {
         let mut info: SCROLLINFO = std::mem::zeroed();
         info.cbSize = std::mem::size_of::<SCROLLINFO>() as u32;
@@ -1893,11 +2293,21 @@ pub fn apply_state(app: &mut App) {
             }
         }
     }
-    for row in window.rows.iter().filter(|r| r.page == active_page) {
+    let in_search = window.in_search();
+    for row in &window.rows {
+        let in_view = if in_search {
+            row.visible_in_search
+        } else {
+            row.page == active_page
+        };
+        if !in_view {
+            continue;
+        }
         if let Some(star_hwnd) = row.star {
-            let hidden = row
-                .section
-                .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
+            let hidden = !in_search
+                && row
+                    .section
+                    .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
             let is_fav = window.stars.get(&(star_hwnd as isize)).is_some_and(|(_, fav)| *fav);
             let should_show = !hidden && (window.fav_key_held || is_fav);
             set_visible(star_hwnd, should_show);
@@ -2110,14 +2520,37 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             app.window = Some(window);
             return;
         }
+        if item == window.search_box {
+            if notification == EN_CHANGE {
+                let query = read_search_box(window.search_box);
+                update_search_filter(&mut window, app, &query);
+            } else if notification == EN_SETFOCUS || notification == EN_KILLFOCUS {
+                window.search_focused = notification == EN_SETFOCUS;
+                let pill = search_pill_rect(window.dpi);
+                unsafe {
+                    InvalidateRect(window.hwnd, &pill, 0);
+                }
+            }
+            app.window = Some(window);
+            return;
+        }
+        if item == window.search_clear {
+            clear_search(&mut window, app);
+            app.window = Some(window);
+            return;
+        }
         if item == window.nav {
             if notification == LBN_SELCHANGE {
                 let index = unsafe { SendMessageW(window.nav, LB_GETCURSEL, 0, 0) } as usize;
                 if index < window.pages.len() {
                     window.active = index;
                     app.active_page = index;
-                    reflow(&mut window, app);
-                    show_page(&mut window, index);
+                    if window.in_search() {
+                        clear_search(&mut window, app);
+                    } else {
+                        reflow(&mut window, app);
+                        show_page(&mut window, index);
+                    }
                     unsafe {
                         InvalidateRect(window.nav, ptr::null(), 0);
                     }
@@ -2597,6 +3030,11 @@ fn draw_owner_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
     let hwnd = item.hwndItem;
     let key = hwnd as isize;
 
+    if hwnd == window.search_clear {
+        draw_search_clear_button(window, item);
+        return;
+    }
+
     // 1. Color swatch?
     if window.swatches.contains_key(&key) {
         draw_swatch(window, item);
@@ -2962,6 +3400,27 @@ fn draw_star_button(window: &Window, item: &DRAWITEMSTRUCT, is_fav: bool) {
     }
 }
 
+fn draw_search_clear_button(window: &Window, item: &DRAWITEMSTRUCT) {
+    let pressed = (item.itemState & ODS_SELECTED) != 0;
+    let palette = window.palette;
+    unsafe {
+        FillRect(item.hDC, &item.rcItem, window.brush_card);
+        let mut rc = item.rcItem;
+        SetBkMode(item.hDC, TRANSPARENT as i32);
+        SetTextColor(item.hDC, if pressed { palette.text } else { palette.muted });
+        let old_font = SelectObject(item.hDC, window.bold as _);
+        let mut wide = win::wide("\u{00d7}");
+        DrawTextW(
+            item.hDC,
+            wide.as_mut_ptr(),
+            (wide.len().saturating_sub(1)) as i32,
+            &mut rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        SelectObject(item.hDC, old_font);
+    }
+}
+
 fn draw_push_button(window: &mut Window, item: &DRAWITEMSTRUCT, key: isize) {
     let disabled = (item.itemState & ODS_DISABLED) != 0;
     let pressed = (item.itemState & ODS_SELECTED) != 0;
@@ -3093,14 +3552,23 @@ fn draw_swatch(window: &mut Window, item: &DRAWITEMSTRUCT) {
 
 /// Double-buffered paint of a `TitanPage` window clipped to `ps.rcPaint` with a reusable backbuffer.
 fn paint_page(window: &mut Window, page_window: HWND) {
-    let Some(page_idx) = window.pages.iter().position(|p| p.window == page_window) else {
-        return;
+    let is_search_page = window.search_page.window == page_window;
+    let page_idx = if is_search_page {
+        None
+    } else {
+        let Some(idx) = window.pages.iter().position(|p| p.window == page_window) else {
+            return;
+        };
+        Some(idx)
     };
-    let is_overview = page_idx == 0;
+    let is_overview = page_idx == Some(0);
     let dpi = window.dpi;
     let scale = |v: i32| win::scaled(v, dpi);
     let margin = scale(MARGIN);
-    let scroll = window.pages[page_idx].scroll;
+    let scroll = match page_idx {
+        Some(idx) => window.pages[idx].scroll,
+        None => window.search_page.scroll,
+    };
     let palette = window.palette;
 
     unsafe {
@@ -3139,29 +3607,55 @@ fn paint_page(window: &mut Window, page_window: HWND) {
         let card_right = (w - margin).max(card_left + scale(320));
         let radius = scale(10);
 
-        let card_pen = window.draw.pen(palette.line, 1);
-        let old_pen = SelectObject(mem_dc, card_pen as _);
-        let old_brush = SelectObject(mem_dc, window.brush_card as _);
+        let cards = match page_idx {
+            Some(idx) => &window.pages[idx].cards,
+            None => &window.search_page.cards,
+        };
 
-        let pad_x = scale(CARD_PAD_X);
-        for card in &window.pages[page_idx].cards {
-            let top = card.top - scroll;
-            let bottom = card.bottom - scroll;
-            if bottom < dirty.top || top > dirty.bottom {
-                continue;
-            }
-            RoundRect(mem_dc, card_left, top, card_right, bottom, radius, radius);
-            for i in 0..card.divider_count {
-                let div_y = card.dividers[i] - scroll;
-                if div_y >= dirty.top - 1 && div_y <= dirty.bottom + 1 {
-                    MoveToEx(mem_dc, card_left + pad_x, div_y, ptr::null_mut());
-                    LineTo(mem_dc, card_right - pad_x, div_y);
+        if is_search_page && cards.is_empty() && !window.search_query.is_empty() {
+            let mut rc = RECT {
+                left: margin,
+                top: scale(48),
+                right: w - margin,
+                bottom: scale(96),
+            };
+            SetBkMode(mem_dc, TRANSPARENT as i32);
+            SetTextColor(mem_dc, palette.muted);
+            let old_font = SelectObject(mem_dc, window.font as _);
+            let mut wide = win::wide(&window.empty_search_text);
+            DrawTextW(
+                mem_dc,
+                wide.as_mut_ptr(),
+                (wide.len().saturating_sub(1)) as i32,
+                &mut rc,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            );
+            SelectObject(mem_dc, old_font);
+        } else {
+            let card_pen = window.draw.pen(palette.line, 1);
+            let old_pen = SelectObject(mem_dc, card_pen as _);
+            let old_brush = SelectObject(mem_dc, window.brush_card as _);
+
+            let pad_x = scale(CARD_PAD_X);
+            for card in cards {
+                let top = card.top - scroll;
+                let bottom = card.bottom - scroll;
+                if bottom < dirty.top || top > dirty.bottom {
+                    continue;
+                }
+                RoundRect(mem_dc, card_left, top, card_right, bottom, radius, radius);
+                for i in 0..card.divider_count {
+                    let div_y = card.dividers[i] - scroll;
+                    if div_y >= dirty.top - 1 && div_y <= dirty.bottom + 1 {
+                        MoveToEx(mem_dc, card_left + pad_x, div_y, ptr::null_mut());
+                        LineTo(mem_dc, card_right - pad_x, div_y);
+                    }
                 }
             }
-        }
 
-        SelectObject(mem_dc, old_pen);
-        SelectObject(mem_dc, old_brush);
+            SelectObject(mem_dc, old_pen);
+            SelectObject(mem_dc, old_brush);
+        }
         SelectClipRgn(mem_dc, ptr::null_mut());
 
         BitBlt(
@@ -3327,12 +3821,13 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
             0
         }
         WM_MOUSEWHEEL => {
-            if let Some(page_hwnd) = app
-                .window
-                .as_ref()
-                .and_then(|w| w.pages.get(w.active))
-                .map(|p| p.window)
-            {
+            if let Some(page_hwnd) = app.window.as_ref().and_then(|w| {
+                if w.in_search() {
+                    Some(w.search_page.window)
+                } else {
+                    w.pages.get(w.active).map(|p| p.window)
+                }
+            }) {
                 let delta = ((wparam >> 16) & 0xFFFF) as u16 as i16 as i32;
                 crate::app::handle_wheel(app, page_hwnd, delta);
             }
@@ -3350,6 +3845,20 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
         WM_VSCROLL => {
             crate::app::handle_page_scroll(app, hwnd, wparam);
             0
+        }
+        WM_CTLCOLOREDIT => {
+            let palette = app
+                .window
+                .as_ref()
+                .map(|w| w.palette)
+                .unwrap_or_else(|| palette_for(app.settings.theme));
+            let (brush_card, _) = cached_brushes(&palette);
+            unsafe {
+                SetTextColor(wparam as _, palette.text);
+                SetBkColor(wparam as _, palette.card);
+                SetBkMode(wparam as _, OPAQUE as i32);
+                brush_card as LRESULT
+            }
         }
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLORLISTBOX => {
             let palette = app
@@ -3374,6 +3883,31 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
             let (_, brush_sidebar) = cached_brushes(&palette);
             fill_background(hwnd, wparam as _, brush_sidebar)
         },
+        WM_PAINT => {
+            if let Some(window) = app.window.as_mut() {
+                unsafe {
+                    let mut ps: PAINTSTRUCT = std::mem::zeroed();
+                    let hdc = BeginPaint(hwnd, &mut ps);
+                    let pill = search_pill_rect(window.dpi);
+                    let r = win::scaled(6, window.dpi);
+                    let border = if window.search_focused {
+                        window.palette.control_active
+                    } else {
+                        window.palette.line
+                    };
+                    let brush = window.draw.brush(window.palette.card);
+                    let pen = window.draw.pen(border, 1);
+                    let old_pen = SelectObject(hdc, pen as _);
+                    let old_brush = SelectObject(hdc, brush as _);
+                    RoundRect(hdc, pill.left, pill.top, pill.right, pill.bottom, r, r);
+                    SelectObject(hdc, old_pen);
+                    SelectObject(hdc, old_brush);
+                    EndPaint(hwnd, &ps);
+                }
+                return 0;
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         WM_CLOSE => {
             close(app);
             0
@@ -3509,6 +4043,8 @@ fn rescale(window: &mut Window, dpi: u32) {
         }
         SendMessageW(window.nav, WM_SETFONT, window.font as usize, 1);
         SendMessageW(window.nav, LB_SETITEMHEIGHT, 0, win::scaled(38, dpi) as isize);
+        SendMessageW(window.search_box, WM_SETFONT, window.font as usize, 1);
+        SendMessageW(window.search_clear, WM_SETFONT, window.font as usize, 1);
         SendMessageW(window.status, WM_SETFONT, window.font as usize, 1);
         for id in [ID_REFRESH, ID_PREFERENCES, ID_ABOUT, ID_LOG] {
             let button = GetDlgItem(window.hwnd, id as i32);

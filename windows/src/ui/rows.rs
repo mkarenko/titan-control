@@ -70,6 +70,111 @@ pub struct Row {
     pub sub: bool,
 }
 
+/// English search analogies (acronyms and common alternative terms) for global filtering.
+pub fn search_aliases(row: &Row) -> &'static str {
+    match (&row.kind, row.code) {
+        (Kind::SystemResolution, _) => "res 4k 2160p uhd display size",
+        (Kind::SystemRefresh, _) => "hz fps hertz frequency",
+        (Kind::SystemScaling, _) => "dpi zoom windows scale",
+        (Kind::PictureMode, _) => "picture mode preset profile",
+        (Kind::Variant, _) => "variant default custom",
+        (Kind::Action(Action::PowerOff), _) => "power off shutdown sleep dpms",
+        (Kind::Action(Action::PipSwap | Action::PipReset), _) => {
+            "pip pbp split screen picture by picture dual input"
+        }
+        (
+            Kind::Action(Action::ResetColors | Action::ResetBrightnessContrast | Action::ResetFactory),
+            _,
+        ) => "reset defaults wipe",
+        (Kind::Text(DynText::Model | DynText::Usage), _) => "hours runtime uptime",
+        (_, Some(code)) => match code {
+            monitor::VCP_RATIO => "aspect ratio 16:9 21:9 4:3 1:1 ultrawide",
+            monitor::VCP_BRIGHTNESS => "luminance luma nits backlight",
+            monitor::VCP_CONTRAST => "black level white level",
+            monitor::VCP_DCR => "dynamic contrast auto contrast",
+            monitor::VCP_LOW_BLUE => "lbl blue light eye care night light",
+            monitor::VCP_SHARPNESS => "sharp clarity crisp",
+            monitor::VCP_GAMMA => "tone curve s curve",
+            monitor::VCP_HDR => "high dynamic range hdr10 pq wide gamut",
+            monitor::VCP_COLOR_ENHANCE => "vibrance vivid saturation boost",
+            monitor::VCP_CR_ENHANCE => "contrast enhance clarity",
+            monitor::VCP_SHADOW_BALANCE => "black equalizer black stabilizer dark boost shadows",
+            monitor::VCP_SUPER_RES => "super resolution upscale ai sharpen",
+            monitor::VCP_NIGHT_VISION => "dark boost low light",
+            monitor::VCP_DYNAMIC_OD => "overdrive response time ghosting blur ms",
+            monitor::VCP_LOCAL_DIMMING => "fald mini led miniled dimming zones",
+            monitor::VCP_HALO_CONTROL => "blooming halo backlight bleed",
+            monitor::VCP_DYDS => {
+                "bfi mbr mprt backlight strobing black frame insertion motion blur reduction ull"
+            }
+            monitor::VCP_COLOR_TEMP => "white balance kelvin 6500k",
+            monitor::VCP_RED | monitor::VCP_GREEN | monitor::VCP_BLUE => "white point gain rgb",
+            monitor::VCP_HUE_RED
+            | monitor::VCP_HUE_YELLOW
+            | monitor::VCP_HUE_GREEN
+            | monitor::VCP_HUE_CYAN
+            | monitor::VCP_HUE_BLUE
+            | monitor::VCP_HUE_MAGENTA => "6-axis tint color phase",
+            monitor::VCP_SATURATION_RED
+            | monitor::VCP_SATURATION_YELLOW
+            | monitor::VCP_SATURATION_GREEN
+            | monitor::VCP_SATURATION_CYAN
+            | monitor::VCP_SATURATION_BLUE
+            | monitor::VCP_SATURATION_MAGENTA => "6-axis chroma vividness",
+            monitor::VCP_ADAPTIVE_SYNC => "vrr variable refresh rate freesync g-sync gsync tearing",
+            monitor::VCP_SCREEN_SIZE => "dual mode 25 inch 24.5 wide crop esports",
+            monitor::VCP_FPS_COUNTER | monitor::VCP_FPS_POS => "refresh counter hz overlay osd fps",
+            monitor::VCP_CROSSHAIR | monitor::VCP_CROSSHAIR_SHAPE | monitor::VCP_CROSSHAIR_COLOR => {
+                "reticle aim sight dot"
+            }
+            monitor::VCP_STOPWATCH | monitor::VCP_STOPWATCH_TIME | monitor::VCP_STOPWATCH_POS => {
+                "timer countdown"
+            }
+            monitor::VCP_GAME_TIME | monitor::VCP_GAME_TIME_VAL | monitor::VCP_GAME_TIME_POS => {
+                "playtime session timer"
+            }
+            monitor::VCP_MAGNIFIER
+            | monitor::VCP_MAGNIFIER_ZOOM
+            | monitor::VCP_MAGNIFIER_SIZE
+            | monitor::VCP_MAGNIFIER_POS => "zoom scope sniper zoom",
+            monitor::VCP_HAWKEYE
+            | monitor::VCP_HAWKEYE_SIZE
+            | monitor::VCP_HAWKEYE_POS
+            | monitor::VCP_HAWKEYE_LEVEL => "sniper scope center zoom",
+            monitor::VCP_EYESHIELD_REMINDER => "eyeshield eye break rest alert",
+            monitor::VCP_INPUT_SELECT => "input port dp displayport hdmi usb-c usbc type-c switch input",
+            monitor::VCP_OUTPUT_RANGE => "0-255 16-235 limited full quantization black level",
+            monitor::VCP_USB_HUB_SOURCE => "kvm upstream usb-b usb-c peripherals",
+            monitor::VCP_VOLUME => "sound audio speaker speakers",
+            monitor::VCP_MUTE => "silence audio off",
+            monitor::VCP_PIP_MODE
+            | monitor::VCP_PIP_SOURCE
+            | monitor::VCP_AUDIO_SOURCE
+            | monitor::VCP_PIP_POSITION
+            | monitor::VCP_PIP_SIZE => "pip pbp split screen picture by picture dual input",
+            monitor::VCP_REAR_LED
+            | monitor::VCP_LED_MODE
+            | monitor::VCP_LED_COLOR
+            | monitor::VCP_LED_STRENGTH
+            | monitor::VCP_LED_FRONT_COLOR
+            | monitor::VCP_LED_REAR_COLOR => "rgb ambient rear light",
+            monitor::VCP_POWER_LED => "power led status led power indicator standby led",
+            monitor::VCP_OSD_LOCK => "menu lock buttons lock",
+            monitor::VCP_BUTTON_LOCK => "custom 1 custom 2 front buttons hotkey lock",
+            monitor::VCP_OSD_LANG => "osd language",
+            monitor::VCP_OSD_TIME => "osd timeout menu timeout duration",
+            monitor::VCP_OSD_H_POS | monitor::VCP_OSD_V_POS | monitor::VCP_OSD_TRANS => {
+                "osd position opacity alpha"
+            }
+            monitor::VCP_POWER_SAVING => "eco standby sleep dpms",
+            monitor::VCP_USB_POWER_SLEEP => "charging always on usb standby usb",
+            monitor::VCP_QUICK_BOOT => "fast boot fast wake instant on",
+            _ => "",
+        },
+        _ => "",
+    }
+}
+
 const fn row(label: &'static str, kind: Kind, code: Option<u8>) -> Row {
     Row { label, kind, code, tooltip: None, favorite: None, sub: false }
 }
@@ -547,6 +652,22 @@ fn monitor_page() -> Page {
             row("Resetuj jasność i kontrast", Kind::Action(Action::ResetBrightnessContrast), None),
             row("Przywróć ustawienia fabryczne", Kind::Action(Action::ResetFactory), None),
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_aliases_cover_common_analogies() {
+        let all: Vec<Row> = pages().into_iter().flat_map(|p| p.rows).collect();
+        let find = |code: u8| all.iter().find(|r| r.code == Some(code)).expect("row");
+        assert!(search_aliases(find(monitor::VCP_ADAPTIVE_SYNC)).contains("vrr"));
+        assert!(search_aliases(find(monitor::VCP_LOCAL_DIMMING)).contains("fald"));
+        assert!(search_aliases(find(monitor::VCP_DYDS)).contains("bfi"));
+        assert!(search_aliases(find(monitor::VCP_USB_HUB_SOURCE)).contains("kvm"));
+        assert!(search_aliases(find(monitor::VCP_PIP_MODE)).contains("split screen"));
     }
 }
 

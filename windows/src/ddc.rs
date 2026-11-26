@@ -77,6 +77,8 @@ pub struct DisplayMonitor {
 
     /// Display device the monitor belongs to, `\\.\DISPLAY1`.
     pub connector: String,
+    /// Windows device interface name (`\\?\DISPLAY#...`) identifying the physical panel across display renumbering.
+    pub device_id: Option<String>,
     pub primary: bool,
     /// Handle of the monitor in `EnumDisplayMonitors`, used to reach its DDC/CI handles.
     monitor: HMONITOR,
@@ -84,6 +86,15 @@ pub struct DisplayMonitor {
 
 /// Every monitor Windows currently drives, including ones without DDC/CI.
 pub fn enumerate_monitors() -> Vec<DisplayMonitor> {
+    enumerate_monitors_with_log(true)
+}
+
+/// Enumerates monitors without writing a `[DISPLAY]` entry per monitor (used by retry loops).
+pub fn enumerate_monitors_quiet() -> Vec<DisplayMonitor> {
+    enumerate_monitors_with_log(false)
+}
+
+fn enumerate_monitors_with_log(log_displays: bool) -> Vec<DisplayMonitor> {
     let mut handles: Vec<HMONITOR> = Vec::new();
     unsafe {
         EnumDisplayMonitors(
@@ -108,11 +119,14 @@ pub fn enumerate_monitors() -> Vec<DisplayMonitor> {
             Some((name, _serial)) => name,
             None => connector.clone(),
         };
-        log!("[DISPLAY] {connector}: {name} [{resolution}] id={device_id:?}");
+        if log_displays {
+            log!("[DISPLAY] {connector}: {name} [{resolution}] id={device_id:?}");
+        }
         monitors.push(DisplayMonitor {
             name,
             resolution,
             connector,
+            device_id,
             primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
             monitor,
         });
@@ -212,6 +226,7 @@ pub struct MsiDdc {
     monitor: HANDLE,
     target_name: String,
     target_connector: String,
+    target_device_id: Option<String>,
     last_request: Option<Instant>,
     /// Set after a failed exchange: the next operation first waits for the monitor to answer again.
     needs_settle: bool,
@@ -230,6 +245,35 @@ impl Drop for MsiDdc {
             }
         }
     }
+}
+
+/// Finds the original target monitor after a hot-plug / link reset without latching onto an unrelated display
+/// that Windows temporarily moved onto `target_connector` (e.g. `\\.\DISPLAY1`).
+fn find_reconnect_candidate<'a>(
+    monitors: &'a [DisplayMonitor],
+    target_name: &str,
+    target_connector: &str,
+    target_device_id: Option<&str>,
+) -> Option<&'a DisplayMonitor> {
+    if let Some(id) = target_device_id
+        && let Some(found) = monitors
+            .iter()
+            .find(|m| m.device_id.as_deref().is_some_and(|cand| cand.eq_ignore_ascii_case(id)))
+    {
+        return Some(found);
+    }
+    let has_named_target = !target_name.is_empty() && !target_name.starts_with(r"\\.\");
+    if has_named_target {
+        return monitors
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(target_name))
+            .or_else(|| monitors.iter().find(|m| m.name.contains("P275MV")));
+    }
+    monitors.iter().find(|m| m.name.contains("P275MV")).or_else(|| {
+        monitors
+            .iter()
+            .find(|m| m.connector == target_connector && (m.name.is_empty() || m.name.starts_with(r"\\.\")))
+    })
 }
 
 impl MsiDdc {
@@ -274,6 +318,7 @@ impl MsiDdc {
             monitor: handle,
             target_name: monitor.name.clone(),
             target_connector: monitor.connector.clone(),
+            target_device_id: monitor.device_id.clone(),
             last_request: None,
             needs_settle: true,
             last_reply: None,
@@ -291,18 +336,17 @@ impl MsiDdc {
         }
         self.monitor = ptr::null_mut();
 
-        for attempt in 0..16 {
+        for attempt in 0..24 {
             if attempt > 0 {
                 thread::sleep(Duration::from_millis(250));
             }
-            let monitors = enumerate_monitors();
-            let candidate = monitors
-                .iter()
-                .find(|m| !self.target_name.is_empty() && m.name.eq_ignore_ascii_case(&self.target_name))
-                .or_else(|| monitors.iter().find(|m| m.name.eq_ignore_ascii_case("P275MV PLUS")))
-                .or_else(|| monitors.iter().find(|m| m.connector == self.target_connector));
-
-            let Some(found) = candidate else {
+            let monitors = enumerate_monitors_quiet();
+            let Some(found) = find_reconnect_candidate(
+                &monitors,
+                &self.target_name,
+                &self.target_connector,
+                self.target_device_id.as_deref(),
+            ) else {
                 continue;
             };
 
@@ -329,6 +373,9 @@ impl MsiDdc {
                 attempt + 1
             );
             self.target_connector = found.connector.clone();
+            if found.device_id.is_some() {
+                self.target_device_id = found.device_id.clone();
+            }
             self.physical = physical;
             self.monitor = handle;
             self.last_reply = None;
@@ -482,3 +529,36 @@ fn describe(error: u32) -> String {
 const _: Duration = REQUEST_GAP;
 /// `HWND` is not used here; keep the import list honest for readers of the module.
 type _UnusedHwnd = HWND;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn monitor(name: &str, connector: &str, device_id: Option<&str>) -> DisplayMonitor {
+        DisplayMonitor {
+            name: name.into(),
+            resolution: String::new(),
+            connector: connector.into(),
+            device_id: device_id.map(str::to_owned),
+            primary: connector == r"\\.\DISPLAY1",
+            monitor: ptr::null_mut(),
+        }
+    }
+
+    #[test]
+    fn reconnect_does_not_hijack_other_monitor_on_same_display_number() {
+        let aoc_only = vec![monitor("AOC 24G2W1G3-", r"\\.\DISPLAY1", Some(r"\\?\DISPLAY#AOC2402#1"))];
+        assert!(
+            find_reconnect_candidate(&aoc_only, "P275MV PLUS", r"\\.\DISPLAY1", Some(r"\\?\DISPLAY#LHC907D#1")).is_none()
+        );
+        assert!(find_reconnect_candidate(&aoc_only, "P275MV PLUS", r"\\.\DISPLAY1", None).is_none());
+
+        let renumbered = vec![
+            monitor("AOC 24G2W1G3-", r"\\.\DISPLAY1", Some(r"\\?\DISPLAY#AOC2402#1")),
+            monitor("P275MV PLUS", r"\\.\DISPLAY2", Some(r"\\?\DISPLAY#LHC907D#1")),
+        ];
+        let picked = find_reconnect_candidate(&renumbered, "P275MV PLUS", r"\\.\DISPLAY1", Some(r"\\?\DISPLAY#LHC907D#1"));
+        assert_eq!(picked.map(|m| m.name.as_str()), Some("P275MV PLUS"));
+        assert_eq!(picked.map(|m| m.connector.as_str()), Some(r"\\.\DISPLAY2"));
+    }
+}

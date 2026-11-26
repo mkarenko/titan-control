@@ -415,33 +415,53 @@ fn build_about(app: &mut App, hwnd: HWND, dpi: u32) {
     }
 }
 
-fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
+fn handle_command(app: &mut App, hwnd: HWND, id: u16, notification: u32) {
     match id {
-        ID_CLOSE => unsafe {
-            DestroyWindow(hwnd);
-        },
+        ID_CLOSE => {
+            if notification != BN_CLICKED {
+                return;
+            }
+            close_modal(app, hwnd);
+        }
         ID_LANGUAGE => {
+            if notification != CBN_SELCHANGE as u32 {
+                return;
+            }
             let selection = unsafe { SendMessageW(GetDlgItem(hwnd, ID_LANGUAGE as i32), CB_GETCURSEL, 0, 0) } as usize;
             let saved = match selection {
                 1 => Some(lang_index(&AppLang::EN)),
                 2 => Some(lang_index(&AppLang::PL)),
                 _ => None,
             };
-            app.settings.language = saved;
-            app.lang = match saved {
+            let new_lang = match saved {
                 Some(index) => lang_from_index(index),
                 None => crate::i18n::detect_system_lang(),
             };
+            if app.settings.language == saved && app.lang == new_lang {
+                return;
+            }
+            app.settings.language = saved;
+            app.lang = new_lang;
             app.save_settings();
             // The settings window is built again (in the new language) once this dialog closes.
             app.needs_rebuild = true;
             crate::label_refresh(app);
         }
         ID_THEME => {
+            if notification != CBN_SELCHANGE as u32 {
+                return;
+            }
             let selection = unsafe { SendMessageW(GetDlgItem(hwnd, ID_THEME as i32), CB_GETCURSEL, 0, 0) } as u32;
+            if app.settings.theme == selection {
+                return;
+            }
+            let palette_changed = crate::ui::palette_for(app.settings.theme).background
+                != crate::ui::palette_for(selection).background;
             app.settings.theme = selection;
             app.save_settings();
-            app.needs_rebuild = true;
+            if palette_changed {
+                app.needs_rebuild = true;
+            }
             win::set_process_dark_mode(app.dark());
             theme_dialog_children(hwnd, app.dark());
             unsafe {
@@ -450,6 +470,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             }
         }
         ID_TRAY_ICON => {
+            if notification != CBN_SELCHANGE as u32 {
+                return;
+            }
             let selection = unsafe { SendMessageW(GetDlgItem(hwnd, ID_TRAY_ICON as i32), CB_GETCURSEL, 0, 0) } as usize;
             app.settings.tray_icon_style = match selection {
                 1 => TrayIconStyle::Light,
@@ -460,6 +483,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             crate::tray::refresh(app);
         }
         ID_MODIFIER => {
+            if notification != CBN_SELCHANGE as u32 {
+                return;
+            }
             let selection =
                 unsafe { SendMessageW(GetDlgItem(hwnd, ID_MODIFIER as i32), CB_GETCURSEL, 0, 0) } as usize;
             app.settings.favorite_modifier =
@@ -468,6 +494,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             crate::register_hotkeys(app);
         }
         ID_FIRMWARE => {
+            if notification != CBN_SELCHANGE as u32 {
+                return;
+            }
             let selection =
                 unsafe { SendMessageW(GetDlgItem(hwnd, ID_FIRMWARE as i32), CB_GETCURSEL, 0, 0) } as usize;
             if let Some(&package) = FirmwarePackage::ALL.get(selection) {
@@ -479,6 +508,9 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             }
         }
         ID_AUTOSTART => {
+            if notification != BN_CLICKED {
+                return;
+            }
             let checked = unsafe { SendMessageW(GetDlgItem(hwnd, ID_AUTOSTART as i32), BM_GETCHECK, 0, 0) }
                 == BST_CHECKED as isize;
             app.settings.auto_start = checked;
@@ -486,15 +518,33 @@ fn handle_command(app: &mut App, hwnd: HWND, id: u16) {
             crate::app::sync_autostart(app);
         }
         ID_MINIMIZED => {
+            if notification != BN_CLICKED {
+                return;
+            }
             let checked = unsafe { SendMessageW(GetDlgItem(hwnd, ID_MINIMIZED as i32), BM_GETCHECK, 0, 0) }
                 == BST_CHECKED as isize;
             app.settings.start_minimized = checked;
             app.save_settings();
         }
-        ID_WEBSITE => settings::open_url("https://github.com/mkarenko/titan-control"),
-        ID_ISSUES => settings::open_url("https://github.com/mkarenko/titan-control/issues/new"),
-        ID_COFFEE => settings::open_url("https://buymeacoffee.com/mkarenko"),
+        ID_WEBSITE if notification == BN_CLICKED => settings::open_url("https://github.com/mkarenko/titan-control"),
+        ID_ISSUES if notification == BN_CLICKED => {
+            settings::open_url("https://github.com/mkarenko/titan-control/issues/new")
+        }
+        ID_COFFEE if notification == BN_CLICKED => settings::open_url("https://buymeacoffee.com/mkarenko"),
         _ => {}
+    }
+}
+
+fn close_modal(app: &App, hwnd: HWND) {
+    PREFS_TOOLTIP.with(|cell| *cell.borrow_mut() = ptr::null_mut());
+    let owner = app.dialog_owner();
+    unsafe {
+        // Re-enable the owner before destroying the modal popup so Windows hands focus directly back to it
+        // without flashing an unrelated window behind the app.
+        if !owner.is_null() {
+            EnableWindow(owner, 1);
+        }
+        DestroyWindow(hwnd);
     }
 }
 
@@ -515,14 +565,11 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
     let _ = &app;
     match message {
         WM_COMMAND => {
-            handle_command(app, hwnd, (wparam & 0xFFFF) as u16);
+            handle_command(app, hwnd, (wparam & 0xFFFF) as u16, ((wparam >> 16) & 0xFFFF) as u32);
             0
         }
         WM_CLOSE => {
-            PREFS_TOOLTIP.with(|cell| *cell.borrow_mut() = ptr::null_mut());
-            unsafe {
-                DestroyWindow(hwnd);
-            }
+            close_modal(app, hwnd);
             0
         }
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {

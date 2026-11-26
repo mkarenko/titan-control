@@ -1,6 +1,6 @@
 //! Thin Win32 helpers: string conversion, error text, icon loading, DPI and theme plumbing.
 
-use std::{ffi::c_void, mem, ptr};
+use std::{ffi::c_void, mem, ptr, sync::OnceLock};
 
 use windows_sys::Win32::Foundation::{GetLastError, HWND};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
@@ -197,17 +197,31 @@ pub fn set_dark_frame(window: HWND, dark: bool) {
     }
 }
 
+#[link(name = "uxtheme")]
+unsafe extern "system" {
+    fn SetWindowTheme(hwnd: HWND, sub_app_name: *const u16, sub_id_list: *const u16) -> i32;
+}
+
+const THEME_EXPLORER: &[u16] = &[
+    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16, b'r' as u16, 0,
+];
+const THEME_DARK_EXPLORER: &[u16] = &[
+    b'D' as u16, b'a' as u16, b'r' as u16, b'k' as u16, b'M' as u16, b'o' as u16, b'd' as u16, b'e' as u16,
+    b'_' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
+    b'r' as u16, 0,
+];
+const THEME_DARK_CFD: &[u16] = &[
+    b'D' as u16, b'a' as u16, b'r' as u16, b'k' as u16, b'M' as u16, b'o' as u16, b'd' as u16, b'e' as u16,
+    b'_' as u16, b'C' as u16, b'F' as u16, b'D' as u16, 0,
+];
+
 /// Applies the modern Explorer visual style (or DarkMode_Explorer) to a child control.
 /// Passing `ptr::null()` for `sub_id_list` preserves ComCtl32 v6 / UxTheme visual styles.
 pub fn set_control_theme(window: HWND, dark: bool) {
     if window.is_null() {
         return;
     }
-    #[link(name = "uxtheme")]
-    unsafe extern "system" {
-        fn SetWindowTheme(hwnd: HWND, sub_app_name: *const u16, sub_id_list: *const u16) -> i32;
-    }
-    let theme = if dark { wide("DarkMode_Explorer") } else { wide("Explorer") };
+    let theme = if dark { THEME_DARK_EXPLORER } else { THEME_EXPLORER };
     unsafe {
         allow_dark_mode(window, dark);
         SetWindowTheme(window, theme.as_ptr(), ptr::null());
@@ -219,28 +233,44 @@ pub fn set_combo_theme(window: HWND, dark: bool) {
     if window.is_null() {
         return;
     }
-    #[link(name = "uxtheme")]
-    unsafe extern "system" {
-        fn SetWindowTheme(hwnd: HWND, sub_app_name: *const u16, sub_id_list: *const u16) -> i32;
-    }
-    let theme = if dark { wide("DarkMode_CFD") } else { wide("Explorer") };
+    let theme = if dark { THEME_DARK_CFD } else { THEME_EXPLORER };
     unsafe {
         allow_dark_mode(window, dark);
         SetWindowTheme(window, theme.as_ptr(), ptr::null());
     }
 }
 
+fn uxtheme_procs() -> (
+    Option<unsafe extern "system" fn(HWND, i32) -> i32>,
+    Option<unsafe extern "system" fn(i32) -> i32>,
+    Option<unsafe extern "system" fn()>,
+) {
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    #[derive(Clone, Copy)]
+    struct Procs {
+        allow_dark: Option<unsafe extern "system" fn(HWND, i32) -> i32>,
+        set_app_mode: Option<unsafe extern "system" fn(i32) -> i32>,
+        flush_menu: Option<unsafe extern "system" fn()>,
+    }
+    static PROCS: OnceLock<Procs> = OnceLock::new();
+    let procs = PROCS.get_or_init(|| unsafe {
+        let module = LoadLibraryW(wide("uxtheme.dll").as_ptr());
+        if module.is_null() {
+            return Procs { allow_dark: None, set_app_mode: None, flush_menu: None };
+        }
+        Procs {
+            allow_dark: GetProcAddress(module, 133 as usize as *const u8).map(|p| mem::transmute(p)),
+            set_app_mode: GetProcAddress(module, 135 as usize as *const u8).map(|p| mem::transmute(p)),
+            flush_menu: GetProcAddress(module, 136 as usize as *const u8).map(|p| mem::transmute(p)),
+        }
+    });
+    (procs.allow_dark, procs.set_app_mode, procs.flush_menu)
+}
+
 /// Tells `uxtheme` that this window may be drawn dark (undocumented, ignored where it does not exist).
 fn allow_dark_mode(window: HWND, allow: bool) {
-    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-    let library = wide("uxtheme.dll");
-    unsafe {
-        let module = LoadLibraryW(library.as_ptr());
-        if module.is_null() {
-            return;
-        }
-        if let Some(address) = GetProcAddress(module, 133 as usize as *const u8) {
-            let function: unsafe extern "system" fn(HWND, i32) -> i32 = mem::transmute(address);
+    if let (Some(function), _, _) = uxtheme_procs() {
+        unsafe {
             function(window, if allow { 1 } else { 0 });
         }
     }
@@ -288,20 +318,13 @@ fn registry_personalize_dword(value_name: &str) -> Option<u32> {
 /// Asks the common controls to render dark, the switch every Win32 application with dark mode support uses
 /// (`uxtheme.dll` ordinals 135 and 136). Unsupported systems simply ignore it.
 pub fn set_process_dark_mode(dark: bool) {
-    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-    let library = wide("uxtheme.dll");
+    let (_, set_preferred_app_mode, flush_menu_themes) = uxtheme_procs();
     unsafe {
-        let module = LoadLibraryW(library.as_ptr());
-        if module.is_null() {
-            return;
-        }
-        if let Some(set_preferred_app_mode) = GetProcAddress(module, 135 as usize as *const u8) {
-            let function: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(set_preferred_app_mode);
+        if let Some(function) = set_preferred_app_mode {
             // 2 = force dark, 3 = force light.
             function(if dark { 2 } else { 3 });
         }
-        if let Some(flush_menu_themes) = GetProcAddress(module, 136 as usize as *const u8) {
-            let function: unsafe extern "system" fn() = std::mem::transmute(flush_menu_themes);
+        if let Some(function) = flush_menu_themes {
             function();
         }
     }

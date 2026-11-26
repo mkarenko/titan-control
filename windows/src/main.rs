@@ -53,6 +53,14 @@ const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: isize = -4;
 
 const ICON_THEME: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon-theme.ico"));
 
+fn taskbar_created_message() -> u32 {
+    static MSG: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *MSG.get_or_init(|| {
+        let name = win::wide("TaskbarCreated");
+        unsafe { RegisterWindowMessageW(name.as_ptr()) }
+    })
+}
+
 fn main() {
     // Per-monitor v2 awareness: the layout is computed in real pixels, so the window stays sharp at every scale.
     // The manifest asks for the same; setting it here keeps it true even when the manifest is not applied.
@@ -106,6 +114,7 @@ fn main() {
         tray_added: false,
         start_minimized: false,
         needs_rebuild: false,
+        active_page: 0,
         quit: false,
         lang,
         settings,
@@ -120,8 +129,15 @@ fn main() {
     app.sync_startup_state();
 
     monitor::start_worker(worker_rx, monitor::UiSink::new(ui_tx, host as isize), |monitor| {
-        ddc::MsiDdc::open(monitor).ok()
+        match ddc::MsiDdc::open(monitor) {
+            Ok(ddc) => Some(ddc),
+            Err(error) => {
+                log!("[DDC] {} ({}): {error}", monitor.connector, monitor.name);
+                None
+            }
+        }
     });
+    let _ = taskbar_created_message();
     tray::create(app);
     register_hotkeys(app);
     app::sync_autostart(app);
@@ -350,6 +366,15 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
             unsafe {
                 PostQuitMessage(0);
             }
+            0
+        }
+        other if {
+            let msg = taskbar_created_message();
+            msg != 0 && other == msg
+        } =>
+        {
+            app.tray_added = false;
+            tray::create(app);
             0
         }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },

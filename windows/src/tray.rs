@@ -142,7 +142,7 @@ pub fn notify(app: &App, title: &str, text: &str, warning: bool) {
 pub fn on_callback(app: &mut App, _x: i32, _y: i32, lparam: isize) {
     let event = (lparam as usize) & 0xFFFF;
     match event as u32 {
-        NIN_SELECT | NIN_KEYSELECT => toggle_window(app),
+        NIN_SELECT | NIN_KEYSELECT => crate::ui::open(app),
         WM_CONTEXTMENU => show_menu(app),
         _ => {}
     }

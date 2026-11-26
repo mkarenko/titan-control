@@ -1663,41 +1663,110 @@ where
         .name("ddc".into())
         .stack_size(256 * 1024)
         .spawn(move || {
-            ui.send(UiCmd::Progress("Wykrywam monitory...".into()));
-            let monitors = crate::ddc::enumerate_monitors();
-            let cached_name = cache_store::load_last_monitor();
-
-            let target = monitors
-                .iter()
-                .find(|monitor| cached_name.as_ref().is_some_and(|cached| monitor.name == *cached))
-                .or_else(|| monitors.iter().find(|monitor| monitor.name.contains("P275MV")))
-                .or_else(|| monitors.iter().find(|monitor| monitor.primary && !monitor.name.starts_with("\\\\.\\")))
-                .or_else(|| monitors.first())
-                .cloned();
-            let Some(monitor) = target else {
-                ui.send(UiCmd::Error("Monitor not found".into()));
-                return;
-            };
-            log!("[DISPLAY] Target monitor: {} ({})", monitor.name, monitor.connector);
-
-            ui.send(UiCmd::Progress("Szukam monitora...".into()));
-            let Some(link) = open(&monitor) else {
-                ui.send(UiCmd::Error("Monitor not found".into()));
-                return;
-            };
-
-            let Some((ddc, info, table_read)) =
-                connect(MsiDdc::new(link), &monitor.name, &monitor.resolution, &monitor.connector, &ui)
-            else {
-                ui.send(UiCmd::Error("Monitor not found".into()));
+            let mut dyds_with_adaptive_sync = false;
+            let connected = connect_with_retry(
+                &worker_rx,
+                &ui,
+                &mut dyds_with_adaptive_sync,
+                |attempt| {
+                    if attempt == 0 {
+                        crate::ddc::enumerate_monitors()
+                    } else {
+                        crate::ddc::enumerate_monitors_quiet()
+                    }
+                },
+                &open,
+                |attempt| {
+                    if attempt < 6 {
+                        Duration::from_millis(500)
+                    } else {
+                        Duration::from_secs(2)
+                    }
+                },
+                20,
+            );
+            let Some((ddc, info, table_read, name)) = connected else {
                 return;
             };
 
             ui.send(UiCmd::MonitorFound(info));
-            cache_store::save_last_monitor(&monitor.name, &monitor.connector);
-            Worker::new(ddc, monitor.name.clone(), ui, table_read).run(&worker_rx);
+            let mut worker = Worker::new(ddc, name, ui, table_read);
+            worker.dyds_with_adaptive_sync = dyds_with_adaptive_sync;
+            worker.run(&worker_rx);
         })
         .expect("spawn the monitor thread");
+}
+
+fn select_target_monitor(
+    monitors: &[crate::ddc::DisplayMonitor],
+    cached_name: Option<&str>,
+) -> Option<crate::ddc::DisplayMonitor> {
+    monitors
+        .iter()
+        .find(|monitor| cached_name.is_some_and(|cached| monitor.name == cached))
+        .or_else(|| monitors.iter().find(|monitor| monitor.name.contains("P275MV")))
+        .or_else(|| monitors.iter().find(|monitor| monitor.primary && !monitor.name.starts_with(r"\\.\")))
+        .or_else(|| monitors.first())
+        .cloned()
+}
+
+/// Retries monitor enumeration, opening, and DDC handshake so Windows logon/GPU initialization races
+/// don't exit the tray app immediately on startup.
+fn connect_with_retry<E, F, L, W>(
+    worker_rx: &mpsc::Receiver<WorkerCmd>,
+    ui: &UiSink,
+    dyds_with_adaptive_sync: &mut bool,
+    enumerate: E,
+    open: F,
+    retry_wait: W,
+    max_attempts: usize,
+) -> Option<(MsiDdc<L>, MonitorInfo, bool, String)>
+where
+    E: Fn(usize) -> Vec<crate::ddc::DisplayMonitor>,
+    F: Fn(&crate::ddc::DisplayMonitor) -> Option<L>,
+    L: Link,
+    W: Fn(usize) -> Duration,
+{
+    ui.send(UiCmd::Progress("Wykrywam monitory...".into()));
+    let cached_name = cache_store::load_last_monitor();
+    let mut logged_target = false;
+
+    for attempt in 0..max_attempts {
+        while let Ok(cmd) = worker_rx.try_recv() {
+            match cmd {
+                WorkerCmd::Stop => return None,
+                WorkerCmd::DydsWithAdaptiveSync(allowed) => *dyds_with_adaptive_sync = allowed,
+                _ => {}
+            }
+        }
+
+        let monitors = enumerate(attempt);
+        if let Some(monitor) = select_target_monitor(&monitors, cached_name.as_deref()) {
+            if !logged_target {
+                log!("[DISPLAY] Target monitor: {} ({})", monitor.name, monitor.connector);
+                ui.send(UiCmd::Progress("Szukam monitora...".into()));
+                logged_target = true;
+            }
+            if let Some(link) = open(&monitor)
+                && let Some((ddc, info, table_read)) =
+                    connect(MsiDdc::new(link), &monitor.name, &monitor.resolution, &monitor.connector, ui)
+            {
+                cache_store::save_last_monitor(&monitor.name, &monitor.connector);
+                return Some((ddc, info, table_read, monitor.name));
+            }
+        }
+
+        if attempt + 1 < max_attempts {
+            match worker_rx.recv_timeout(retry_wait(attempt)) {
+                Ok(WorkerCmd::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+                Ok(WorkerCmd::DydsWithAdaptiveSync(allowed)) => *dyds_with_adaptive_sync = allowed,
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+
+    ui.send(UiCmd::Error("Monitor not found".into()));
+    None
 }
 
 const _: () = {

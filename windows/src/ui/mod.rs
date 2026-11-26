@@ -4,15 +4,21 @@
 //! closed, so none of its memory is kept while the application sits in the tray. Controls are Win32 children rendered
 //! with a modern card-based layout, owner-drawn pill switches, segmented toggle groups, and double-buffered pages.
 
-use std::{cell::RefCell, collections::HashMap, ffi::c_void, ptr, time::Instant};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    ffi::c_void,
+    ptr,
+    time::Instant,
+};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen, CreateSolidBrush,
-    DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, InvalidateRect, LineTo, MoveToEx,
-    RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow, DT_CENTER, DT_END_ELLIPSIS, DT_LEFT,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, HFONT, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, SRCCOPY,
-    TRANSPARENT,
+    DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, IntersectClipRect, InvalidateRect,
+    LineTo, MoveToEx, RoundRect, SelectClipRgn, SelectObject, SetBkColor, SetBkMode, SetTextColor, UpdateWindow,
+    DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBITMAP, HBRUSH, HDC, HFONT, HPEN,
+    NULL_BRUSH, PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
@@ -21,7 +27,7 @@ use windows_sys::Win32::UI::Controls::{
     TBM_SETPOS, TBM_SETRANGE, TBS_HORZ, TBS_NOTICKS, TTM_SETMAXTIPWIDTH, TTS_ALWAYSTIP, TTS_NOPREFIX,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    EnableWindow, GetAsyncKeyState, IsWindowEnabled, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -275,6 +281,100 @@ struct SectionUi {
     title: String,
 }
 
+/// Reusable GDI objects and page off-screen backbuffer so painting never allocates per frame.
+struct DrawCache {
+    brushes: HashMap<u32, HBRUSH>,
+    pens: HashMap<(u32, i32), HPEN>,
+    back_dc: HDC,
+    back_bmp: HBITMAP,
+    stock_bmp: *mut c_void,
+    back_w: i32,
+    back_h: i32,
+}
+
+impl DrawCache {
+    fn new() -> Self {
+        Self {
+            brushes: HashMap::new(),
+            pens: HashMap::new(),
+            back_dc: ptr::null_mut(),
+            back_bmp: ptr::null_mut(),
+            stock_bmp: ptr::null_mut(),
+            back_w: 0,
+            back_h: 0,
+        }
+    }
+
+    unsafe fn brush(&mut self, color: u32) -> HBRUSH {
+        *self
+            .brushes
+            .entry(color)
+            .or_insert_with(|| unsafe { CreateSolidBrush(color) })
+    }
+
+    unsafe fn pen(&mut self, color: u32, width: i32) -> HPEN {
+        *self
+            .pens
+            .entry((color, width))
+            .or_insert_with(|| unsafe { CreatePen(PS_SOLID, width, color) })
+    }
+
+    unsafe fn backbuffer(&mut self, hdc: HDC, w: i32, h: i32) -> (HDC, bool) {
+        unsafe {
+            if self.back_dc.is_null() {
+                self.back_dc = CreateCompatibleDC(hdc);
+            }
+            if !self.back_dc.is_null() && (self.back_bmp.is_null() || w > self.back_w || h > self.back_h) {
+                let alloc_w = w.max(self.back_w);
+                let alloc_h = h.max(self.back_h);
+                let new_bmp = CreateCompatibleBitmap(hdc, alloc_w, alloc_h);
+                if !new_bmp.is_null() {
+                    let prev = SelectObject(self.back_dc, new_bmp as _);
+                    if self.stock_bmp.is_null() {
+                        self.stock_bmp = prev;
+                    }
+                    if !self.back_bmp.is_null() {
+                        DeleteObject(self.back_bmp as _);
+                    }
+                    self.back_bmp = new_bmp;
+                    self.back_w = alloc_w;
+                    self.back_h = alloc_h;
+                }
+            }
+            (self.back_dc, !self.back_dc.is_null() && !self.back_bmp.is_null())
+        }
+    }
+
+    unsafe fn release(&mut self) {
+        unsafe {
+            for (_, b) in self.brushes.drain() {
+                if !b.is_null() {
+                    DeleteObject(b as _);
+                }
+            }
+            for (_, p) in self.pens.drain() {
+                if !p.is_null() {
+                    DeleteObject(p as _);
+                }
+            }
+            if !self.back_dc.is_null() {
+                if !self.stock_bmp.is_null() {
+                    SelectObject(self.back_dc, self.stock_bmp);
+                    self.stock_bmp = ptr::null_mut();
+                }
+                DeleteDC(self.back_dc);
+                self.back_dc = ptr::null_mut();
+            }
+            if !self.back_bmp.is_null() {
+                DeleteObject(self.back_bmp as _);
+                self.back_bmp = ptr::null_mut();
+            }
+            self.back_w = 0;
+            self.back_h = 0;
+        }
+    }
+}
+
 pub struct Window {
     pub hwnd: HWND,
     font: HFONT,
@@ -283,6 +383,7 @@ pub struct Window {
     brush_bg: HBRUSH,
     brush_card: HBRUSH,
     brush_sidebar: HBRUSH,
+    draw: DrawCache,
     tooltip: HWND,
     palette: Palette,
     status: HWND,
@@ -300,6 +401,14 @@ pub struct Window {
     buttons: HashMap<isize, String>,
     /// Star buttons: window → (favourite id, is_active).
     stars: HashMap<isize, (&'static str, bool)>,
+    /// Header and hero `STATIC` HWNDs that sit directly on the page background.
+    page_bg_labels: HashSet<isize>,
+    /// Cached label strings (`status` and `KindUi::Text`) to skip unchanged `SetWindowTextW` calls.
+    text_cache: HashMap<isize, String>,
+    /// Cached slider display values keyed by trackbar HWND to skip redundant label updates.
+    slider_cache: HashMap<isize, u16>,
+    /// Cached `(modes_len, current_mode, dpi)` for skipping redundant system combo rebuilds.
+    last_system_key: Option<(usize, Option<(u32, u32, u32)>, u32)>,
     fav_key_held: bool,
     active: usize,
     applying: bool,
@@ -349,6 +458,7 @@ pub fn close(app: &mut App) {
         KillTimer(app.host, TIMER_FAV_KEY);
     }
     if let Some(mut window) = app.window.take() {
+        app.active_page = window.active;
         release(&mut window);
         if !window.hwnd.is_null() {
             unsafe {
@@ -451,9 +561,17 @@ pub fn poll_favorites_key(app: &mut App) {
             continue;
         }
         let is_fav = window.stars.get(&(star_hwnd as isize)).is_some_and(|(_, fav)| *fav);
-        let should_show = held || is_fav;
-        unsafe {
-            ShowWindow(star_hwnd, if should_show { SW_SHOW } else { SW_HIDE });
+        set_visible(star_hwnd, held || is_fav);
+    }
+}
+
+/// Shows or hides a control based on its own `WS_VISIBLE` style bit (unlike `IsWindowVisible`,
+/// which returns false whenever the parent page or settings window is currently hidden).
+fn set_visible(hwnd: HWND, visible: bool) {
+    unsafe {
+        let style_visible = (GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_VISIBLE) != 0;
+        if style_visible != visible {
+            ShowWindow(hwnd, if visible { SW_SHOW } else { SW_HIDE });
         }
     }
 }
@@ -498,6 +616,7 @@ fn create_shell(app: &mut App) -> Window {
         brush_bg,
         brush_card,
         brush_sidebar,
+        draw: DrawCache::new(),
         tooltip: ptr::null_mut(),
         palette,
         status: ptr::null_mut(),
@@ -511,6 +630,10 @@ fn create_shell(app: &mut App) -> Window {
         toggles: HashMap::new(),
         buttons: HashMap::new(),
         stars: HashMap::new(),
+        page_bg_labels: HashSet::new(),
+        text_cache: HashMap::new(),
+        slider_cache: HashMap::new(),
+        last_system_key: None,
         fav_key_held: false,
         active: 0,
         applying: false,
@@ -585,13 +708,15 @@ fn register_classes(instance: *mut c_void) {
         controls.dwICC = ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
         InitCommonControlsEx(&controls);
 
-        let classes: [(&str, WNDPROC); 2] =
-            [("TitanControlSettings", Some(settings_proc)), ("TitanPage", Some(page_proc))];
-        for (name, proc_) in classes {
+        let classes: [(&str, WNDPROC, u32); 2] = [
+            ("TitanControlSettings", Some(settings_proc), CS_HREDRAW | CS_VREDRAW),
+            ("TitanPage", Some(page_proc), 0),
+        ];
+        for (name, proc_, style) in classes {
             let class_name = win::wide(name);
             let mut class: WNDCLASSEXW = std::mem::zeroed();
             class.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
-            class.style = CS_HREDRAW | CS_VREDRAW;
+            class.style = style;
             class.lpfnWndProc = proc_;
             class.hInstance = instance;
             class.hCursor = LoadCursorW(ptr::null_mut(), IDC_ARROW);
@@ -715,21 +840,30 @@ fn build(app: &mut App, window: &mut Window) {
         build_page(app, window, index, page);
     }
 
+    for row in &window.rows {
+        if row.is_header || row.is_hero {
+            for element in &row.elements {
+                window.page_bg_labels.insert(element.window as isize);
+            }
+        }
+    }
+
     let page = std::env::var("TITAN_UI_PAGE")
         .ok()
         .and_then(|index| index.parse::<usize>().ok())
-        .unwrap_or(0)
+        .unwrap_or(app.active_page)
         .min(window.pages.len().saturating_sub(1));
     window.active = page;
+    app.active_page = page;
     unsafe {
         SendMessageW(window.nav, LB_SETCURSEL, page, 0);
     }
-    show_page(window, page);
     layout(window, app);
+    show_page(window, page);
     theme_children(window);
 }
 
-/// Applies modern Explorer / DarkMode_Explorer themes to child controls (never to the top-level window frame).
+/// Applies modern Explorer / DarkMode_Explorer themes to child controls that render via UxTheme.
 fn theme_children(window: &Window) {
     let dark = window.palette.background == DARK.background;
     unsafe {
@@ -742,9 +876,10 @@ fn theme_children(window: &Window) {
                 let mut class_buf = [0u16; 32];
                 let len = GetClassNameW(child, class_buf.as_mut_ptr(), class_buf.len() as i32) as usize;
                 let class_name = String::from_utf16_lossy(&class_buf[..len]);
+                // Labels (`STATIC`) and owner-drawn `BUTTON`s are painted in `WM_CTLCOLOR*`/`WM_DRAWITEM`.
                 if class_name.eq_ignore_ascii_case("ComboBox") {
                     win::set_combo_theme(child, dark);
-                } else {
+                } else if class_name.eq_ignore_ascii_case("msctls_trackbar32") {
                     win::set_control_theme(child, dark);
                 }
                 child = GetWindow(child, GW_HWNDNEXT);
@@ -892,6 +1027,7 @@ fn build_page(app: &mut App, window: &mut Window, page: usize, spec: &rows::Page
         let mut star = None;
         if let Some(id) = spec_row.favorite {
             let button = create_owner_button(window, page_window, "\u{2606}", window.font);
+            set_visible(button, false);
             star = Some(button);
             window.stars.insert(button as isize, (id, false));
             elements.push(Element {
@@ -1425,7 +1561,13 @@ fn reflow(window: &mut Window, _app: &mut App) {
 
     // Second pass: batch-position child HWNDs on the active page using BeginDeferWindowPos.
     let mut y = margin / 2;
-    let hdwp = unsafe { BeginDeferWindowPos(64) };
+    let elem_count: usize = window
+        .rows
+        .iter()
+        .filter(|row| row.page == page_index)
+        .map(|row| row.elements.len())
+        .sum();
+    let hdwp = unsafe { BeginDeferWindowPos(elem_count.max(1) as i32) };
     let mut current_hdwp = hdwp;
 
     // Calculate right-shift offset so right-aligned controls sit cleanly near the right edge of the card.
@@ -1438,11 +1580,7 @@ fn reflow(window: &mut Window, _app: &mut App) {
             .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
         if hidden {
             for element in &row.elements {
-                unsafe {
-                    if IsWindowVisible(element.window) != 0 {
-                        ShowWindow(element.window, SW_HIDE);
-                    }
-                }
+                set_visible(element.window, false);
             }
             continue;
         }
@@ -1461,31 +1599,16 @@ fn reflow(window: &mut Window, _app: &mut App) {
         let shift_x = (target_control_right - max_right).max(0);
 
         for element in &row.elements {
-            if Some(element.window) == row.star {
+            let (elem_x, elem_w, should_show) = if Some(element.window) == row.star {
                 let is_fav = window.stars.get(&(element.window as isize)).is_some_and(|(_, fav)| *fav);
-                let show_star = window.fav_key_held || is_fav;
-                unsafe {
-                    SetWindowPos(
-                        element.window,
-                        ptr::null_mut(),
-                        element.x,
-                        y + element.dy - scroll,
-                        element.width,
-                        element.height,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                    ShowWindow(element.window, if show_star { SW_SHOW } else { SW_HIDE });
-                }
-                continue;
-            }
-
-            let (elem_x, elem_w) = if row.is_hero {
+                (element.x, element.width, window.fav_key_held || is_fav)
+            } else if row.is_hero {
                 let hero_w = (card_right - margin).max(win::scaled(280, dpi));
-                (margin, hero_w)
+                (margin, hero_w, true)
             } else if element.right_aligned {
-                (element.x + shift_x, element.width)
+                (element.x + shift_x, element.width, true)
             } else {
-                (element.x, element.width)
+                (element.x, element.width, true)
             };
 
             unsafe {
@@ -1511,10 +1634,8 @@ fn reflow(window: &mut Window, _app: &mut App) {
                         SWP_NOZORDER | SWP_NOACTIVATE,
                     );
                 }
-                if IsWindowVisible(element.window) == 0 {
-                    ShowWindow(element.window, SW_SHOW);
-                }
             }
+            set_visible(element.window, should_show);
         }
         y += row.height;
     }
@@ -1538,9 +1659,7 @@ fn reflow(window: &mut Window, _app: &mut App) {
 fn show_page(window: &mut Window, index: usize) {
     window.active = index;
     for (position, page) in window.pages.iter().enumerate() {
-        unsafe {
-            ShowWindow(page.window, if position == index { SW_SHOW } else { SW_HIDE });
-        }
+        set_visible(page.window, position == index);
     }
 }
 
@@ -1579,7 +1698,6 @@ fn scroll_page_fast(window: &mut Window, page_window: HWND, request: i32) {
             ptr::null_mut(),
             SW_SCROLLCHILDREN | SW_INVALIDATE,
         );
-        InvalidateRect(page_window, ptr::null(), 0);
         UpdateWindow(page_window);
     }
 }
@@ -1620,8 +1738,16 @@ pub fn apply_state(app: &mut App) {
                 };
                 let position = ((current / (*factor).max(1)) as i32).clamp(*min, *max) as isize;
                 unsafe {
-                    SendMessageW(*track, TBM_SETPOS, 1, position);
-                    SetWindowTextW(*value, win::wide(&current.to_string()).as_ptr());
+                    if SendMessageW(*track, TBM_GETPOS, 0, 0) != position {
+                        SendMessageW(*track, TBM_SETPOS, 1, position);
+                    }
+                }
+                let track_key = *track as isize;
+                if window.slider_cache.get(&track_key).copied() != Some(current) {
+                    window.slider_cache.insert(track_key, current);
+                    unsafe {
+                        SetWindowTextW(*value, win::wide(&current.to_string()).as_ptr());
+                    }
                 }
             }
             KindUi::Switch {
@@ -1667,7 +1793,9 @@ pub fn apply_state(app: &mut App) {
                 };
                 if let Some(index) = options.iter().position(|candidate| *candidate == current) {
                     unsafe {
-                        SendMessageW(*combo, CB_SETCURSEL, index, 0);
+                        if SendMessageW(*combo, CB_GETCURSEL, 0, 0) != index as isize {
+                            SendMessageW(*combo, CB_SETCURSEL, index, 0);
+                        }
                     }
                 }
             }
@@ -1680,7 +1808,9 @@ pub fn apply_state(app: &mut App) {
                 let Some(current) = control.code.and_then(|code| values.get(&code).copied()) else {
                     continue;
                 };
-                if let Some(index) = options.iter().position(|candidate| *candidate == current) {
+                if let Some(index) = options.iter().position(|candidate| *candidate == current)
+                    && *selected != index
+                {
                     *selected = index;
                     for button in buttons.iter() {
                         unsafe {
@@ -1694,7 +1824,9 @@ pub fn apply_state(app: &mut App) {
                     && let Some((mode, _)) = monitor::picture_mode_from_vcp(current)
                 {
                     unsafe {
-                        SendMessageW(*combo, CB_SETCURSEL, mode, 0);
+                        if SendMessageW(*combo, CB_GETCURSEL, 0, 0) != mode as isize {
+                            SendMessageW(*combo, CB_SETCURSEL, mode, 0);
+                        }
                     }
                 }
             }
@@ -1736,15 +1868,13 @@ pub fn apply_state(app: &mut App) {
                         .map(|info| usage_minutes(info.usage_mins))
                         .unwrap_or_default(),
                 };
-                unsafe {
-                    SetWindowTextW(*label, win::wide(&text).as_ptr());
-                }
+                set_text_cached(&mut window.text_cache, *label, &text);
             }
             KindUi::Section { .. } | KindUi::Action { .. } | KindUi::System { .. } => {}
         }
     }
 
-    // Update favorite stars (both picture_mode and tray shortcut controls).
+    // Update favorite stars only when state or visibility actually changed.
     let active_page = window.active;
     for (button_key, (id, active_flag)) in window.stars.iter_mut() {
         let is_fav = if *id == "picture_mode" {
@@ -1752,13 +1882,15 @@ pub fn apply_state(app: &mut App) {
         } else {
             app.settings.is_favorite_tray_control(id)
         };
-        *active_flag = is_fav;
-        let button = *button_key as HWND;
-        let glyph = if is_fav { "\u{2605}" } else { "\u{2606}" };
-        window.buttons.insert(*button_key, glyph.to_string());
-        unsafe {
-            SetWindowTextW(button, win::wide(glyph).as_ptr());
-            InvalidateRect(button, ptr::null(), 0);
+        if *active_flag != is_fav {
+            *active_flag = is_fav;
+            let button = *button_key as HWND;
+            let glyph = if is_fav { "\u{2605}" } else { "\u{2606}" };
+            window.buttons.insert(*button_key, glyph.to_string());
+            unsafe {
+                SetWindowTextW(button, win::wide(glyph).as_ptr());
+                InvalidateRect(button, ptr::null(), 0);
+            }
         }
     }
     for row in window.rows.iter().filter(|r| r.page == active_page) {
@@ -1767,16 +1899,8 @@ pub fn apply_state(app: &mut App) {
                 .section
                 .is_some_and(|sec| window.sections.get(sec).is_some_and(|s| s.collapsed));
             let is_fav = window.stars.get(&(star_hwnd as isize)).is_some_and(|(_, fav)| *fav);
-            unsafe {
-                ShowWindow(
-                    star_hwnd,
-                    if !hidden && (window.fav_key_held || is_fav) {
-                        SW_SHOW
-                    } else {
-                        SW_HIDE
-                    },
-                );
-            }
+            let should_show = !hidden && (window.fav_key_held || is_fav);
+            set_visible(star_hwnd, should_show);
         }
     }
 
@@ -1784,6 +1908,17 @@ pub fn apply_state(app: &mut App) {
     update_status(&mut window, app, &language);
     window.applying = false;
     app.window = Some(window);
+}
+
+fn set_text_cached(cache: &mut HashMap<isize, String>, hwnd: HWND, text: &str) {
+    let key = hwnd as isize;
+    if cache.get(&key).is_some_and(|prev| prev == text) {
+        return;
+    }
+    cache.insert(key, text.to_owned());
+    unsafe {
+        SetWindowTextW(hwnd, win::wide(text).as_ptr());
+    }
 }
 
 fn update_status(window: &mut Window, app: &App, lang: &AppLang) {
@@ -1796,12 +1931,25 @@ fn update_status(window: &mut Window, app: &App, lang: &AppLang) {
         ),
         None => tr(lang, "Szukam monitora..."),
     };
-    unsafe {
-        SetWindowTextW(window.status, win::wide(&text).as_ptr());
-    }
+    set_text_cached(&mut window.text_cache, window.status, &text);
 }
 
 fn apply_system_combos(window: &mut Window, app: &App) {
+    let dpi = if window.hwnd.is_null() {
+        win::system_dpi()
+    } else {
+        win::dpi_of(window.hwnd)
+    };
+    let key = (
+        app.modes.len(),
+        app.current_mode.as_ref().map(|m| (m.width, m.height, m.refresh)),
+        dpi,
+    );
+    if window.last_system_key == Some(key) {
+        return;
+    }
+    window.last_system_key = Some(key);
+
     for control in &window.controls {
         let KindUi::System { combo, which } = &control.kind else {
             continue;
@@ -1916,19 +2064,22 @@ pub fn refresh_availability(app: &mut App) {
                 {
                     btn_ok &= led_has_colorful;
                 }
-                unsafe {
-                    EnableWindow(*hwnd, if btn_ok { 1 } else { 0 });
-                    InvalidateRect(*hwnd, ptr::null(), 0);
-                }
+                set_enabled_if_changed(*hwnd, btn_ok);
             }
             continue;
         }
 
         for hwnd in control_windows(&control.kind) {
-            unsafe {
-                EnableWindow(hwnd, if enabled { 1 } else { 0 });
-                InvalidateRect(hwnd, ptr::null(), 0);
-            }
+            set_enabled_if_changed(hwnd, enabled);
+        }
+    }
+}
+
+fn set_enabled_if_changed(hwnd: HWND, enabled: bool) {
+    unsafe {
+        if (IsWindowEnabled(hwnd) != 0) != enabled {
+            EnableWindow(hwnd, i32::from(enabled));
+            InvalidateRect(hwnd, ptr::null(), 0);
         }
     }
 }
@@ -1963,8 +2114,10 @@ pub fn handle_command(app: &mut App, item: HWND, notification: u32) {
             if notification == LBN_SELCHANGE {
                 let index = unsafe { SendMessageW(window.nav, LB_GETCURSEL, 0, 0) } as usize;
                 if index < window.pages.len() {
-                    show_page(&mut window, index);
+                    window.active = index;
+                    app.active_page = index;
                     reflow(&mut window, app);
+                    show_page(&mut window, index);
                     unsafe {
                         InvalidateRect(window.nav, ptr::null(), 0);
                     }
@@ -2433,7 +2586,7 @@ fn change_system_mode(app: &mut App, which: SystemKind, selection: usize) {
 
 // ───────────────────────────── owner-drawn controls & page painting ─────────────────────────────
 
-fn draw_owner_item(window: &Window, item: &DRAWITEMSTRUCT) {
+fn draw_owner_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
     if item.CtlType == ODT_LISTBOX {
         draw_nav_item(window, item);
         return;
@@ -2455,18 +2608,34 @@ fn draw_owner_item(window: &Window, item: &DRAWITEMSTRUCT) {
         return;
     }
     // 3. Switch or Section button?
+    enum Found {
+        Switch(bool),
+        Section,
+    }
+    let mut found = None;
     for control in &window.controls {
         match &control.kind {
             KindUi::Switch { button, checked, .. } if *button == hwnd => {
-                draw_switch(window, item, *checked);
-                return;
+                found = Some(Found::Switch(*checked));
+                break;
             }
             KindUi::Section { button } if *button == hwnd => {
-                draw_section_header(window, item, hwnd);
-                return;
+                found = Some(Found::Section);
+                break;
             }
             _ => {}
         }
+    }
+    match found {
+        Some(Found::Switch(checked)) => {
+            draw_switch(window, item, checked);
+            return;
+        }
+        Some(Found::Section) => {
+            draw_section_header(window, item, hwnd);
+            return;
+        }
+        None => {}
     }
     // 4. Star button?
     if let Some(&(_, is_fav)) = window.stars.get(&key) {
@@ -2477,16 +2646,17 @@ fn draw_owner_item(window: &Window, item: &DRAWITEMSTRUCT) {
     draw_push_button(window, item, key);
 }
 
-fn draw_nav_item(window: &Window, item: &DRAWITEMSTRUCT) {
+fn draw_nav_item(window: &mut Window, item: &DRAWITEMSTRUCT) {
     let index = item.itemID as usize;
     let selected = (item.itemState & ODS_SELECTED) != 0;
     let dpi = window.dpi;
     let scale = |v: i32| win::scaled(v, dpi);
+    let palette = window.palette;
     unsafe {
         FillRect(item.hDC, &item.rcItem, window.brush_sidebar);
         if selected {
-            let pill_brush = CreateSolidBrush(window.palette.card);
-            let pill_pen = CreatePen(PS_SOLID, 1, window.palette.line);
+            let pill_brush = window.draw.brush(palette.card);
+            let pill_pen = window.draw.pen(palette.line, 1);
             let old_pen = SelectObject(item.hDC, pill_pen as _);
             let old_brush = SelectObject(item.hDC, pill_brush as _);
             let r = scale(8);
@@ -2501,11 +2671,9 @@ fn draw_nav_item(window: &Window, item: &DRAWITEMSTRUCT) {
             );
             SelectObject(item.hDC, old_pen);
             SelectObject(item.hDC, old_brush);
-            DeleteObject(pill_pen as _);
-            DeleteObject(pill_brush as _);
 
             // Accent indicator bar on the left edge of the active nav item.
-            let bar_brush = CreateSolidBrush(window.palette.control_active);
+            let bar_brush = window.draw.brush(palette.control_active);
             let bar_rect = RECT {
                 left: item.rcItem.left + scale(10),
                 top: item.rcItem.top + scale(10),
@@ -2513,7 +2681,6 @@ fn draw_nav_item(window: &Window, item: &DRAWITEMSTRUCT) {
                 bottom: item.rcItem.bottom - scale(10),
             };
             FillRect(item.hDC, &bar_rect, bar_brush);
-            DeleteObject(bar_brush as _);
         }
 
         if let Some(label) = window.nav_labels.get(index) {
@@ -2521,7 +2688,7 @@ fn draw_nav_item(window: &Window, item: &DRAWITEMSTRUCT) {
             text_rect.left += scale(22);
             text_rect.right -= scale(10);
             SetBkMode(item.hDC, TRANSPARENT as i32);
-            SetTextColor(item.hDC, window.palette.text);
+            SetTextColor(item.hDC, palette.text);
             let font = if selected { window.bold } else { window.font };
             let old_font = SelectObject(item.hDC, font as _);
             let mut wide = win::wide(label);
@@ -2537,28 +2704,25 @@ fn draw_nav_item(window: &Window, item: &DRAWITEMSTRUCT) {
     }
 }
 
-fn draw_switch(window: &Window, item: &DRAWITEMSTRUCT, checked: bool) {
+fn draw_switch(window: &mut Window, item: &DRAWITEMSTRUCT, checked: bool) {
     let disabled = (item.itemState & ODS_DISABLED) != 0;
     let dpi = window.dpi;
     let scale = |v: i32| win::scaled(v, dpi);
+    let palette = window.palette;
     unsafe {
         FillRect(item.hDC, &item.rcItem, window.brush_card);
         let track_color = if checked {
-            if disabled {
-                window.palette.line
-            } else {
-                window.palette.control_active
-            }
+            if disabled { palette.line } else { palette.control_active }
         } else {
-            window.palette.control_bg
+            palette.control_bg
         };
         let border_color = if checked && !disabled {
-            window.palette.control_active
+            palette.control_active
         } else {
-            window.palette.line
+            palette.line
         };
-        let track_brush = CreateSolidBrush(track_color);
-        let track_pen = CreatePen(PS_SOLID, 1, border_color);
+        let track_brush = window.draw.brush(track_color);
+        let track_pen = window.draw.pen(border_color, 1);
         let old_pen = SelectObject(item.hDC, track_pen as _);
         let old_brush = SelectObject(item.hDC, track_brush as _);
 
@@ -2583,8 +2747,8 @@ fn draw_switch(window: &Window, item: &DRAWITEMSTRUCT, checked: bool) {
         };
         let thumb_y = item.rcItem.top + pad;
         let thumb_color = if disabled { 0x00B0_B0B0 } else { 0x00FF_FFFF };
-        let thumb_brush = CreateSolidBrush(thumb_color);
-        let thumb_pen = CreatePen(PS_SOLID, 1, thumb_color);
+        let thumb_brush = window.draw.brush(thumb_color);
+        let thumb_pen = window.draw.pen(thumb_color, 1);
         SelectObject(item.hDC, thumb_pen as _);
         SelectObject(item.hDC, thumb_brush as _);
         Ellipse(
@@ -2597,14 +2761,10 @@ fn draw_switch(window: &Window, item: &DRAWITEMSTRUCT, checked: bool) {
 
         SelectObject(item.hDC, old_pen);
         SelectObject(item.hDC, old_brush);
-        DeleteObject(thumb_pen as _);
-        DeleteObject(thumb_brush as _);
-        DeleteObject(track_pen as _);
-        DeleteObject(track_brush as _);
     }
 }
 
-fn draw_toggle_pill(window: &Window, item: &DRAWITEMSTRUCT, control_idx: usize, option_idx: usize) {
+fn draw_toggle_pill(window: &mut Window, item: &DRAWITEMSTRUCT, control_idx: usize, option_idx: usize) {
     let disabled = (item.itemState & ODS_DISABLED) != 0;
     let (active, is_crosshair) = match &window.controls[control_idx].kind {
         KindUi::ToggleGroup {
@@ -2617,24 +2777,21 @@ fn draw_toggle_pill(window: &Window, item: &DRAWITEMSTRUCT, control_idx: usize, 
     };
     let dpi = window.dpi;
     let r = win::scaled(6, dpi);
+    let palette = window.palette;
     unsafe {
         FillRect(item.hDC, &item.rcItem, window.brush_card);
         let fill_color = if active {
-            if disabled {
-                window.palette.line
-            } else {
-                window.palette.control_active
-            }
+            if disabled { palette.line } else { palette.control_active }
         } else {
-            window.palette.control_bg
+            palette.control_bg
         };
         let pen_color = if active && !disabled {
-            window.palette.control_active
+            palette.control_active
         } else {
-            window.palette.line
+            palette.line
         };
-        let brush = CreateSolidBrush(fill_color);
-        let pen = CreatePen(PS_SOLID, 1, pen_color);
+        let brush = window.draw.brush(fill_color);
+        let pen = window.draw.pen(pen_color, 1);
         let old_pen = SelectObject(item.hDC, pen as _);
         let old_brush = SelectObject(item.hDC, brush as _);
         RoundRect(
@@ -2648,19 +2805,17 @@ fn draw_toggle_pill(window: &Window, item: &DRAWITEMSTRUCT, control_idx: usize, 
         );
         SelectObject(item.hDC, old_pen);
         SelectObject(item.hDC, old_brush);
-        DeleteObject(pen as _);
-        DeleteObject(brush as _);
 
         let fg_color = if active && !disabled {
             0x00FF_FFFF
         } else if disabled {
-            window.palette.muted
+            palette.muted
         } else {
-            window.palette.text
+            palette.text
         };
 
         if is_crosshair {
-            draw_crosshair_icon(item.hDC, &item.rcItem, option_idx, fg_color, dpi);
+            draw_crosshair_icon(window, item.hDC, &item.rcItem, option_idx, fg_color, dpi);
             return;
         }
 
@@ -2684,14 +2839,15 @@ fn draw_toggle_pill(window: &Window, item: &DRAWITEMSTRUCT, control_idx: usize, 
 }
 
 /// Draws the 6 crosshair shapes matching `assets/crosshairs/crosshair_1..6.svg`.
-fn draw_crosshair_icon(hdc: HDC, rc: &RECT, shape_idx: usize, color: u32, dpi: u32) {
+fn draw_crosshair_icon(window: &mut Window, hdc: HDC, rc: &RECT, shape_idx: usize, color: u32, dpi: u32) {
     let cx = (rc.left + rc.right) / 2;
     let cy = (rc.top + rc.bottom) / 2;
     let s = win::scaled(8, dpi);
     let gap = win::scaled(3, dpi);
+    let pen_w = win::scaled(2, dpi).max(1);
     unsafe {
-        let pen = CreatePen(PS_SOLID, win::scaled(2, dpi).max(1), color);
-        let brush = CreateSolidBrush(color);
+        let pen = window.draw.pen(color, pen_w);
+        let brush = window.draw.brush(color);
         let old_pen = SelectObject(hdc, pen as _);
         let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH) as _);
 
@@ -2754,8 +2910,6 @@ fn draw_crosshair_icon(hdc: HDC, rc: &RECT, shape_idx: usize, color: u32, dpi: u
 
         SelectObject(hdc, old_pen);
         SelectObject(hdc, old_brush);
-        DeleteObject(pen as _);
-        DeleteObject(brush as _);
     }
 }
 
@@ -2808,12 +2962,13 @@ fn draw_star_button(window: &Window, item: &DRAWITEMSTRUCT, is_fav: bool) {
     }
 }
 
-fn draw_push_button(window: &Window, item: &DRAWITEMSTRUCT, key: isize) {
+fn draw_push_button(window: &mut Window, item: &DRAWITEMSTRUCT, key: isize) {
     let disabled = (item.itemState & ODS_DISABLED) != 0;
     let pressed = (item.itemState & ODS_SELECTED) != 0;
     let is_toolbar = unsafe { GetParent(item.hwndItem) } == window.hwnd;
     let dpi = window.dpi;
     let r = win::scaled(6, dpi);
+    let palette = window.palette;
     unsafe {
         FillRect(
             item.hDC,
@@ -2825,14 +2980,14 @@ fn draw_push_button(window: &Window, item: &DRAWITEMSTRUCT, key: isize) {
             },
         );
         let fill_color = if pressed {
-            window.palette.line
+            palette.line
         } else if is_toolbar {
-            window.palette.card
+            palette.card
         } else {
-            window.palette.control_bg
+            palette.control_bg
         };
-        let brush = CreateSolidBrush(fill_color);
-        let pen = CreatePen(PS_SOLID, 1, window.palette.line);
+        let brush = window.draw.brush(fill_color);
+        let pen = window.draw.pen(palette.line, 1);
         let old_pen = SelectObject(item.hDC, pen as _);
         let old_brush = SelectObject(item.hDC, brush as _);
         RoundRect(
@@ -2846,19 +3001,13 @@ fn draw_push_button(window: &Window, item: &DRAWITEMSTRUCT, key: isize) {
         );
         SelectObject(item.hDC, old_pen);
         SelectObject(item.hDC, old_brush);
-        DeleteObject(pen as _);
-        DeleteObject(brush as _);
 
         if let Some(label) = window.buttons.get(&key) {
             let mut rc = item.rcItem;
             SetBkMode(item.hDC, TRANSPARENT as i32);
             SetTextColor(
                 item.hDC,
-                if disabled {
-                    window.palette.muted
-                } else {
-                    window.palette.text
-                },
+                if disabled { palette.muted } else { palette.text },
             );
             let old_font = SelectObject(item.hDC, window.font as _);
             let mut wide = win::wide(label);
@@ -2874,7 +3023,7 @@ fn draw_push_button(window: &Window, item: &DRAWITEMSTRUCT, key: isize) {
     }
 }
 
-fn draw_swatch(window: &Window, item: &DRAWITEMSTRUCT) {
+fn draw_swatch(window: &mut Window, item: &DRAWITEMSTRUCT) {
     let Some((control, option)) = window.swatches.get(&(item.hwndItem as isize)).copied() else {
         return;
     };
@@ -2893,20 +3042,17 @@ fn draw_swatch(window: &Window, item: &DRAWITEMSTRUCT) {
     let active = *selected == option;
     let dpi = window.dpi;
     let r = win::scaled(6, dpi);
+    let palette = window.palette;
     unsafe {
         FillRect(item.hDC, &item.rcItem, window.brush_card);
-        let fill = CreateSolidBrush(bgr);
-        let border_w = if active {
-            win::scaled(3, dpi).max(2)
-        } else {
-            1
-        };
+        let fill = window.draw.brush(bgr);
+        let border_w = if active { win::scaled(3, dpi).max(2) } else { 1 };
         let pen_color = if active {
-            window.palette.control_active
+            palette.control_active
         } else {
-            window.palette.line
+            palette.line
         };
-        let pen = CreatePen(PS_SOLID, border_w, pen_color);
+        let pen = window.draw.pen(pen_color, border_w);
         let old_pen = SelectObject(item.hDC, pen as _);
         let old_brush = SelectObject(item.hDC, fill as _);
         RoundRect(
@@ -2920,7 +3066,7 @@ fn draw_swatch(window: &Window, item: &DRAWITEMSTRUCT) {
         );
         if active {
             // Draw inner contrasting ring so selection is clear on both white and dark swatches.
-            let inner_pen = CreatePen(PS_SOLID, 1, 0x00FF_FFFF);
+            let inner_pen = window.draw.pen(0x00FF_FFFF, 1);
             SelectObject(item.hDC, inner_pen as _);
             SelectObject(item.hDC, GetStockObject(NULL_BRUSH) as _);
             let inset = border_w + 1;
@@ -2933,32 +3079,29 @@ fn draw_swatch(window: &Window, item: &DRAWITEMSTRUCT) {
                 (r - 2).max(2),
                 (r - 2).max(2),
             );
-            DeleteObject(inner_pen as _);
         } else if disabled {
             // Diagonal slash on disabled swatch (e.g. Colorful in unsupported LED mode).
-            let slash_pen = CreatePen(PS_SOLID, 1, window.palette.card);
+            let slash_pen = window.draw.pen(palette.card, 1);
             SelectObject(item.hDC, slash_pen as _);
             MoveToEx(item.hDC, item.rcItem.left + 4, item.rcItem.bottom - 4, ptr::null_mut());
             LineTo(item.hDC, item.rcItem.right - 4, item.rcItem.top + 4);
-            DeleteObject(slash_pen as _);
         }
         SelectObject(item.hDC, old_pen);
         SelectObject(item.hDC, old_brush);
-        DeleteObject(pen as _);
-        DeleteObject(fill as _);
     }
 }
 
-/// Double-buffered paint of a `TitanPage` window: draws card containers, row dividers, and the Overview hero monitor.
-fn paint_page(window: &Window, page_window: HWND) {
-    let Some(page_ui) = window.pages.iter().find(|p| p.window == page_window) else {
+/// Double-buffered paint of a `TitanPage` window clipped to `ps.rcPaint` with a reusable backbuffer.
+fn paint_page(window: &mut Window, page_window: HWND) {
+    let Some(page_idx) = window.pages.iter().position(|p| p.window == page_window) else {
         return;
     };
-    let is_overview = window.pages.first().is_some_and(|p| p.window == page_window);
+    let is_overview = page_idx == 0;
     let dpi = window.dpi;
     let scale = |v: i32| win::scaled(v, dpi);
     let margin = scale(MARGIN);
-    let scroll = page_ui.scroll;
+    let scroll = window.pages[page_idx].scroll;
+    let palette = window.palette;
 
     unsafe {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
@@ -2967,69 +3110,92 @@ fn paint_page(window: &Window, page_window: HWND) {
         GetClientRect(page_window, &mut client);
         let w = client.right.max(1);
         let h = client.bottom.max(1);
+        let dirty = RECT {
+            left: ps.rcPaint.left.clamp(0, w),
+            top: ps.rcPaint.top.clamp(0, h),
+            right: ps.rcPaint.right.clamp(0, w),
+            bottom: ps.rcPaint.bottom.clamp(0, h),
+        };
+        if dirty.right <= dirty.left || dirty.bottom <= dirty.top {
+            EndPaint(page_window, &ps);
+            return;
+        }
 
-        let mem_dc = CreateCompatibleDC(hdc);
-        let mem_bmp = CreateCompatibleBitmap(hdc, w, h);
-        let old_bmp = SelectObject(mem_dc, mem_bmp as _);
+        let (mem_dc, ok) = window.draw.backbuffer(hdc, w, h);
+        if !ok {
+            EndPaint(page_window, &ps);
+            return;
+        }
 
-        FillRect(mem_dc, &client, window.brush_bg);
+        IntersectClipRect(mem_dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
+        FillRect(mem_dc, &dirty, window.brush_bg);
 
         // Draw Overview monitor illustration on page 0.
         if is_overview {
-            draw_overview_monitor(window, mem_dc, w, scroll);
+            draw_overview_monitor(window, mem_dc, w, scroll, &dirty);
         }
 
         let card_left = margin;
         let card_right = (w - margin).max(card_left + scale(320));
         let radius = scale(10);
 
-        let card_pen = CreatePen(PS_SOLID, 1, window.palette.line);
+        let card_pen = window.draw.pen(palette.line, 1);
         let old_pen = SelectObject(mem_dc, card_pen as _);
         let old_brush = SelectObject(mem_dc, window.brush_card as _);
 
-        for card in &page_ui.cards {
+        let pad_x = scale(CARD_PAD_X);
+        for card in &window.pages[page_idx].cards {
             let top = card.top - scroll;
             let bottom = card.bottom - scroll;
-            if bottom < 0 || top > h {
+            if bottom < dirty.top || top > dirty.bottom {
                 continue;
             }
             RoundRect(mem_dc, card_left, top, card_right, bottom, radius, radius);
             for i in 0..card.divider_count {
                 let div_y = card.dividers[i] - scroll;
-                if div_y >= 0 && div_y <= h {
-                    MoveToEx(mem_dc, card_left + scale(CARD_PAD_X), div_y, ptr::null_mut());
-                    LineTo(mem_dc, card_right - scale(CARD_PAD_X), div_y);
+                if div_y >= dirty.top - 1 && div_y <= dirty.bottom + 1 {
+                    MoveToEx(mem_dc, card_left + pad_x, div_y, ptr::null_mut());
+                    LineTo(mem_dc, card_right - pad_x, div_y);
                 }
             }
         }
 
         SelectObject(mem_dc, old_pen);
         SelectObject(mem_dc, old_brush);
-        DeleteObject(card_pen as _);
+        SelectClipRgn(mem_dc, ptr::null_mut());
 
-        BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
-        SelectObject(mem_dc, old_bmp);
-        DeleteObject(mem_bmp as _);
-        DeleteDC(mem_dc);
+        BitBlt(
+            hdc,
+            dirty.left,
+            dirty.top,
+            dirty.right - dirty.left,
+            dirty.bottom - dirty.top,
+            mem_dc,
+            dirty.left,
+            dirty.top,
+            SRCCOPY,
+        );
         EndPaint(page_window, &ps);
     }
 }
 
 /// Draws a sleek vector illustration of the P275MV PLUS monitor centered at the top of the Overview page.
-fn draw_overview_monitor(window: &Window, hdc: HDC, page_width: i32, scroll: i32) {
+fn draw_overview_monitor(window: &mut Window, hdc: HDC, page_width: i32, scroll: i32, dirty: &RECT) {
     let dpi = window.dpi;
     let scale = |v: i32| win::scaled(v, dpi);
     let mon_w = scale(210);
     let mon_h = scale(122);
     let x = (page_width - mon_w) / 2;
     let y = scale(18) - scroll;
-    if y + mon_h + scale(30) < 0 {
+    let bottom = y + mon_h + scale(24);
+    if bottom < dirty.top || y > dirty.bottom {
         return;
     }
+    let palette = window.palette;
     unsafe {
         // Stand neck and base.
-        let stand_brush = CreateSolidBrush(window.palette.muted);
-        let stand_pen = CreatePen(PS_SOLID, 1, window.palette.line);
+        let stand_brush = window.draw.brush(palette.muted);
+        let stand_pen = window.draw.pen(palette.line, 1);
         let old_pen = SelectObject(hdc, stand_pen as _);
         let old_brush = SelectObject(hdc, stand_brush as _);
         let cx = page_width / 2;
@@ -3053,16 +3219,16 @@ fn draw_overview_monitor(window: &Window, hdc: HDC, page_width: i32, scroll: i32
         );
 
         // Outer monitor bezel.
-        let bezel_brush = CreateSolidBrush(0x0024_2220);
-        let bezel_pen = CreatePen(PS_SOLID, scale(2).max(1), window.palette.line);
+        let bezel_brush = window.draw.brush(0x0024_2220);
+        let bezel_pen = window.draw.pen(palette.line, scale(2).max(1));
         SelectObject(hdc, bezel_pen as _);
         SelectObject(hdc, bezel_brush as _);
         RoundRect(hdc, x, y, x + mon_w, y + mon_h, scale(8), scale(8));
 
         // Inner display panel.
         let pad = scale(6);
-        let screen_brush = CreateSolidBrush(window.palette.control_active);
-        let screen_pen = CreatePen(PS_SOLID, 1, window.palette.control_active);
+        let screen_brush = window.draw.brush(palette.control_active);
+        let screen_pen = window.draw.pen(palette.control_active, 1);
         SelectObject(hdc, screen_pen as _);
         SelectObject(hdc, screen_brush as _);
         RoundRect(
@@ -3076,7 +3242,7 @@ fn draw_overview_monitor(window: &Window, hdc: HDC, page_width: i32, scroll: i32
         );
 
         // Subtle wallpaper horizon accent inside the screen.
-        let accent_brush = CreateSolidBrush(0x0058_3218);
+        let accent_brush = window.draw.brush(0x0058_3218);
         let accent_rect = RECT {
             left: x + pad,
             top: y + mon_h / 2,
@@ -3087,13 +3253,6 @@ fn draw_overview_monitor(window: &Window, hdc: HDC, page_width: i32, scroll: i32
 
         SelectObject(hdc, old_pen);
         SelectObject(hdc, old_brush);
-        DeleteObject(accent_brush as _);
-        DeleteObject(screen_pen as _);
-        DeleteObject(screen_brush as _);
-        DeleteObject(bezel_pen as _);
-        DeleteObject(bezel_brush as _);
-        DeleteObject(stand_pen as _);
-        DeleteObject(stand_brush as _);
     }
 }
 
@@ -3157,7 +3316,7 @@ pub unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, wparam: WP
             0
         }
         WM_DRAWITEM => {
-            if let Some(window) = app.window.as_ref() {
+            if let Some(window) = app.window.as_mut() {
                 let item = unsafe { &*(lparam as *const DRAWITEMSTRUCT) };
                 draw_owner_item(window, item);
             }
@@ -3261,7 +3420,7 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
             0
         }
         WM_DRAWITEM => {
-            if let Some(window) = app.window.as_ref() {
+            if let Some(window) = app.window.as_mut() {
                 let item = unsafe { &*(lparam as *const DRAWITEMSTRUCT) };
                 draw_owner_item(window, item);
             }
@@ -3280,11 +3439,7 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
             let on_page_bg = app
                 .window
                 .as_ref()
-                .is_some_and(|w| {
-                    w.rows.iter().any(|r| {
-                        (r.is_header || r.is_hero) && r.elements.iter().any(|e| e.window == child)
-                    })
-                });
+                .is_some_and(|w| w.page_bg_labels.contains(&(child as isize)));
             unsafe {
                 SetTextColor(wparam as _, palette.text);
                 if on_page_bg {
@@ -3301,7 +3456,7 @@ pub unsafe extern "system" fn page_proc(hwnd: HWND, message: u32, wparam: WPARAM
         }
         WM_ERASEBKGND => 1,
         WM_PAINT => {
-            if let Some(window) = app.window.as_ref() {
+            if let Some(window) = app.window.as_mut() {
                 paint_page(window, hwnd);
                 return 0;
             }
@@ -3388,6 +3543,7 @@ pub fn scroll_of(app: &App, page_window: HWND) -> i32 {
 /// Destroys everything the window allocated outside of its child windows.
 fn release(window: &mut Window) {
     unsafe {
+        window.draw.release();
         if !window.font.is_null() {
             DeleteObject(window.font as _);
             window.font = ptr::null_mut();

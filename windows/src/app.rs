@@ -186,6 +186,8 @@ pub struct App {
     pub start_minimized: bool,
     /// A language or theme change needs the settings window to be built again.
     pub needs_rebuild: bool,
+    /// Last active sidebar page remembered across closing to and reopening from the tray.
+    pub active_page: usize,
     pub quit: bool,
 }
 

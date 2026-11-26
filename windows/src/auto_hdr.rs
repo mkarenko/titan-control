@@ -310,7 +310,7 @@ fn source_gdi_name(path: &DisplayConfigPathInfo) -> String {
     }
 }
 
-fn target_friendly_name(adapter_id: Luid, target_id: u32) -> String {
+fn target_info_names(adapter_id: Luid, target_id: u32) -> (String, String) {
     let mut req: DisplayConfigTargetDeviceName = unsafe { mem::zeroed() };
     req.header = DisplayConfigDeviceInfoHeader {
         kind: DC_GET_TARGET_NAME,
@@ -320,10 +320,25 @@ fn target_friendly_name(adapter_id: Luid, target_id: u32) -> String {
     };
     let rc = unsafe { DisplayConfigGetDeviceInfo(&mut req as *mut _ as *mut c_void) };
     if rc == ERROR_SUCCESS_CODE {
-        win::from_wide(&req.monitor_friendly_device_name)
+        (
+            win::from_wide(&req.monitor_friendly_device_name),
+            win::from_wide(&req.monitor_device_path),
+        )
     } else {
-        String::new()
+        (String::new(), String::new())
     }
+}
+
+fn is_target_titan(adapter_id: Luid, target_id: u32) -> bool {
+    let (friendly, path) = target_info_names(adapter_id, target_id);
+    let f_up = friendly.to_ascii_uppercase();
+    let p_up = path.to_ascii_uppercase();
+    f_up.contains("P275MV") || p_up.contains("LHC907D")
+}
+
+fn is_hdr_supported(path: &DisplayConfigPathInfo) -> bool {
+    try_get_hdr_state(path.target_info.adapter_id, path.target_info.id)
+        .is_some_and(|(supported, _, _)| supported)
 }
 
 fn is_primary_path(path: &DisplayConfigPathInfo, modes: &[DisplayConfigModeInfo]) -> bool {
@@ -394,20 +409,43 @@ fn matching_paths<'a>(
             .iter()
             .filter(|p| source_gdi_name(p).eq_ignore_ascii_case(conn))
             .collect();
-        if !by_conn.is_empty() {
+        // Trust the GDI connector name only when it still points to our monitor (or supports HDR);
+        // Windows may swap `\\.\DISPLAY1`/`\\.\DISPLAY2` after sleep/reconnect before DDC re-binds.
+        let conn_is_titan = by_conn
+            .iter()
+            .any(|p| is_target_titan(p.target_info.adapter_id, p.target_info.id));
+        if conn_is_titan {
             return by_conn;
         }
+        let titan_paths: Vec<_> = paths
+            .iter()
+            .filter(|p| is_target_titan(p.target_info.adapter_id, p.target_info.id))
+            .collect();
+        if !titan_paths.is_empty() {
+            return titan_paths;
+        }
+        if by_conn.iter().any(|p| is_hdr_supported(p)) {
+            return by_conn;
+        }
+    } else {
+        let titan_paths: Vec<_> = paths
+            .iter()
+            .filter(|p| is_target_titan(p.target_info.adapter_id, p.target_info.id))
+            .collect();
+        if !titan_paths.is_empty() {
+            return titan_paths;
+        }
     }
-    let by_name: Vec<_> = paths
+    let by_primary: Vec<_> = paths
         .iter()
-        .filter(|p| target_friendly_name(p.target_info.adapter_id, p.target_info.id).contains("P275MV"))
+        .filter(|p| is_primary_path(p, modes) && is_hdr_supported(p))
         .collect();
-    if !by_name.is_empty() {
-        return by_name;
-    }
-    let by_primary: Vec<_> = paths.iter().filter(|p| is_primary_path(p, modes)).collect();
     if !by_primary.is_empty() {
         return by_primary;
+    }
+    let by_hdr: Vec<_> = paths.iter().filter(|p| is_hdr_supported(p)).collect();
+    if !by_hdr.is_empty() {
+        return by_hdr;
     }
     paths.iter().collect()
 }

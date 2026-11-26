@@ -190,6 +190,8 @@ pub struct App {
     pub active_page: usize,
     /// Zero-polling Windows Auto Profiles / Auto HDR watcher.
     pub auto_hdr: crate::auto_hdr::Watcher,
+    /// Cached Windows HDR active state on our target display (locks picture profile/custom edits while active).
+    pub windows_hdr_active: bool,
     /// True after modifying monitor settings while a profile is selected (enables toolbar "Save").
     pub profile_dirty: bool,
     /// Snapshot captured when Auto Profiles switches on an app launch, restored on exit if no Default profile is set.
@@ -451,7 +453,7 @@ impl App {
             allow(code, led_on && is_setting_available(&self.state, code));
         }
 
-        // Firmware 2025-09-20: with HDR on the monitor locks these settings.
+        // With HDR active in both Windows and the monitor, the monitor locks these SDR picture controls.
         let hdr_locked = self.hdr_locked();
         if hdr_locked {
             for code in [
@@ -459,15 +461,20 @@ impl App {
                 VCP_CONTRAST,
                 VCP_DCR,
                 VCP_LOW_BLUE,
+                VCP_GAMMA,
                 VCP_COLOR_ENHANCE,
                 VCP_CR_ENHANCE,
                 VCP_SHADOW_BALANCE,
+                VCP_COLOR_TEMP,
+                VCP_RED,
+                VCP_GREEN,
+                VCP_BLUE,
                 VCP_OUTPUT_RANGE,
             ] {
                 allow(code, false);
             }
             for code in [VCP_NIGHT_VISION, VCP_DYDS] {
-                allow(code, adaptive);
+                allow(code, adaptive && self.settings.firmware_package.dyds_with_adaptive_sync());
             }
             allow(VCP_MAGNIFIER, false);
         }
@@ -504,9 +511,18 @@ impl App {
     }
 
     pub fn hdr_locked(&self) -> bool {
-        self.settings.firmware_package.dyds_with_adaptive_sync()
+        self.windows_hdr_active
             && self.get(monitor::VCP_HDR).is_some_and(|value| value != monitor::HDR_VALUES[0])
     }
+}
+
+pub fn refresh_windows_hdr(app: &mut App) {
+    let conn = if app.connector.is_empty() {
+        None
+    } else {
+        Some(app.connector.as_str())
+    };
+    app.windows_hdr_active = crate::auto_hdr::query_hdr(conn).is_some_and(|(_, on)| on);
 }
 
 // ───────────────────────────── worker messages ─────────────────────────────
@@ -524,9 +540,11 @@ pub fn drain_messages(app: &mut App) {
                 app.connected = true;
                 app.connector = info.connector.clone();
                 refresh_modes(app);
+                refresh_windows_hdr(app);
                 app.apply_values(info.settings.clone());
                 app.info = Some(info);
                 ui::apply_state(app);
+                ui::refresh_availability(app);
                 crate::tray::refresh(app);
                 // A start in the tray stays in the tray: the monitor being found does not open the window.
                 if !app.start_minimized {
@@ -550,6 +568,7 @@ pub fn drain_messages(app: &mut App) {
                 ui::apply_state(app);
             }
             UiCmd::InfoRefreshed { hz, usage_mins } => {
+                refresh_windows_hdr(app);
                 if let Some(info) = app.info.as_mut() {
                     if let Some(hz) = hz {
                         info.hz = hz;
@@ -559,6 +578,7 @@ pub fn drain_messages(app: &mut App) {
                     }
                 }
                 ui::apply_state(app);
+                ui::refresh_availability(app);
             }
             UiCmd::Progress(text) => {
                 log!("[APP] {text}");
@@ -569,6 +589,19 @@ pub fn drain_messages(app: &mut App) {
                 if error == "Monitor not found" {
                     crate::notify(app, "Nie znaleziono monitora", "Podłącz monitor P275MV PLUS i uruchom program ponownie.");
                     app.quit = true;
+                }
+            }
+            UiCmd::ConnectorChanged(connector) => {
+                if app.connector != connector {
+                    log!("[DISPLAY] Target monitor connector updated to {connector}");
+                    app.connector = connector;
+                    refresh_modes(app);
+                    refresh_windows_hdr(app);
+                    if let Some(info) = app.info.as_mut() {
+                        info.connector = app.connector.clone();
+                    }
+                    ui::apply_state(app);
+                    ui::refresh_availability(app);
                 }
             }
         }
@@ -807,17 +840,21 @@ pub fn handle_auto_profile_exit(app: &mut App) {
 fn apply_auto_event(app: &mut App, event: Option<crate::auto_hdr::AutoEvent>) {
     match event {
         Some(crate::auto_hdr::AutoEvent::Activated { profile }) => {
+            refresh_windows_hdr(app);
             if app.pre_app_state.is_none() {
                 app.pre_app_state = Some((app.settings.active_profile.clone(), app.state.clone()));
             }
             if let Some(name) = profile {
                 let _ = select_profile(app, Some(&name));
             }
+            ui::refresh_availability(app);
         }
         Some(crate::auto_hdr::AutoEvent::Deactivated) => {
+            refresh_windows_hdr(app);
             let prev = app.pre_app_state.take();
             if let Some(default_name) = app.settings.auto_profiles_default.clone() {
                 if select_profile(app, Some(&default_name)) {
+                    ui::refresh_availability(app);
                     return;
                 }
             }
@@ -827,6 +864,7 @@ fn apply_auto_event(app: &mut App, event: Option<crate::auto_hdr::AutoEvent>) {
                 app.save_settings();
                 apply_profile_snapshot(app, snapshot);
             }
+            ui::refresh_availability(app);
         }
         None => {}
     }

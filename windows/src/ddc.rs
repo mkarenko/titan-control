@@ -389,6 +389,10 @@ impl MsiDdc {
 }
 
 impl Link for MsiDdc {
+    fn connector(&self) -> Option<&str> {
+        Some(&self.target_connector)
+    }
+
     fn pace(&mut self) {
         if let Some(last) = self.last_request
             && let Some(wait) = REQUEST_GAP.checked_sub(last.elapsed())

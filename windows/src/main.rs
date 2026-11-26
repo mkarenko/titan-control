@@ -121,6 +121,7 @@ fn main() {
         needs_rebuild: false,
         active_page: 0,
         auto_hdr: auto_hdr::Watcher::new(host),
+        windows_hdr_active: false,
         profile_dirty: false,
         pre_app_state: None,
         quit: false,
@@ -361,6 +362,11 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
         }
         WM_TIMER => {
             app::handle_timer(app, wparam as usize);
+            0
+        }
+        WM_DISPLAYCHANGE => {
+            app::refresh_windows_hdr(app);
+            ui::refresh_availability(app);
             0
         }
         WM_SETTINGCHANGE => {

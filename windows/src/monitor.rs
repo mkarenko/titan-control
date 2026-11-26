@@ -348,6 +348,10 @@ pub trait Link {
     fn settle(&mut self) -> bool;
     fn needs_settle(&self) -> bool;
     fn set_needs_settle(&mut self, value: bool);
+    /// Current Windows display device name (`\\.\DISPLAY1`, etc.), if known by the transport.
+    fn connector(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// The protocol on top of a [`Link`]: register routing, validation, retries and the profile table stream.
@@ -885,6 +889,7 @@ pub enum UiCmd {
     InfoRefreshed { hz: Option<u16>, usage_mins: Option<u16> },
     Progress(String),
     Error(String),
+    ConnectorChanged(String),
 }
 
 fn worker_cmd_code(cmd: &WorkerCmd) -> Option<u8> {
@@ -1090,6 +1095,7 @@ struct Worker<L: Link> {
     ddc: MsiDdc<L>,
     cache: HashMap<u8, u16>,
     monitor_name: String,
+    last_connector: Option<String>,
     ui: UiSink,
     tasks: VecDeque<Scheduled>,
     /// When each setting was last written by the app (OSD-change reads of these are skipped for a while).
@@ -1100,10 +1106,12 @@ struct Worker<L: Link> {
 
 impl<L: Link> Worker<L> {
     fn new(ddc: MsiDdc<L>, monitor_name: String, ui: UiSink, table_read: bool) -> Self {
+        let last_connector = ddc.link.connector().map(str::to_string);
         let mut worker = Self {
             cache: cache_store::load_settings(&monitor_name),
             ddc,
             monitor_name,
+            last_connector,
             ui,
             tasks: VecDeque::new(),
             recent_writes: HashMap::new(),
@@ -1111,6 +1119,16 @@ impl<L: Link> Worker<L> {
         };
         worker.queue_reads(&startup_read_keys(table_read), Instant::now());
         worker
+    }
+
+    fn sync_connector(&mut self) {
+        if let Some(current) = self.ddc.link.connector()
+            && self.last_connector.as_deref() != Some(current)
+        {
+            let updated = current.to_string();
+            self.last_connector = Some(updated.clone());
+            self.ui.send(UiCmd::ConnectorChanged(updated));
+        }
     }
 
     fn run(&mut self, worker_rx: &mpsc::Receiver<WorkerCmd>) {
@@ -1136,11 +1154,13 @@ impl<L: Link> Worker<L> {
                         return;
                     }
                     self.handle_batch(batch);
+                    self.sync_connector();
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if let Some(task) = self.take_due_task() {
                         self.run_task(task);
+                        self.sync_connector();
                     }
                 }
             }

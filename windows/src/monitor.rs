@@ -139,7 +139,7 @@ pub const VCP_PIP_SIZE: u8 = 0x54;
 pub const VCP_PIP_SWAP: u8 = 0x55;
 /// Reset PIP settings: 1 = reset.
 pub const VCP_PIP_RESET: u8 = 0x56;
-/// Input selection: 0 auto, 1/2 DP, 3 USB-C, 5 HDMI-1, 6 HDMI-2.
+/// Input selection: 0 auto, 1 DP-1, 3 USB-C (DP-2), 4 HDMI-1, 5 HDMI-2.
 pub const VCP_INPUT_SELECT: u8 = 0x57;
 /// USB hub follows: 0 USB-C, 1 USB-B.
 pub const VCP_USB_HUB_SOURCE: u8 = 0x5F;
@@ -616,8 +616,8 @@ pub mod values {
     pub const PIP_SIZE: [u16; 3] = [0, 1, 2];
     /// Audio source (0x52): auto, USB-C, HDMI-1, HDMI-2.
     pub const AUDIO_SOURCE: [u16; 4] = [0, 3, 4, 5];
-    /// Input selection (0x57): auto, DP, USB-C, HDMI-1, HDMI-2.
-    pub const INPUT_SELECT: [u16; 5] = [0, 1, 3, 5, 6];
+    /// Input selection (0x57): auto, DP-1, USB-C (DP-2), HDMI-1, HDMI-2.
+    pub const INPUT_SELECT: [u16; 5] = [0, 1, 3, 4, 5];
     /// USB hub follows (0x5F): USB-C, USB-B.
     pub const USB_HUB_SOURCE: [u16; 2] = [0, 1];
 
@@ -1028,6 +1028,42 @@ const GLOBAL_SETTING_KEYS: &[u8] = &[
     VCP_POWER_SAVING,
 ];
 
+/// Global registers excluded from user profiles (inputs, locks, routing, and OSD/power preferences).
+const NON_PROFILE_GLOBAL_KEYS: &[u8] = &[
+    VCP_INPUT_SOURCE,
+    VCP_INPUT_SELECT,
+    VCP_PIP_SOURCE,
+    VCP_AUDIO_SOURCE,
+    VCP_USB_HUB_SOURCE,
+    VCP_USB_POWER_SLEEP,
+    VCP_POWER_LED,
+    VCP_OSD_LANG,
+    VCP_OSD_TIME,
+    VCP_OSD_H_POS,
+    VCP_OSD_V_POS,
+    VCP_OSD_TRANS,
+    VCP_OSD_LOCK,
+    VCP_BUTTON_LOCK,
+    VCP_QUICK_BOOT,
+    VCP_POWER_SAVING,
+];
+
+/// Returns `true` when `code` belongs in saved and applied monitor profiles.
+pub fn is_profile_setting(code: u8) -> bool {
+    code == VCP_MODE
+        || PROFILE_SETTING_KEYS.contains(&code)
+        || matches!(code, VCP_RED | VCP_GREEN | VCP_BLUE)
+        || (GLOBAL_SETTING_KEYS.contains(&code) && !NON_PROFILE_GLOBAL_KEYS.contains(&code))
+}
+
+/// Drops non-profile registers so saved and loaded snapshots never switch inputs or lock the OSD.
+pub fn filter_profile_values(values: HashMap<u8, u16>) -> HashMap<u8, u16> {
+    values
+        .into_iter()
+        .filter(|&(code, _)| is_profile_setting(code))
+        .collect()
+}
+
 /// Settings read per worker step, so user commands are not delayed by a long read.
 const READ_CHUNK: usize = 4;
 /// Pause after a reset before its results are read back.
@@ -1347,21 +1383,14 @@ impl<L: Link> Worker<L> {
         cache_store::save_settings(&self.monitor_name, &self.cache);
     }
 
-    /// Applies all settings in `values` that differ from `self.cache`, sequencing mode/link switches cleanly first.
+    /// Applies all profile-eligible settings in `values` that differ from `self.cache`, sequencing mode/link switches cleanly first.
     fn apply_profile(&mut self, values: HashMap<u8, u16>) {
         self.tasks
             .retain(|s| !matches!(s.task, Task::RefreshProfile | Task::ApplyProfileRest(_)));
 
-        let is_writable = |code: u8| -> bool {
-            code == VCP_MODE
-                || PROFILE_SETTING_KEYS.contains(&code)
-                || GLOBAL_SETTING_KEYS.contains(&code)
-                || matches!(code, VCP_RED | VCP_GREEN | VCP_BLUE)
-        };
-
         let mut changes: Vec<(u8, u16)> = values
             .into_iter()
-            .filter(|&(code, val)| is_writable(code) && self.cache.get(&code).copied() != Some(val))
+            .filter(|&(code, val)| is_profile_setting(code) && self.cache.get(&code).copied() != Some(val))
             .collect();
         if changes.is_empty() {
             self.ui.send(UiCmd::ProfileLoaded);
@@ -1894,5 +1923,31 @@ mod tests {
         assert!(check_write(VCP_MODE, 26).is_ok());
         assert!(is_custom_profile(26));
         assert!(!is_custom_profile(25));
+    }
+
+    #[test]
+    fn input_select_values_match_hardware() {
+        assert_eq!(values::INPUT_SELECT, [0, 1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn profile_filter_excludes_inputs_locks_and_system_keys() {
+        assert!(is_profile_setting(VCP_MODE));
+        assert!(is_profile_setting(VCP_BRIGHTNESS));
+        assert!(is_profile_setting(VCP_RED));
+        assert!(is_profile_setting(VCP_LOCAL_DIMMING));
+        assert!(is_profile_setting(VCP_ADAPTIVE_SYNC));
+
+        for excluded in [
+            VCP_INPUT_SOURCE,
+            VCP_INPUT_SELECT,
+            VCP_OSD_LOCK,
+            VCP_BUTTON_LOCK,
+            VCP_OSD_LANG,
+            VCP_USB_HUB_SOURCE,
+            VCP_POWER_SAVING,
+        ] {
+            assert!(!is_profile_setting(excluded), "0x{excluded:02X} must stay out of profiles");
+        }
     }
 }

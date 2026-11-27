@@ -246,7 +246,7 @@ impl App {
 
     /// Sends a setting to the monitor, with the adjustments some settings need.
     pub fn set(&mut self, code: u8, value: u16) {
-        if self.settings.active_profile.is_some() {
+        if self.settings.active_profile.is_some() && monitor::is_profile_setting(code) {
             self.profile_dirty = true;
         }
         match code {
@@ -543,6 +543,7 @@ pub fn drain_messages(app: &mut App) {
                 refresh_windows_hdr(app);
                 app.apply_values(info.settings.clone());
                 app.info = Some(info);
+                sync_auto_hdr(app);
                 ui::apply_state(app);
                 ui::refresh_availability(app);
                 crate::tray::refresh(app);
@@ -841,28 +842,35 @@ fn apply_auto_event(app: &mut App, event: Option<crate::auto_hdr::AutoEvent>) {
     match event {
         Some(crate::auto_hdr::AutoEvent::Activated { profile }) => {
             refresh_windows_hdr(app);
-            if app.pre_app_state.is_none() {
-                app.pre_app_state = Some((app.settings.active_profile.clone(), app.state.clone()));
-            }
             if let Some(name) = profile {
-                let _ = select_profile(app, Some(&name));
+                let prev = app.pre_app_state.is_none().then(|| {
+                    (
+                        app.settings.active_profile.clone(),
+                        monitor::filter_profile_values(app.state.clone()),
+                    )
+                });
+                if select_profile(app, Some(&name))
+                    && let Some(prev) = prev
+                {
+                    app.pre_app_state = Some(prev);
+                }
             }
             ui::refresh_availability(app);
         }
         Some(crate::auto_hdr::AutoEvent::Deactivated) => {
             refresh_windows_hdr(app);
-            let prev = app.pre_app_state.take();
-            if let Some(default_name) = app.settings.auto_profiles_default.clone() {
-                if select_profile(app, Some(&default_name)) {
-                    ui::refresh_availability(app);
-                    return;
+            if let Some((prev_profile, snapshot)) = app.pre_app_state.take() {
+                let applied_default = app
+                    .settings
+                    .auto_profiles_default
+                    .clone()
+                    .is_some_and(|default_name| select_profile(app, Some(&default_name)));
+                if !applied_default {
+                    app.settings.active_profile = prev_profile;
+                    app.profile_dirty = false;
+                    app.save_settings();
+                    apply_profile_snapshot(app, snapshot);
                 }
-            }
-            if let Some((prev_profile, snapshot)) = prev {
-                app.settings.active_profile = prev_profile;
-                app.profile_dirty = false;
-                app.save_settings();
-                apply_profile_snapshot(app, snapshot);
             }
             ui::refresh_availability(app);
         }
@@ -896,7 +904,10 @@ pub fn select_profile(app: &mut App, name: Option<&str>) -> bool {
 }
 
 fn apply_profile_snapshot(app: &mut App, values: HashMap<u8, u16>) {
-    if values.get(&monitor::VCP_MODE) != app.state.get(&monitor::VCP_MODE) {
+    let values = monitor::filter_profile_values(values);
+    if let Some(&mode) = values.get(&monitor::VCP_MODE)
+        && app.state.get(&monitor::VCP_MODE).copied() != Some(mode)
+    {
         app.start_profile_load();
     }
     for (&code, &val) in &values {
@@ -916,7 +927,7 @@ pub fn save_active_profile(app: &mut App) -> bool {
     let Some(active) = app.settings.active_profile.clone() else {
         return false;
     };
-    let snapshot = app.state.clone();
+    let snapshot = monitor::filter_profile_values(app.state.clone());
     if let Some(profile) = app
         .settings
         .profiles
@@ -942,7 +953,7 @@ pub fn create_profile(app: &mut App, name: String) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let snapshot = app.state.clone();
+    let snapshot = monitor::filter_profile_values(app.state.clone());
     if let Some(existing) = app
         .settings
         .profiles

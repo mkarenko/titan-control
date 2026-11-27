@@ -141,8 +141,11 @@ These are deliberate, and each one is a Windows constraint or a consequence of t
 2. **Display scaling cannot be set.** Windows has no supported API for changing the per-monitor DPI scaling of another
    monitor; the combo shows the current value and is disabled. (The Linux build only offers this on KDE Wayland and
    COSMIC Wayland.)
-3. **No system-HDR mirroring.** On KDE Wayland the Linux build switches the system HDR when the monitor HDR changes.
-   The Windows build does not touch Windows' HDR setting; HDR of the monitor works as usual.
+3. **Per-app Windows HDR via Auto Profiles (instead of mirroring monitor HDR).** On KDE Wayland the Linux build
+   switches the system HDR when the monitor HDR changes. The Windows build does not mirror manual monitor HDR toggles,
+   because Windows HDR is controlled per application by **Auto Profiles** (using the Windows `DisplayConfig` API to
+   enable Windows HDR when configured games or apps run and restore SDR when they exit); manual monitor HDR works as
+   usual.
 4. **Whole-row availability instead of per-option greying.** The Linux UI greys out single options (for example 21:9 in
    the aspect-ratio list, or the first four DyDs modes with Adaptive-Sync on) inside a toggle group. Windows disables
    the row instead; a value the monitor refuses is undone by its read-back (the monitor's own answer is shown).

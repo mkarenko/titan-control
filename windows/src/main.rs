@@ -150,7 +150,6 @@ fn main() {
     tray::create(app);
     register_hotkeys(app);
     app::sync_autostart(app);
-    app::sync_auto_hdr(app);
     app::schedule_trim(app);
     // `--minimized` starts in the tray; the autostart entry passes it.
     app.start_minimized = app.settings.start_minimized || std::env::args().any(|argument| argument == "--minimized");
@@ -377,16 +376,13 @@ unsafe extern "system" fn host_proc(hwnd: HWND, message: u32, wparam: WPARAM, lp
             }
             0
         }
-        WM_ENDSESSION | WM_QUERYENDSESSION => {
-            unsafe {
-                for index in 0..5 {
-                    UnregisterHotKey(hwnd, HOTKEY_FIRST + index);
-                }
+        WM_QUERYENDSESSION => 1,
+        WM_ENDSESSION => {
+            if wparam != 0 {
+                unregister_hotkeys(app);
+                app.auto_hdr.shutdown(&app.connector);
             }
-            if message == WM_ENDSESSION && wparam != 0 {
-                return 0;
-            }
-            1
+            0
         }
         WM_DESTROY => {
             unsafe {

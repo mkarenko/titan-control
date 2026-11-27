@@ -1,0 +1,50 @@
+[package]
+name = "titan-control-win"
+version = "1.0.1"
+edition = "2024"
+rust-version = "1.88"
+description = "Native Windows control for the Titan Army P275MV PLUS monitor over DDC/CI"
+license = "MIT"
+repository = "https://github.com/mkarenko/titan-control"
+
+# The Linux package lives in the repository root and keeps its own manifest; this crate is standalone so that
+# `cargo build` in the root directory is unaffected.
+[workspace]
+
+[[bin]]
+name = "titan-control"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+winresource = "0.1"
+
+# Small, fast binary: whole-program optimisation, one codegen unit, no unwind tables, symbols stripped.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+

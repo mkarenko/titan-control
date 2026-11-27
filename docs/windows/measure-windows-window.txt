@@ -1,0 +1,12 @@
+# Titan Control (Windows) - settings window open, idle
+
+sampled: 2026-11-01 11:36:50
+
+| sample | working set (MB) | private bytes (MB) | threads |
+| --- | --- | --- | --- |
+| 0 | 1.62 | 3.68 | 7 |
+| 1 | 1.62 | 3.68 | 7 |
+| 2 | 1.64 | 3.59 | 4 |
+| 3 | 5.38 | 3.61 | 4 |
+| 4 | 7 | 3.61 | 4 |
+| 5 | 20.87 | 4.65 | 8 |
